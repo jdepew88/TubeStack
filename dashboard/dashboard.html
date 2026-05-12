@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TubeStack — Library</title>
+    <link rel="icon" type="image/png" href="../icons/logo.png" />
+    <link rel="stylesheet" href="dashboard.css" />
+  </head>
+  <body>
+    <div id="onboarding" class="onboarding oobe-root hidden" role="dialog" aria-modal="true" aria-labelledby="obBrand">
+      <div class="oobe-backdrop" aria-hidden="true"></div>
+      <div class="onboarding-card oobe-card">
+        <div class="oobe-brand-row">
+          <img src="../icons/logo.png" alt="" class="oobe-brand-logo" width="48" height="48" />
+          <div class="oobe-brand" id="obBrand">TubeStack</div>
+        </div>
+        <p class="oobe-tagline">Triage YouTube like streaming — pick your lanes, then we sort the noise.</p>
+        <div class="oobe-progress" id="oobeProgress" aria-hidden="true">
+          <span class="oobe-dot active" data-i="0"></span>
+          <span class="oobe-dot" data-i="1"></span>
+          <span class="oobe-dot" data-i="2"></span>
+          <span class="oobe-dot" data-i="3"></span>
+          <span class="oobe-dot" data-i="4"></span>
+          <span class="oobe-dot" data-i="5"></span>
+          <span class="oobe-dot" data-i="6"></span>
+        </div>
+        <p class="oobe-wizard-guide">
+          <button type="button" class="oobe-guide-btn" id="obOpenSetupGuide">
+            Setup guide: Google Cloud &amp; OpenAI
+            <span class="oobe-guide-hint"> — opens in a new window</span>
+          </button>
+        </p>
+
+        <div id="obStep0" class="ob-step">
+          <h2 class="oobe-step-title">Welcome</h2>
+          <p class="oobe-lead">
+            Install TubeStack and start immediately with local features: save tabs, queues, tags, priority, search,
+            watch-time tracking, and local trends. Google connection is optional and can be added later.
+          </p>
+          <button type="button" class="btn oobe-cta primary" id="obNext0">Get started</button>
+        </div>
+
+        <div id="obStep1" class="ob-step hidden">
+          <h2 class="oobe-step-title">Local vs cloud</h2>
+          <p class="oobe-lead">
+            TubeStack always keeps your library on this device. Optional cloud pieces are separate — connect only what
+            you want.
+          </p>
+          <ul class="oobe-unlock-list">
+            <li>
+              <strong>Local only</strong> — Save and close YouTube tabs, queues, tags, priorities, search, watch-time,
+              and local playlists. No Google APIs required.
+            </li>
+            <li>
+              <strong>YouTube Data API key</strong> — Channel profile scans (handle or URL), recent uploads, and richer
+              public metadata to tune category weights. The key stays on this device.
+            </li>
+            <li>
+              <strong>Google OAuth (Client ID + sign-in)</strong> — Create real playlists on your YouTube account from
+              saved queues (with the usual Google consent prompt).
+            </li>
+          </ul>
+          <label class="oobe-check-row">
+            <input type="checkbox" id="obLocalOnlyCheck" />
+            <span>Use <strong>local-only</strong> setup in this wizard (skip API key and OAuth steps)</span>
+          </label>
+          <p class="ob-muted">You can add an API key or OAuth later in Settings.</p>
+          <button type="button" class="btn oobe-cta primary" id="obNextFromIntro">Continue</button>
+        </div>
+
+        <div id="obStep2" class="ob-step hidden">
+          <h2 class="oobe-step-title">YouTube Data API key</h2>
+          <p class="oobe-lead">
+            Enter the email tied to your Google Cloud project, then your YouTube Data API v3 key. Use <strong>Test API
+            key</strong> to verify the key before continuing.
+          </p>
+          <label class="ob-label" for="obEmail">Email (Google Cloud / YouTube)</label>
+          <input type="email" id="obEmail" class="oobe-input" autocomplete="email" placeholder="you@example.com" />
+          <label class="ob-label" for="obApiKey">YouTube Data API key</label>
+          <input type="password" id="obApiKey" class="oobe-input" autocomplete="off" placeholder="AIza…" spellcheck="false" />
+          <p class="ob-muted" id="obKeyHint">Stored only in this browser’s extension storage.</p>
+          <div class="ob-api-test-row">
+            <button type="button" id="obBtnTestApi" class="btn ob-api-test ob-api-test--idle" disabled>Test API key</button>
+            <span id="obApiTestDetail" class="ob-api-test-detail" aria-live="polite"></span>
+          </div>
+          <button type="button" class="btn oobe-cta primary" id="obBtnCredContinue">Continue</button>
+        </div>
+
+        <div id="obStep3" class="ob-step hidden">
+          <h2 class="oobe-step-title">Google sign-in (OAuth)</h2>
+          <p class="oobe-lead">
+            Optional. Lets you <strong>create YouTube playlists</strong> from saved queues. In Google Cloud Console,
+            create an OAuth client of type <strong>Web application</strong> and add this authorized redirect URI:
+          </p>
+          <code id="obOAuthRedirect" class="oauth-redirect">—</code>
+          <label class="ob-label" for="obOAuthClientId">OAuth 2.0 Client ID</label>
+          <input
+            type="text"
+            id="obOAuthClientId"
+            class="oobe-input"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="xxxx.apps.googleusercontent.com"
+          />
+          <div class="ob-actions">
+            <button type="button" class="btn" id="obBtnOAuthSave">Save Client ID</button>
+            <button type="button" class="btn ghost" id="obBtnTestOAuth">Test Google sign-in</button>
+          </div>
+          <p class="ob-muted" id="obOAuthTestStatus" role="status"></p>
+          <div class="ob-actions">
+            <button type="button" class="btn ghost" id="obSkipOAuth">Skip OAuth for now</button>
+            <button type="button" class="btn oobe-cta primary" id="obBtnOAuthContinue">Continue</button>
+          </div>
+        </div>
+
+        <div id="obStep4" class="ob-step hidden">
+          <h2 class="oobe-step-title">Optional: Channel scan</h2>
+          <p class="oobe-lead">
+            If you added an API key, you can pull recent uploads and categories from a public channel to sharpen
+            starter categories. You can skip and tune categories manually.
+          </p>
+          <label class="ob-label" for="obHandle">Channel @handle or URL</label>
+          <input type="text" id="obHandle" class="oobe-input" autocomplete="off" placeholder="@yourchannel or youtube.com/@yourchannel" />
+          <div class="ob-actions">
+            <button type="button" class="btn primary" id="obRunScan">Run channel scan</button>
+            <button type="button" class="btn ghost" id="obSkipScan">Skip for now</button>
+          </div>
+          <p class="oobe-error hidden" id="obScanError" role="alert"></p>
+          <div id="obScanPreview" class="oobe-scan-preview hidden"></div>
+          <button type="button" class="btn oobe-cta primary" id="obNextScan" disabled>Continue to categories</button>
+        </div>
+
+        <div id="obStep5" class="ob-step hidden">
+          <h2 class="oobe-step-title">What do you watch?</h2>
+          <p class="oobe-lead">
+            Tap to cycle <strong class="oobe-green">green</strong> on/off for auto-sort. On the dashboard, use
+            <strong>double-click</strong> on a category chip for <strong class="oobe-gold">gold</strong> favorites (max eight).
+          </p>
+          <div id="obGenreGrid" class="genre-grid"></div>
+          <button type="button" class="btn oobe-cta primary" id="obNextGenres">Continue</button>
+        </div>
+
+        <div id="obStep6" class="ob-step hidden">
+          <h2 class="oobe-step-title">Almost done</h2>
+          <p class="oobe-lead hidden" id="obStep4LeadFull">
+            Optional: allow browser history for rough YouTube visit tallies, or import subscription channel names from
+            an open tab.
+          </p>
+          <p class="oobe-lead hidden" id="obStep4LeadMinimal">
+            Staple setup is active — no YouTube Data API or OAuth here. You can still let TubeStack use
+            <strong>only this device’s Chrome history</strong> (last 7 days of YouTube watch URLs) to suggest sharper
+            category matching. Nothing is uploaded; it stays local.
+          </p>
+
+          <div id="obStep4MinimalHistory" class="ob-minimal-history hidden">
+            <p class="ob-muted ob-minimal-q">Use last 7 days of YouTube history to improve category matching?</p>
+            <div class="ob-actions">
+              <button type="button" class="btn primary" id="obHistoryThemesYes">Yes — allow local history for categories</button>
+              <button type="button" class="btn ghost" id="obHistoryThemesNo">No thanks — staple keywords only</button>
+            </div>
+            <p class="ob-muted" id="obMinimalHistPick" role="status"></p>
+          </div>
+
+          <div id="obStep4FullExtras">
+            <p class="ob-muted" id="obHistStatus"></p>
+            <div class="ob-actions">
+              <button type="button" class="btn" id="obRequestHistory">Allow history access</button>
+              <button type="button" class="btn ghost" id="obSkipHistory">Skip</button>
+            </div>
+            <label class="ob-label" for="obTabPick">Import channel names from tab</label>
+            <select id="obTabPick"></select>
+            <div class="ob-actions">
+              <button type="button" class="btn" id="obOpenChannels">Open channels page</button>
+              <button type="button" class="btn" id="obPullChannels">Import</button>
+            </div>
+            <p class="ob-muted" id="obPullStatus"></p>
+            <div class="ob-actions">
+              <button type="button" class="btn ghost" id="obScanHistory">Scan last 7 days (history)</button>
+            </div>
+            <p class="ob-muted" id="obScanResult"></p>
+          </div>
+
+          <button type="button" class="btn oobe-cta primary" id="obFinish">Complete setup</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="focusBanner" class="focus-banner hidden"></div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand-row">
+          <img src="../icons/logo.png" alt="" class="brand-logo" width="36" height="36" />
+          <div class="brand">TubeStack</div>
+          <button type="button" id="btnToggleSidebar" class="btn small ghost">Hide sidebar</button>
+        </div>
+        <nav class="sidebar-nav" aria-label="Views">
+          <a class="sidebar-nav-link" id="linkPlaylistHome" href="../home/home.html">Playlist home</a>
+          <span class="sidebar-nav-muted">·</span>
+          <a class="sidebar-nav-link" href="library.html">Library</a>
+        </nav>
+
+        <section class="sidebar-window-nav" aria-label="Window navigation">
+          <div class="sidebar-current-playlist">
+            <div class="label">Current playlist</div>
+            <div class="sidebar-current-title-row">
+              <button type="button" id="btnSidebarRenamePlaylist" class="sidebar-rename-hotspot" title="Rename playlist" aria-label="Rename playlist"></button>
+              <button type="button" id="sidebarCurrentPlaylistLink" class="sidebar-current-link" title="Open current playlist">
+                Untitled Playlist
+              </button>
+            </div>
+            <input
+              type="text"
+              id="sidebarPlaylistRenameInput"
+              class="oobe-input sidebar-playlist-rename hidden"
+              value=""
+              maxlength="200"
+              placeholder="Rename current playlist"
+            />
+            <div id="sidebarRecentTablists" class="sidebar-recent-list"></div>
+            <button type="button" id="btnRecentTablistsMore" class="btn small ghost">Show more</button>
+            <button type="button" class="sidebar-win-btn sidebar-win-btn-focused-in-current" data-window-target="playlistPack">
+              Create Focused Playlist
+            </button>
+            <div id="sidebarCreatePlaylistDrop" class="sidebar-drop-new">Create new playlist (drop videos)</div>
+          </div>
+          <div class="sidebar-categories-wrap">
+            <div class="sidebar-categories-head">
+              <button type="button" class="sidebar-win-btn sidebar-win-btn-inline" data-window-target="categories">Categories</button>
+              <button type="button" id="btnSidebarFavToggle" class="sidebar-fav-toggle" aria-expanded="false" title="Show favorite categories">▾</button>
+            </div>
+            <div id="sidebarFavoriteCategoriesWrap" class="hidden">
+              <div id="sidebarFavoriteCategories" class="theme-grid compact"></div>
+            </div>
+          </div>
+          <button type="button" class="sidebar-win-btn" data-window-target="aiCategorize">AI categorize</button>
+          <button type="button" class="sidebar-win-btn" data-window-target="subscriptions">Subbed Channels</button>
+          <button type="button" class="sidebar-win-btn" data-window-target="download">Download</button>
+          <button type="button" class="sidebar-win-btn" data-window-target="localPlaylists">Playlist Manager</button>
+          <button type="button" class="sidebar-win-btn" data-window-target="usage">Usage Graphs</button>
+          <button type="button" class="sidebar-win-btn" data-window-target="settings">Settings</button>
+        </section>
+
+        <section class="panel-block" data-sidebar-section="focus">
+          <span class="label">Focus session</span>
+          <p class="panel-hint">Soft timer: keep this dashboard pinned while you watch intentionally.</p>
+          <div class="focus-row">
+            <input type="number" id="focusMinutes" min="5" max="240" value="25" />
+            <button type="button" id="btnFocusStart" class="btn small">Start</button>
+            <button type="button" id="btnFocusClear" class="btn small ghost">Clear</button>
+          </div>
+          <p id="focusLine" class="ob-muted"></p>
+        </section>
+
+        <section class="panel-block" data-sidebar-section="history">
+          <span class="label">Browser history tally</span>
+          <p id="historySummary" class="stat-line small">—</p>
+          <button type="button" id="btnHistoryScan" class="btn small">Refresh history tally</button>
+          <p class="panel-hint">Niche labels from history use the same permission — run from the toolbar button <strong>Categories from history…</strong> (not shown here).</p>
+          <p class="panel-hint">In-player watch time chart opens in a separate window.</p>
+        </section>
+
+        <section class="panel-block" data-sidebar-section="watchAnalytics">
+          <span class="label">YouTube watch time</span>
+          <p class="panel-hint">Open watch-time charts in a separate window.</p>
+          <button type="button" id="btnWatchAnalytics" class="btn small">Open watch-time window</button>
+        </section>
+
+        <section id="latestImportPanel" class="panel-block latest-import-panel hidden" data-sidebar-section="import">
+          <span class="label">Latest saved tabs</span>
+          <p class="panel-hint">
+            Videos from your most recent popup save. One inferred niche label per video. Toggle labels to hide rows; remove
+            strays from your library.
+          </p>
+          <div id="latestImportGenreChips" class="import-genre-chips"></div>
+          <div id="latestImportList" class="import-batch-list"></div>
+          <button type="button" id="btnDismissImportPanel" class="btn small ghost">Done triaging this batch</button>
+        </section>
+
+        <section class="panel-block" data-sidebar-section="subscriptions">
+          <span class="label">Subbed Channels</span>
+          <p class="panel-hint">
+            Import your channels from YouTube, then browse them here in a compact grid.
+          </p>
+          <div class="subs-actions">
+            <button type="button" id="btnSubsImport" class="btn small primary">Import your channels</button>
+          </div>
+          <p id="subsImportStatus" class="stat-line small" role="status"></p>
+          <div class="subs-toolbar">
+            <label class="ob-label" for="subsChannelSort">Sort</label>
+            <select id="subsChannelSort" class="oobe-input">
+              <option value="name_asc">Name (A–Z)</option>
+              <option value="name_desc">Name (Z–A)</option>
+              <option value="activity">Most in your library first</option>
+              <option value="recent">Recently imported first</option>
+            </select>
+            <button type="button" id="btnSubsRemoveMode" class="btn small ghost">Remove channels</button>
+          </div>
+          <div id="subsListHost" class="subs-list-host"></div>
+        </section>
+
+        <section class="panel-block" data-sidebar-section="categories">
+          <span class="label">Categories</span>
+          <p class="panel-hint">
+            Click: cycle <strong>off → green → off</strong> (skips gold). <strong>Double-click</strong>: toggle
+            <strong>gold</strong> favorite (max 8). <strong>Ctrl+click</strong>: rename. Use
+            <strong>Rebuild categories…</strong> to replace chips from watch history (~25 broad + your top niches); OpenAI
+            optional for smarter niche names when titles lack YouTube tags.
+          </p>
+          <div class="category-editor-controls">
+            <span class="ob-label">Sort</span>
+            <div class="category-sort-btns" role="group" aria-label="Sort categories A–Z or Z–A">
+              <button type="button" id="btnCategorySortAz" class="btn small ghost">A–Z</button>
+              <button type="button" id="btnCategorySortZa" class="btn small ghost">Z–A</button>
+            </div>
+            <button type="button" id="btnCategoryDeleteMode" class="btn small ghost">Delete categories</button>
+          </div>
+          <div id="sidebarThemeGrid" class="theme-grid categories-editor-grid"></div>
+          <div class="category-add-row">
+            <input type="text" id="newCategoryName" class="oobe-input" maxlength="80" placeholder="New category name" />
+            <button type="button" id="btnAddCategory" class="btn small">Add</button>
+          </div>
+          <button type="button" id="btnGenreRebuild" class="btn small">Rebuild categories…</button>
+          <button type="button" id="btnAutoSort" class="btn small">Auto-sort library by keywords</button>
+          <button type="button" id="btnOnboarding" class="btn small ghost">Setup wizard</button>
+        </section>
+
+        <section class="panel-block ai-categorize-panel" data-sidebar-section="aiCategorize">
+          <span class="label">AI categorize</span>
+          <p class="panel-hint">
+            Uses your <strong>OpenAI API key</strong> from Settings (or paste below). Picks categories and assigns each
+            selected video to one category. Large jobs are capped at <strong>120 videos</strong> per run.
+          </p>
+          <fieldset class="ai-cat-fieldset">
+            <legend class="modal-legend">Videos to process</legend>
+            <label class="modal-radio"
+              ><input type="radio" name="aiCatScope" value="library" checked /> Entire library</label
+            >
+            <label class="modal-radio"
+              ><input type="radio" name="aiCatScope" value="filtered" /> Current filters + search (grid)</label
+            >
+            <label class="modal-radio"
+              ><input type="radio" name="aiCatScope" value="selected" /> Checked rows only</label
+            >
+            <p id="aiCatScopeCount" class="stat-line small" aria-live="polite">—</p>
+          </fieldset>
+          <fieldset class="ai-cat-fieldset">
+            <legend class="modal-legend">Strategy</legend>
+            <label class="modal-radio"
+              ><input type="radio" name="aiCatStrategy" value="discover" checked /> AI proposes categories — you choose how
+              many and how broad</label
+            >
+            <label class="modal-radio"
+              ><input type="radio" name="aiCatStrategy" value="criteria" /> Follow my written criteria (AI still names
+              groups)</label
+            >
+            <label class="modal-radio"
+              ><input type="radio" name="aiCatStrategy" value="existing" /> Use only categories I already have</label
+            >
+          </fieldset>
+          <div id="aiCatDiscoverBlock">
+            <label class="ob-label" for="aiCatTargetCount">Number of categories</label>
+            <input type="number" id="aiCatTargetCount" class="oobe-input" min="2" max="28" value="10" />
+            <p class="panel-hint ob-muted">
+              Example: 30 videos → <strong>10</strong> broad buckets (Tech, Gaming) or <strong>20</strong> tighter niches
+              (Android, iOS, PC builds, AI news…).
+            </p>
+            <span class="ob-label">Label style</span>
+            <div class="ai-cat-inline">
+              <label class="modal-radio"
+                ><input type="radio" name="aiCatGranularity" value="broad" checked /> Broad</label
+              >
+              <label class="modal-radio"><input type="radio" name="aiCatGranularity" value="specific" /> Specific</label>
+            </div>
+          </div>
+          <div id="aiCatCriteriaBlock" class="hidden">
+            <label class="ob-label" for="aiCatCriteriaText">Your criteria</label>
+            <textarea
+              id="aiCatCriteriaText"
+              class="oobe-input ai-cat-textarea"
+              rows="4"
+              maxlength="1200"
+              placeholder="e.g. Split by project I’m researching; keep news separate from tutorials; group all music production together…"
+            ></textarea>
+          </div>
+          <label class="ob-label" for="aiCatOpenaiKey">OpenAI key (optional if saved in Settings)</label>
+          <input
+            type="password"
+            id="aiCatOpenaiKey"
+            class="oobe-input"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="sk-…"
+          />
+          <label class="modal-checkbox"><input type="checkbox" id="aiCatSaveKey" /> Save pasted key to Settings</label>
+          <p id="aiCatStatus" class="modal-status" role="status"></p>
+          <button type="button" id="btnRunAiCategorize" class="btn small primary">Run AI categorize</button>
+        </section>
+
+        <section class="panel-block" data-sidebar-section="playlistPack">
+          <span class="label">Focused Playlist</span>
+          <p class="panel-hint">Choose one or more categories, set how much time you want to watch, and TubeStack builds a focused custom playlist for that session.</p>
+          <div id="playlistThemes" class="playlist-picks"></div>
+          <label class="ob-label" for="playlistBudget">Minutes</label>
+          <input type="number" id="playlistBudget" min="5" max="240" value="15" />
+          <label class="ob-label" for="playlistSort">Order</label>
+          <select id="playlistSort">
+            <option value="time_left_asc">Time left (shortest first)</option>
+            <option value="time_left_desc">Time left (longest first)</option>
+            <option value="duration_asc">Total length (shortest)</option>
+            <option value="duration_desc">Total length (longest)</option>
+            <option value="interest_desc">Interest score</option>
+            <option value="completion_desc">Most watched %</option>
+            <option value="completion_asc">Least watched %</option>
+            <option value="saved_recent">Recently saved</option>
+          </select>
+          <button type="button" id="btnBuildPlaylist" class="btn small primary">Build queue</button>
+          <div id="playlistOut" class="playlist-out"></div>
+        </section>
+
+        <section class="panel-block playlist-manager-section" data-sidebar-section="localPl">
+          <span class="label">Playlist Manager</span>
+          <p class="panel-hint playlist-manager-lead">
+            Saved on this device only. Use <strong>Save playlist…</strong> → <em>Save locally only</em> for
+            <strong>recent browser-tab sessions</strong>. <strong>View</strong> opens the list in the dashboard. Import
+            playlists from YouTube in <strong>Settings</strong> — those get a <strong>YouTube import</strong> badge.
+            Uncheck “Show imported back catalog” in Settings to hide imports here and on Playlist home.
+            <strong>Create YouTube playlist</strong> needs OAuth Client ID + sign-in. Default session names look like
+            <code>yt_tabgroup_2026-05-10_14-30-05</code>.
+          </p>
+          <div id="localPlaylistList" class="local-pl-list"></div>
+        </section>
+
+        <label class="search-wrap">
+          <span class="sr-only">Search</span>
+          <input
+            type="search"
+            id="search"
+            placeholder="Search title, creator, playlist, category, tag…"
+            autocomplete="off"
+          />
+        </label>
+        <div class="filters">
+          <div class="filter-field view-field hidden">
+            <span class="label">View</span>
+            <select id="viewMode">
+              <option value="list">List</option>
+              <option value="details" selected>Details</option>
+              <option value="grid">Grid</option>
+            </select>
+            <div id="gridSizeWrap" class="grid-size-wrap hidden">
+              <span class="label">Grid size</span>
+              <input type="range" id="gridSize" min="84" max="180" step="4" value="132" />
+            </div>
+          </div>
+          <div class="filter-field">
+            <span class="label">Quick sort</span>
+            <select id="quickSort">
+              <option value="title_asc">Title</option>
+              <option value="creator_asc">Creator</option>
+              <option value="length_desc">Length</option>
+              <option value="watch_time_desc">Watch Time</option>
+              <option value="time_left_asc">Time Left</option>
+              <option value="category_asc">Category</option>
+            </select>
+          </div>
+          <div class="filter-field">
+            <span class="label">Categories</span>
+            <select id="filterItemCategory"></select>
+          </div>
+          <div class="filter-field">
+            <span class="label">List</span>
+            <select id="filterCategory"></select>
+          </div>
+          <div class="filter-field filter-field-priority">
+            <span class="label">Priority</span>
+            <div id="filterPriorityBar" class="filter-priority-bar" role="group" aria-label="Filter by priority"></div>
+          </div>
+        </div>
+        <div class="bulk">
+          <button type="button" id="btnCompactCards" class="btn small ghost">Show less details</button>
+          <button type="button" id="btnSmartPlaylist" class="btn small">Smart playlist…</button>
+          <button type="button" id="btnExportYouTube" class="btn small primary">Save playlist…</button>
+          <button type="button" id="btnRestore" class="btn small">Open selected</button>
+          <button type="button" id="btnDelete" class="btn small danger">Remove selected</button>
+          <button type="button" id="btnDeleteLocalPlaylist" class="btn small danger hidden">Delete playlist</button>
+        </div>
+
+        <section class="panel-block" data-sidebar-section="ytdlp">
+          <span class="label">Download (yt-dlp)</span>
+          <p class="panel-hint">
+            <a href="https://github.com/yt-dlp/yt-dlp#embedding-yt-dlp" target="_blank" rel="noopener noreferrer">yt-dlp</a>
+            can merge video+audio to <strong>MP4</strong> or <strong>MKV</strong>, or extract <strong>AAC/M4A</strong>,
+            <strong>MP3</strong>, or <strong>Opus</strong>. Requires FFmpeg on your system for merge / transcode. Only
+            download what you have the right to keep.
+          </p>
+          <label class="ob-label" for="ytdlpPreset">Format</label>
+          <select id="ytdlpPreset" class="oobe-input">
+            <option value="mp4">Video — MP4 (best video + audio)</option>
+            <option value="mkv">Video — MKV (best video + audio)</option>
+            <option value="m4a">Audio — AAC / M4A</option>
+            <option value="mp3">Audio — MP3</option>
+            <option value="opus">Audio — Opus</option>
+          </select>
+          <div class="ytdlp-actions">
+            <button type="button" id="btnYtdlpCopy" class="btn small">Copy yt-dlp commands</button>
+            <button type="button" id="btnYtdlpNative" class="btn small primary">Download (native helper)</button>
+          </div>
+          <p id="ytdlpStatus" class="stat-line small" role="status"></p>
+          <p class="panel-hint">
+            <strong>Native helper</strong> (optional): Python host embeds yt-dlp — see <code>native-host/INSTALL.txt</code>.
+            This extension ID: <code id="ytdlpExtId" class="ytdlp-code">—</code>
+          </p>
+        </section>
+
+        <section class="panel-block" data-sidebar-section="settings">
+          <span class="label">Settings</span>
+          <p class="panel-hint">Show or hide sidebar blocks. “Library” is the aggregate 3-column browser page.</p>
+          <div id="sidebarVisibilityHost" class="sidebar-visibility-host"></div>
+
+          <span class="label settings-sub-label">YouTube Data API</span>
+          <p class="panel-hint">
+            Used for channel scans and public metadata. Stored only on this device (same key as onboarding).
+          </p>
+          <label class="ob-label" for="settingsYoutubeApiKey">API key</label>
+          <input
+            type="password"
+            id="settingsYoutubeApiKey"
+            class="oobe-input"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="AIza…"
+          />
+          <p class="panel-hint ob-muted" id="settingsYoutubeKeyHint">Enter only to add or replace a stored key.</p>
+          <div class="settings-youtube-api-actions">
+            <button type="button" id="btnSaveYoutubeApiKey" class="btn small">Save API key</button>
+            <button type="button" id="btnTestYoutubeApiKey" class="btn small ghost">Test API key</button>
+            <button type="button" id="btnClearYoutubeApiKey" class="btn small danger ghost">Remove stored key</button>
+          </div>
+          <p id="youtubeApiKeyTestStatus" class="stat-line small settings-test-status" role="status"></p>
+
+          <span class="label settings-sub-label">YouTube OAuth (playlist creation)</span>
+          <p class="panel-hint">
+            Create playlists on your signed-in Google account from saved queues. In Google Cloud Console, use an OAuth
+            client of type <strong>Web application</strong> and add this authorized redirect URI:
+          </p>
+          <code id="oauthRedirectDisplay" class="oauth-redirect">—</code>
+          <label class="ob-label" for="oauthClientId">OAuth 2.0 Client ID</label>
+          <input
+            type="text"
+            id="oauthClientId"
+            class="oobe-input oauth-input"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="xxxx.apps.googleusercontent.com"
+          />
+          <div class="settings-oauth-actions">
+            <button type="button" id="btnSaveOAuth" class="btn small">Save Client ID</button>
+            <button type="button" id="btnTestYoutubeOAuth" class="btn small ghost">Test Google sign-in</button>
+            <button type="button" id="btnClearYoutubeOAuth" class="btn small danger ghost">Remove Client ID</button>
+          </div>
+          <p id="youtubeOAuthTestStatus" class="stat-line small settings-test-status" role="status"></p>
+
+          <span class="label settings-sub-label">YouTube saved playlists (back catalog)</span>
+          <p class="panel-hint">
+            Open the chooser to <strong>list</strong> playlists, <strong>preview</strong> video title and channel, then
+            <strong>import only what you select</strong>. Each playlist becomes a historical snapshot; videos get an
+            <strong>Album</strong> field matching that playlist name. Re-importing replaces the prior YouTube import
+            catalog.
+          </p>
+          <label class="modal-checkbox"
+            ><input type="checkbox" id="libShowYoutubeImported" checked /> Show imported back catalog in Playlist Manager,
+            sidebar, and Playlist home</label
+          >
+          <p class="panel-hint ob-muted">
+            Turn off to focus on <strong>recent browser-tab sessions</strong> and hide imported playlists everywhere
+            except this Settings control.
+          </p>
+          <div class="settings-youtube-import-actions">
+            <button type="button" id="btnImportYoutubePlaylists" class="btn small primary">
+              Choose playlists to import…
+            </button>
+          </div>
+          <p id="youtubeImportPlaylistsStatus" class="stat-line small settings-test-status" role="status"></p>
+
+          <label class="ob-label" for="settingsOpenaiKey">OpenAI API key (optional, for AI category rebuild)</label>
+          <input type="password" id="settingsOpenaiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+          <p class="panel-hint ob-muted">Stored only on this device. Never sent except to api.openai.com when you run an AI rebuild.</p>
+          <div class="settings-openai-actions">
+            <button type="button" id="btnSaveOpenaiKey" class="btn small">Save OpenAI key</button>
+            <button type="button" id="btnTestOpenaiConnection" class="btn small ghost">Test API connection</button>
+          </div>
+          <p id="openaiTestStatus" class="stat-line small openai-test-status" role="status"></p>
+          <p class="panel-hint ob-muted">
+            <strong>Test</strong> calls OpenAI (models list + a 2-token completion). If your account exposes it, we also
+            request prepaid <strong>credit balance</strong>. Otherwise we only show <strong>rolling rate limits</strong>
+            (requests/tokens left in the current short window — not the same as monthly quota).
+          </p>
+          <div class="settings-oobe-actions">
+            <button type="button" id="btnRunOobeAgain" class="btn small">Run setup wizard again</button>
+            <a
+              class="btn small ghost"
+              href="setup-guide.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Setup guide (Google &amp; OpenAI)</a
+            >
+          </div>
+          <p class="panel-hint ob-muted">Re-opens onboarding without deleting your library. Finish or skip to return.</p>
+        </section>
+
+        <p class="hint">Tip: Pin this tab while triaging a long session.</p>
+      </aside>
+      <main class="main">
+        <div id="smartPlaylistModal" class="modal-overlay hidden" role="presentation">
+          <div class="modal-card modal-card-wide" role="dialog" aria-labelledby="spTitle" aria-modal="true">
+            <h3 id="spTitle" class="modal-title">Smart playlist</h3>
+            <p class="modal-lead">
+              Pick how to <strong>order</strong> videos in a new local snapshot. Source can be the whole library, the
+              current filtered list, or checked rows only. Extra filters trim rows before sorting.
+            </p>
+            <label class="ob-label" for="spName">Name</label>
+            <input type="text" id="spName" class="oobe-input" maxlength="200" />
+            <label class="ob-label" for="spSource">Source</label>
+            <select id="spSource" class="oobe-input">
+              <option value="library">Entire library</option>
+              <option value="visible">Current filters + quick sort</option>
+              <option value="selected">Checked rows only</option>
+            </select>
+            <label class="ob-label" for="spGroupBy">Group / sort by</label>
+            <select id="spGroupBy" class="oobe-input">
+              <option value="channel">YouTuber (channel A→Z)</option>
+              <option value="theme">Category (A→Z)</option>
+              <option value="libraryAlbum">Album / series (A→Z)</option>
+              <option value="granularGenre">Niche genre (import)</option>
+              <option value="category">List category</option>
+              <option value="priority">Priority</option>
+              <option value="savedAt">Date saved (newest first)</option>
+              <option value="lastOpened">Last opened locally (recent first)</option>
+              <option value="duration">Duration (longest first)</option>
+              <option value="interest">Interest score (high first)</option>
+            </select>
+            <fieldset class="modal-fieldset">
+              <legend class="modal-legend">Optional filters</legend>
+              <label class="ob-label" for="spFilterCategory">Category</label>
+              <select id="spFilterCategory" class="oobe-input">
+                <option value="">Any</option>
+              </select>
+              <label class="ob-label" for="spFilterChannel">Channel contains</label>
+              <input type="text" id="spFilterChannel" class="oobe-input" placeholder="e.g. Linus" maxlength="80" />
+              <label class="ob-label" for="spFilterPriority">Priority</label>
+              <select id="spFilterPriority" class="oobe-input">
+                <option value="">Any</option>
+                <option value="prio_high">High</option>
+                <option value="prio_med">Medium</option>
+                <option value="prio_low">Low</option>
+                <option value="prio_drop">Drop</option>
+              </select>
+            </fieldset>
+            <p class="modal-status" id="spStatus" role="status"></p>
+            <div class="modal-actions modal-actions-split">
+              <button type="button" class="btn ghost" id="spCancel">Cancel</button>
+              <button type="button" class="btn primary" id="spSave">Save local playlist</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="ytPlaylistImportModal" class="modal-overlay hidden" role="presentation">
+          <div class="modal-card modal-card-wide yt-import-card" role="dialog" aria-labelledby="ytImpTitle" aria-modal="true">
+            <h3 id="ytImpTitle" class="modal-title">Import YouTube playlists</h3>
+            <p class="modal-lead">
+              Your playlists load first (no videos yet). Select playlists to import, preview title and creator, then
+              confirm. Each imported video’s <strong>Album</strong> is set to its playlist name.
+            </p>
+            <p id="ytImpListStatus" class="panel-hint" role="status"></p>
+            <p id="ytImpListError" class="modal-status hidden" role="alert"></p>
+            <div class="yt-import-columns">
+              <div class="yt-import-col">
+                <span class="label">Playlists</span>
+                <p class="panel-hint small">Check playlists to import. Click a row or <strong>Preview</strong> to inspect videos.</p>
+                <div id="ytImpPlaylistScroll" class="yt-import-scroll"></div>
+                <label class="modal-checkbox yt-import-select-all"
+                  ><input type="checkbox" id="ytImpSelectAll" /> Select all</label
+                >
+              </div>
+              <div class="yt-import-col">
+                <span class="label">Preview</span>
+                <p id="ytImpPreviewTitle" class="yt-preview-title panel-hint">Select a playlist…</p>
+                <div id="ytImpPreviewScroll" class="yt-import-scroll"></div>
+                <p id="ytImpPreviewMeta" class="panel-hint small" role="status"></p>
+              </div>
+            </div>
+            <div class="modal-actions modal-actions-split">
+              <button type="button" class="btn ghost" id="ytImpClose">Close</button>
+              <button type="button" class="btn primary" id="ytImpRun" disabled>Import selected</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="ytExportModal" class="modal-overlay hidden" role="presentation">
+          <div class="modal-card" role="dialog" aria-labelledby="ytExportTitle" aria-modal="true">
+            <h3 id="ytExportTitle" class="modal-title">Save playlist</h3>
+            <p class="modal-lead">
+              Choose <strong>Save locally only</strong> for a named snapshot on this device (rename or erase later in the
+              sidebar). Choose <strong>Create on YouTube</strong> to sign in with Google and add videos to a real account
+              playlist (visibility below).
+            </p>
+            <label class="ob-label" for="peTitle">Name (local list &amp; YouTube title)</label>
+            <input type="text" id="peTitle" class="oobe-input" maxlength="200" />
+            <label class="ob-label" for="peDesc">Description (optional)</label>
+            <textarea id="peDesc" class="modal-textarea" rows="3" maxlength="5000"></textarea>
+            <fieldset class="modal-fieldset" id="pePrivacyFieldset">
+              <legend class="modal-legend">Visibility on YouTube</legend>
+              <label class="modal-radio">
+                <input type="radio" name="pePrivacy" value="private" checked />
+                Private — only you can open it
+              </label>
+              <label class="modal-radio">
+                <input type="radio" name="pePrivacy" value="public" />
+                Public — anyone can find it
+              </label>
+              <label class="modal-radio">
+                <input type="radio" name="pePrivacy" value="unlisted" />
+                Unlisted — only people with the link
+              </label>
+            </fieldset>
+            <fieldset class="modal-fieldset">
+              <legend class="modal-legend">Which videos</legend>
+              <label class="modal-radio">
+                <input type="radio" name="peSource" value="selected" checked />
+                Checked rows in the library
+              </label>
+              <label class="modal-radio">
+                <input type="radio" name="peSource" value="visible" />
+                Current filtered list
+              </label>
+              <label class="modal-radio">
+                <input type="radio" name="peSource" value="queue" id="peSourceQueue" />
+                Last “Focused Playlist” queue
+              </label>
+            </fieldset>
+            <p class="modal-status" id="peStatus" role="status"></p>
+            <div class="modal-actions modal-actions-split">
+              <button type="button" class="btn ghost" id="peCancel">Cancel</button>
+              <div class="modal-actions-right">
+                <button type="button" class="btn" id="peSaveLocal">Save locally only</button>
+                <button type="button" class="btn" id="peSaveAs">Save as…</button>
+                <button type="button" class="btn primary" id="peCreate">Create on YouTube</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="genreRebuildModal" class="modal-overlay hidden" role="presentation">
+          <div class="modal-card modal-card-wide" role="dialog" aria-labelledby="grTitle" aria-modal="true">
+            <h3 id="grTitle" class="modal-title">Rebuild categories from history</h3>
+            <p class="modal-lead">
+              Replaces your library category list with <strong>~25 broad buckets</strong> plus up to <strong>15 niches</strong> inferred
+              from your YouTube watch history (titles only; same history permission as “Categories from history”). Your
+              library is then <strong>re-tagged</strong> to the closest new category by keywords.
+            </p>
+            <label class="ob-label" for="grDays">History window (days)</label>
+            <input type="number" id="grDays" class="oobe-input" min="7" max="90" value="30" />
+            <label class="ob-label" for="grMode">Niche detection</label>
+            <select id="grMode" class="oobe-input">
+              <option value="heuristic">Local — keyword + niche presets (no network)</option>
+              <option value="openai">OpenAI — model suggests niches from titles (uses saved key or paste below)</option>
+            </select>
+            <label class="ob-label" for="grOpenaiKey">OpenAI key (only if mode is OpenAI; optional if already saved)</label>
+            <input type="password" id="grOpenaiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+            <label class="modal-checkbox"
+              ><input type="checkbox" id="grSaveKey" /> Save this key to extension settings</label
+            >
+            <label class="modal-checkbox"
+              ><input type="checkbox" id="grReplace" checked /> Replace existing categories (recommended for a clean slate)</label
+            >
+            <p class="modal-status" id="grStatus" role="status"></p>
+            <div class="modal-actions modal-actions-split">
+              <button type="button" class="btn ghost" id="grCancel">Cancel</button>
+              <button type="button" class="btn primary" id="grRun">Run rebuild</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="historyGenreModal" class="modal-overlay hidden" role="presentation">
+          <div class="modal-card modal-card-wide" role="dialog" aria-labelledby="hgTitle" aria-modal="true">
+            <h3 id="hgTitle" class="modal-title">Categories from watch history</h3>
+            <p class="modal-lead">
+              Scans the <strong>last 7 days</strong> of YouTube watch URLs in Chrome history (titles only on this device).
+              Pick niches to add as <strong>green (active) categories</strong> for auto-sorting. Run again anytime — this
+              dialog stays off the sidebar.
+            </p>
+            <div class="hg-actions">
+              <button type="button" class="btn primary" id="hgRunScan">Scan last 7 days</button>
+              <button type="button" class="btn ghost" id="hgClose">Close</button>
+            </div>
+            <p class="modal-status" id="hgStatus" role="status"></p>
+            <div id="hgResults" class="hg-results hidden">
+              <p class="hg-results-lead" id="hgResultsLead"></p>
+              <label class="hg-select-all"><input type="checkbox" id="hgCheckAll" checked /> Select all niches below</label>
+              <div id="hgGenreList" class="hg-genre-list"></div>
+              <button type="button" class="btn primary" id="hgApplyThemes">Add selected as categories</button>
+            </div>
+          </div>
+        </div>
+
+        <section id="windowCurrent" class="window-panel active" data-window="current">
+          <header class="toolbar toolbar-row">
+            <p id="summary" class="summary"></p>
+            <div class="toolbar-actions">
+              <a class="btn small ghost toolbar-home-link" href="../home/home.html">Playlist home</a>
+              <a class="toolbar-library-link" href="library.html">Library</a>
+              <button type="button" id="btnHistoryGenres" class="btn small primary">Categories from history…</button>
+            </div>
+          </header>
+          <div id="windowCurrentControlsMount" class="window-controls-mount"></div>
+          <div id="windowCurrentSectionsMount" class="window-sections-mount"></div>
+          <div id="grid" class="grid"></div>
+          <p id="empty" class="empty hidden">No saved videos yet. Use the extension popup on a YouTube tab.</p>
+        </section>
+
+        <section id="windowUsage" class="window-panel hidden" data-window="usage">
+          <h3 class="window-title">Usage Graphs</h3>
+          <div id="windowUsageMount" class="window-sections-mount"></div>
+          <section class="watch-analytics" aria-labelledby="watchHeading">
+            <div class="watch-analytics-head">
+              <h3 id="watchHeading" class="watch-heading">YouTube watch time</h3>
+              <p class="watch-sub">In-player time tracked on this device (TubeStack content script on watch pages).</p>
+            </div>
+            <div class="watch-controls">
+              <div class="watch-range-pills" role="tablist" aria-label="Date range">
+                <button type="button" class="watch-pill active" data-watch-range="day">Day</button>
+                <button type="button" class="watch-pill" data-watch-range="week">Week</button>
+                <button type="button" class="watch-pill" data-watch-range="month">Month</button>
+                <button type="button" class="watch-pill" data-watch-range="custom">Custom</button>
+              </div>
+              <div id="watchPickDay" class="watch-pickers">
+                <label class="watch-inline-label" for="watchDayPick">Date</label>
+                <input type="date" id="watchDayPick" class="watch-date" />
+              </div>
+              <div id="watchPickWeek" class="watch-pickers hidden">
+                <label class="watch-inline-label" for="watchWeekOf">Week containing</label>
+                <input type="date" id="watchWeekOf" class="watch-date" />
+                <span class="watch-inline-hint">Mon-Sun</span>
+              </div>
+              <div id="watchPickMonth" class="watch-pickers hidden">
+                <label class="watch-inline-label" for="watchMonthPick">Month</label>
+                <input type="month" id="watchMonthPick" class="watch-date" />
+              </div>
+              <div id="watchPickCustom" class="watch-pickers hidden">
+                <label class="watch-inline-label" for="watchFrom">From</label>
+                <input type="date" id="watchFrom" class="watch-date" />
+                <label class="watch-inline-label" for="watchTo">To</label>
+                <input type="date" id="watchTo" class="watch-date" />
+              </div>
+            </div>
+            <p id="watchTotalLine" class="watch-total">—</p>
+            <div id="watchChartHost" class="watch-chart-host">
+              <div id="watchChartEmpty" class="watch-chart-empty hidden">No watch time logged for this range yet.</div>
+              <div id="watchBars" class="watch-bars" aria-hidden="true"></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="windowPlaylistPack" class="window-panel hidden" data-window="playlistPack">
+          <h3 class="window-title">Focused Playlist</h3>
+          <div id="windowPlaylistPackMount" class="window-sections-mount"></div>
+        </section>
+
+        <section id="windowLocalPlaylists" class="window-panel hidden" data-window="localPlaylists">
+          <h3 class="window-title">Playlist Manager</h3>
+          <div id="windowLocalPlaylistsMount" class="window-sections-mount"></div>
+        </section>
+
+        <section id="windowSubscriptions" class="window-panel hidden" data-window="subscriptions">
+          <h3 class="window-title">Subbed Channels</h3>
+          <div id="windowSubscriptionsMount" class="window-sections-mount"></div>
+        </section>
+
+        <section id="windowCategories" class="window-panel hidden" data-window="categories">
+          <h3 class="window-title">Categories</h3>
+          <div id="windowCategoriesMount" class="window-sections-mount"></div>
+        </section>
+
+        <section id="windowAiCategorize" class="window-panel hidden" data-window="aiCategorize">
+          <h3 class="window-title">AI categorize</h3>
+          <div id="windowAiCategorizeMount" class="window-sections-mount"></div>
+        </section>
+
+        <section id="windowDownload" class="window-panel hidden" data-window="download">
+          <h3 class="window-title">Download</h3>
+          <div id="windowDownloadMount" class="window-sections-mount"></div>
+        </section>
+
+        <section id="windowSettings" class="window-panel hidden" data-window="settings">
+          <h3 class="window-title">Settings</h3>
+          <div id="windowSettingsMount" class="window-sections-mount"></div>
+        </section>
+
+      </main>
+    </div>
+    <button type="button" id="btnShowSidebarFloating" class="btn small sidebar-floating-toggle hidden" aria-label="Reopen sidebar" title="Reopen sidebar">◂</button>
+    <script src="dashboard.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+*.pem
+.idea/
+.vscode/
+*.zip
+*.crx
+web-ext-artifacts/
+packaged/
+node_modules/

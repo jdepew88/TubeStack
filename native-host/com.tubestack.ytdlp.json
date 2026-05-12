@@ -1,0 +1,7 @@
+{
+  "name": "com.tubestack.ytdlp",
+  "description": "TubeStack yt-dlp download helper (embedded YoutubeDL API)",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_LAUNCHER",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://REPLACE_WITH_EXTENSION_ID/"]
+}

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TubeStack — Playlist Home</title>
+    <link rel="icon" type="image/png" href="../icons/logo.png" />
+    <link rel="stylesheet" href="home.css" />
+  </head>
+  <body>
+    <header class="home-header">
+      <div class="home-brand">
+        <img src="../icons/logo.png" alt="" width="40" height="40" />
+        <div>
+          <h1>TubeStack</h1>
+          <p class="home-tagline">Saved playlists on this device — quick launch list.</p>
+        </div>
+      </div>
+      <div class="home-actions">
+        <button type="button" id="btnOpenLibrary" class="btn primary">Open Library</button>
+        <button type="button" id="btnRefresh" class="btn ghost">Refresh</button>
+      </div>
+    </header>
+    <p id="homeStatus" class="home-status" role="status"></p>
+    <section class="home-playlist-controls" aria-label="Playlist list">
+      <label class="home-search-wrap">
+        <span class="sr-only">Search playlists</span>
+        <input
+          type="search"
+          id="homePlaylistSearch"
+          placeholder="Search name, videos, type…"
+          autocomplete="off"
+        />
+      </label>
+      <div class="home-controls-row">
+        <label class="home-control">
+          <span class="home-control-label">Sort</span>
+          <select id="homePlSort" aria-label="Sort playlists">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="name_asc">Name A–Z</option>
+            <option value="name_desc">Name Z–A</option>
+            <option value="videos_desc">Most videos</option>
+            <option value="videos_asc">Fewest videos</option>
+          </select>
+        </label>
+        <label class="home-control">
+          <span class="home-control-label">View</span>
+          <select id="homePlView" aria-label="Playlist layout">
+            <option value="cards">Cards</option>
+            <option value="list">List</option>
+            <option value="dense">Compact grid</option>
+          </select>
+        </label>
+      </div>
+    </section>
+    <div id="homeGrid" class="home-grid"></div>
+    <p id="homeEmpty" class="home-empty hidden">
+      No local playlists yet. Open the library and use “Save playlist…” → Save locally only.
+    </p>
+    <script src="home.js"></script>
+  </body>
+</html>

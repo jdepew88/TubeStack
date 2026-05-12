@@ -32,26 +32,88 @@
           autocomplete="off"
         />
       </label>
-      <div class="home-controls-row">
-        <label class="home-control">
-          <span class="home-control-label">Sort</span>
-          <select id="homePlSort" aria-label="Sort playlists">
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="name_asc">Name A–Z</option>
-            <option value="name_desc">Name Z–A</option>
-            <option value="videos_desc">Most videos</option>
-            <option value="videos_asc">Fewest videos</option>
-          </select>
-        </label>
-        <label class="home-control">
-          <span class="home-control-label">View</span>
-          <select id="homePlView" aria-label="Playlist layout">
-            <option value="cards">Cards</option>
-            <option value="list">List</option>
-            <option value="dense">Compact grid</option>
-          </select>
-        </label>
+      <div class="home-toolbar-shell">
+        <div class="home-toolbar-row">
+          <div class="home-toolbar" id="homeToolbar" role="toolbar" aria-label="Sort, view, and grid size">
+          <button
+            type="button"
+            id="homeSortToggle"
+            class="home-tool-btn"
+            aria-expanded="false"
+            aria-controls="homeSortPanel"
+            title="Sort playlists"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="home-tool-icon">
+              <path
+                d="M7 4v14m0 0l-3-3m3 3l3-3M17 20V6m0 0l-3 3m3-3l3 3"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="sr-only">Sort</span>
+          </button>
+          <button
+            type="button"
+            id="homeViewToggle"
+            class="home-tool-btn"
+            aria-expanded="false"
+            aria-controls="homeViewPanel"
+            title="Layout"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="home-tool-icon">
+              <path
+                d="M4 6h16M4 12h16M4 18h16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span class="sr-only">View</span>
+          </button>
+          <button
+            type="button"
+            id="homeSizeToggle"
+            class="home-tool-btn"
+            aria-expanded="false"
+            aria-controls="homeSizePanel"
+            title="Grid tile size"
+            disabled
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="home-tool-icon">
+              <path
+                d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="sr-only">Grid size</span>
+          </button>
+        </div>
+      </div>
+      <div id="homeSortPanel" class="home-popover hidden" role="group" aria-label="Sort by">
+        <button type="button" class="home-opt-btn" data-home-sort="newest">Newest</button>
+        <button type="button" class="home-opt-btn" data-home-sort="oldest">Oldest</button>
+        <button type="button" class="home-opt-btn" data-home-sort="name_asc">Name A–Z</button>
+        <button type="button" class="home-opt-btn" data-home-sort="name_desc">Name Z–A</button>
+        <button type="button" class="home-opt-btn" data-home-sort="videos_desc">Most videos</button>
+        <button type="button" class="home-opt-btn" data-home-sort="videos_asc">Fewest videos</button>
+      </div>
+      <div id="homeViewPanel" class="home-popover hidden" role="group" aria-label="Layout">
+        <button type="button" class="home-opt-btn" data-home-view="cards">Cards</button>
+        <button type="button" class="home-opt-btn" data-home-view="list">List</button>
+        <button type="button" class="home-opt-btn" data-home-view="dense">Compact grid</button>
+      </div>
+      <div id="homeSizePanel" class="home-popover hidden" role="group" aria-label="Grid tile size">
+        <button type="button" class="home-opt-btn" data-home-size="sm">Small</button>
+        <button type="button" class="home-opt-btn" data-home-size="md">Medium</button>
+        <button type="button" class="home-opt-btn" data-home-size="lg">Large</button>
+      </div>
       </div>
     </section>
     <div id="homeGrid" class="home-grid"></div>

@@ -6,11 +6,14 @@ function send(type, payload = {}) {
 
 const HOME_PL_SORT_KEY = "ts_home_pl_sort";
 const HOME_PL_VIEW_KEY = "ts_home_pl_view";
+const HOME_PL_GRID_SIZE_KEY = "ts_home_pl_grid_size";
 
 let cachedRawPlaylists = [];
 let homePlaylistSearch = "";
 let homePlSort = localStorage.getItem(HOME_PL_SORT_KEY) || "newest";
 let homePlView = localStorage.getItem(HOME_PL_VIEW_KEY) || "cards";
+let homeGridSize = localStorage.getItem(HOME_PL_GRID_SIZE_KEY) || "md";
+if (!["sm", "md", "lg"].includes(homeGridSize)) homeGridSize = "md";
 let homeSearchTimer;
 
 function thumbUrl(item) {
@@ -103,6 +106,19 @@ function applyHomeGridLayoutClass(grid) {
   grid.className = "home-grid";
   if (homePlView === "dense") grid.classList.add("home-grid--dense");
   if (homePlView === "list") grid.classList.add("home-grid--list");
+  if (homePlView === "list") {
+    grid.style.removeProperty("--home-col-min");
+    grid.style.removeProperty("--home-gap");
+    return;
+  }
+  const isDense = homePlView === "dense";
+  const gap = isDense ? 12 : 18;
+  const mins = isDense
+    ? { sm: 160, md: 200, lg: 240 }
+    : { sm: 220, md: 260, lg: 320 };
+  const min = mins[homeGridSize] || mins.md;
+  grid.style.setProperty("--home-col-min", `${min}px`);
+  grid.style.setProperty("--home-gap", `${gap}px`);
 }
 
 function renderPlaylists(playlists) {
@@ -213,18 +229,108 @@ async function refresh() {
     if (status) status.textContent = "Could not load playlists.";
     cachedRawPlaylists = [];
     renderHomePlaylists();
+    syncHomeToolbarUi();
     return;
   }
   const lists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
   cachedRawPlaylists = playlistsVisibleOnHome(r.settings, lists);
   renderHomePlaylists();
+  syncHomeToolbarUi();
 }
 
-function syncControlValues() {
-  const sortEl = document.getElementById("homePlSort");
-  const viewEl = document.getElementById("homePlView");
-  if (sortEl) sortEl.value = homePlSort;
-  if (viewEl) viewEl.value = homePlView;
+function syncHomeToolbarUi() {
+  const sizeBtn = document.getElementById("homeSizeToggle");
+  if (sizeBtn) {
+    const list = homePlView === "list";
+    sizeBtn.disabled = list;
+    sizeBtn.title = list ? "Grid size (switch to cards or compact grid)" : "Grid tile size";
+  }
+  document.querySelectorAll("#homeSortPanel [data-home-sort]").forEach((el) => {
+    el.classList.toggle("active", el.getAttribute("data-home-sort") === homePlSort);
+  });
+  document.querySelectorAll("#homeViewPanel [data-home-view]").forEach((el) => {
+    el.classList.toggle("active", el.getAttribute("data-home-view") === homePlView);
+  });
+  document.querySelectorAll("#homeSizePanel [data-home-size]").forEach((el) => {
+    el.classList.toggle("active", el.getAttribute("data-home-size") === homeGridSize);
+  });
+}
+
+function closeHomePanels() {
+  const panels = ["homeSortPanel", "homeViewPanel", "homeSizePanel"].map((id) => document.getElementById(id));
+  const toggles = ["homeSortToggle", "homeViewToggle", "homeSizeToggle"].map((id) => document.getElementById(id));
+  for (const p of panels) p?.classList.add("hidden");
+  for (const b of toggles) b?.setAttribute("aria-expanded", "false");
+}
+
+function toggleHomePanel(panelId, toggleId) {
+  const panel = document.getElementById(panelId);
+  const toggle = document.getElementById(toggleId);
+  if (!panel || !toggle) return;
+  const willOpen = panel.classList.contains("hidden");
+  closeHomePanels();
+  if (willOpen) {
+    panel.classList.remove("hidden");
+    toggle.setAttribute("aria-expanded", "true");
+  }
+}
+
+function wireHomeToolbar() {
+  const sortT = document.getElementById("homeSortToggle");
+  const viewT = document.getElementById("homeViewToggle");
+  const sizeT = document.getElementById("homeSizeToggle");
+  const sortPanel = document.getElementById("homeSortPanel");
+  const viewPanel = document.getElementById("homeViewPanel");
+  const sizePanel = document.getElementById("homeSizePanel");
+  sortT?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleHomePanel("homeSortPanel", "homeSortToggle");
+  });
+  viewT?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleHomePanel("homeViewPanel", "homeViewToggle");
+  });
+  sizeT?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (sizeT.disabled) return;
+    toggleHomePanel("homeSizePanel", "homeSizeToggle");
+  });
+
+  sortPanel?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-home-sort]");
+    if (!b || !sortPanel.contains(b)) return;
+    homePlSort = b.getAttribute("data-home-sort") || "newest";
+    localStorage.setItem(HOME_PL_SORT_KEY, homePlSort);
+    syncHomeToolbarUi();
+    closeHomePanels();
+    renderHomePlaylists();
+  });
+
+  viewPanel?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-home-view]");
+    if (!b || !viewPanel.contains(b)) return;
+    homePlView = b.getAttribute("data-home-view") || "cards";
+    localStorage.setItem(HOME_PL_VIEW_KEY, homePlView);
+    syncHomeToolbarUi();
+    closeHomePanels();
+    renderHomePlaylists();
+  });
+
+  sizePanel?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-home-size]");
+    if (!b || !sizePanel.contains(b)) return;
+    homeGridSize = b.getAttribute("data-home-size") || "md";
+    localStorage.setItem(HOME_PL_GRID_SIZE_KEY, homeGridSize);
+    syncHomeToolbarUi();
+    closeHomePanels();
+    renderHomePlaylists();
+  });
+
+  document.addEventListener("mousedown", (e) => {
+    const shell = document.querySelector(".home-toolbar-shell");
+    if (!shell || shell.contains(e.target)) return;
+    closeHomePanels();
+  });
 }
 
 document.getElementById("btnRefresh")?.addEventListener("click", () => {
@@ -244,23 +350,8 @@ document.getElementById("homePlaylistSearch")?.addEventListener("input", () => {
   }, 120);
 });
 
-document.getElementById("homePlSort")?.addEventListener("change", (e) => {
-  const v = e.target?.value;
-  if (!v) return;
-  homePlSort = v;
-  localStorage.setItem(HOME_PL_SORT_KEY, homePlSort);
-  renderHomePlaylists();
-});
-
-document.getElementById("homePlView")?.addEventListener("change", (e) => {
-  const v = e.target?.value;
-  if (!v) return;
-  homePlView = v;
-  localStorage.setItem(HOME_PL_VIEW_KEY, homePlView);
-  renderHomePlaylists();
-});
-
-syncControlValues();
+wireHomeToolbar();
+syncHomeToolbarUi();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || (!changes.localPlaylists && !changes.settings)) return;

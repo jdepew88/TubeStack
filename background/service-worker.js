@@ -4,9 +4,6 @@
 
 const YT_HOSTS = new Set(["www.youtube.com", "m.youtube.com"]);
 
-/** Native host manifest name — must match native-host/com.tubestack.ytdlp.json */
-const YTDLP_NATIVE_HOST = "com.tubestack.ytdlp";
-
 importScripts("granular-genres.js");
 importScripts("genre-taxonomy.js");
 const GRANULAR_GENRE_PRESETS = globalThis.GRANULAR_GENRE_PRESETS || [];
@@ -96,18 +93,6 @@ function isYouTubeWatchUrl(url) {
   } catch {
     return false;
   }
-}
-
-function isYoutubeDownloadUrl(url) {
-  if (!url || typeof url !== "string") return false;
-  try {
-    const u = new URL(url.trim());
-    if (u.hostname === "youtu.be") return u.pathname.replace("/", "").length >= 6;
-    if (YT_HOSTS.has(u.hostname) && u.pathname.startsWith("/watch") && u.searchParams.has("v")) return true;
-  } catch {
-    /* */
-  }
-  return false;
 }
 
 function normalizeWatchUrl(videoId, timestampSec) {
@@ -2498,72 +2483,6 @@ async function dismissLatestImportBatch() {
   return { ok: true };
 }
 
-function nativeYtdlpDownloadRequest(payload) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (obj) => {
-      if (settled) return;
-      settled = true;
-      resolve(obj);
-    };
-    let port;
-    try {
-      port = chrome.runtime.connectNative(YTDLP_NATIVE_HOST);
-    } catch (e) {
-      finish({
-        ok: false,
-        error: "connect_failed",
-        message: String(e?.message || e),
-      });
-      return;
-    }
-    const tmr = setTimeout(() => {
-      try {
-        port.disconnect();
-      } catch {
-        /* */
-      }
-      finish({
-        ok: false,
-        error: "timeout",
-        message: "Native host timed out (very long downloads may still be running in the background).",
-      });
-    }, 7200000);
-
-    port.onMessage.addListener((msg) => {
-      clearTimeout(tmr);
-      finish(msg && typeof msg === "object" ? msg : { ok: false, error: "bad_response" });
-    });
-
-    port.onDisconnect.addListener(() => {
-      clearTimeout(tmr);
-      if (settled) return;
-      const lastErr = chrome.runtime.lastError?.message || "";
-      if (/not found|Could not establish connection|Access to the specified native messaging host/i.test(lastErr)) {
-        finish({
-          ok: false,
-          error: "native_host_not_found",
-          message:
-            "Native helper is not registered. See native-host/INSTALL.txt and register com.tubestack.ytdlp for Chrome.",
-        });
-        return;
-      }
-      finish({
-        ok: false,
-        error: "native_disconnect",
-        message: lastErr || "Native host exited without sending a response.",
-      });
-    });
-
-    try {
-      port.postMessage(payload);
-    } catch (e) {
-      clearTimeout(tmr);
-      finish({ ok: false, error: "post_failed", message: String(e?.message || e) });
-    }
-  });
-}
-
 function buildItemFromTab(tab, meta) {
   const url = tab.url || "";
   const isShort = /\/shorts\//i.test(url);
@@ -2974,26 +2893,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_DISMISS_IMPORT_BATCH": {
         sendResponse(await dismissLatestImportBatch());
-        break;
-      }
-      case "TUBESTACK_YTDLP_NATIVE": {
-        const raw = Array.isArray(msg.urls) ? msg.urls.filter((u) => typeof u === "string" && u.trim()) : [];
-        const urls = raw.filter(isYoutubeDownloadUrl);
-        if (!urls.length) {
-          sendResponse({
-            ok: false,
-            error: "no_valid_urls",
-            message: "No valid YouTube watch URLs in the request.",
-          });
-          break;
-        }
-        sendResponse(
-          await nativeYtdlpDownloadRequest({
-            action: "download",
-            preset: String(msg.preset || "mp4").toLowerCase(),
-            urls,
-          })
-        );
         break;
       }
       case "TUBESTACK_REQUEST_HISTORY_PERMISSION": {

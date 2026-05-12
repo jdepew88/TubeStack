@@ -738,21 +738,10 @@ body {
   min-width: 52px;
 }
 
-.playlist-pack-field .playlist-row-theme,
-.playlist-pack-download .playlist-ytdlp-preset {
+.playlist-pack-field .playlist-row-theme {
   flex: 1;
   min-width: 140px;
   max-width: 260px;
-}
-
-.playlist-pack-download {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
 }
 
 .playlist-pack-list--compact {
@@ -785,8 +774,7 @@ body {
 }
 
 .playlist-pack-list--compact .playlist-pack-meta,
-.playlist-pack-list--compact .playlist-pack-field,
-.playlist-pack-list--compact .playlist-pack-download {
+.playlist-pack-list--compact .playlist-pack-field {
   display: none;
 }
 
@@ -1386,19 +1374,6 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
 
 .toolbar {
   margin-bottom: 16px;
-}
-
-.ytdlp-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.ytdlp-code {
-  font-size: 11px;
-  word-break: break-all;
-  color: #b8e0ff;
 }
 
 .toolbar-row {

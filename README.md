@@ -16,7 +16,14 @@
 - Save open YouTube tabs into your library from the toolbar
 - Dashboard: library, playlists, categories, subscriptions scrape, optional AI categorization (OpenAI)
 - Optional **YouTube Data API** and **Google OAuth** for imports / “create on YouTube” flows (keys stay on your device)
-- Optional **yt-dlp native helper** for downloads (see `native-host/INSTALL.txt`)
+
+## Screenshots
+
+README images live in [`assets/`](./assets/). Add your PNGs or GIFs there, then embed them from this file using paths relative to the repo root, for example:
+
+`![TubeStack dashboard](assets/dashboard.png)`
+
+See [`assets/README.md`](./assets/README.md) for a short note on keeping these separate from extension assets.
 
 ## Load unpacked (development)
 
@@ -59,14 +66,10 @@ Replace `tubestack` / URLs with your repo name.
 - **Do not commit** real YouTube API keys, OAuth client secrets, or OpenAI keys. These are stored in extension `chrome.storage.local` after you enter them in Settings.
 - Before the first push, search the tree for accidental secrets (e.g. pasted keys in HTML or JS).
 
-## Optional native messaging host
-
-For dashboard **Download (native helper)**, see **`native-host/INSTALL.txt`**. Edit `native-host/com.tubestack.ytdlp.json` with your absolute paths and extension ID before registering the host.
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
 ## Disclaimer
 
-TubeStack is not affiliated with YouTube or Google. Use features (downloads, API usage) in line with applicable terms and laws.
+TubeStack is not affiliated with YouTube or Google. Use the extension and APIs in line with applicable terms and laws.

@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
   "name": "TubeStack",
-  "version": "0.8.0",
+  "version": "0.9",
   "description": "Save YouTube tabs, triage by theme and time, focus sessions, and resume without losing your place.",
   "icons": {
-    "16": "icons/logo.png",
-    "32": "icons/logo.png",
-    "48": "icons/logo.png",
-    "128": "icons/logo.png"
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "permissions": ["tabs", "storage", "scripting", "identity", "contextMenus", "windows"],
   "optional_permissions": ["history"],
@@ -19,9 +19,8 @@
   ],
   "action": {
     "default_icon": {
-      "16": "icons/logo.png",
-      "32": "icons/logo.png",
-      "48": "icons/logo.png"
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
     },
     "default_title": "TubeStack",
     "default_popup": "popup/popup.html"

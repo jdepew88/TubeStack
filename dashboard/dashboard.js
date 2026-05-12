@@ -123,34 +123,6 @@ function send(type, payload = {}) {
   });
 }
 
-/** One-line yt-dlp CLI for terminal (FFmpeg required for merge / audio extract). */
-function buildYtDlpCliLine(url, preset) {
-  const u = String(url || "").trim();
-  if (!u) return "";
-  const esc = u.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const out = '-o "%(title)s [%(id)s].%(ext)s"';
-  const base = `yt-dlp --no-playlist ${out}`;
-  switch (preset) {
-    case "mkv":
-      return `${base} -f "bv*+ba/b" --merge-output-format mkv "${esc}"`;
-    case "m4a":
-      return `${base} -x --audio-format m4a "${esc}"`;
-    case "mp3":
-      return `${base} -x --audio-format mp3 "${esc}"`;
-    case "opus":
-      return `${base} -x --audio-format opus "${esc}"`;
-    case "mp4":
-    default:
-      return `${base} -f "bv*+ba/b" --merge-output-format mp4 "${esc}"`;
-  }
-}
-
-function getYtdlpUrlsFromLibrarySelection() {
-  const ids = [...selected];
-  if (!ids.length) return [];
-  return allItems.filter((it) => ids.includes(it.id) && it.url).map((it) => it.url);
-}
-
 function formatDuration(sec) {
   if (sec == null || Number.isNaN(sec)) return "—";
   const s = Math.floor(sec);
@@ -421,7 +393,6 @@ const SIDEBAR_SECTION_CONFIG = [
   { id: "aiCategorize", label: "AI categorize" },
   { id: "playlistPack", label: "Focused Playlist" },
   { id: "localPl", label: "Playlist Manager" },
-  { id: "ytdlp", label: "Download (yt-dlp)" },
 ];
 
 function normalizeChannelKey(s) {
@@ -915,7 +886,6 @@ const windowLocalPlaylists = document.getElementById("windowLocalPlaylists");
 const windowSubscriptions = document.getElementById("windowSubscriptions");
 const windowCategories = document.getElementById("windowCategories");
 const windowAiCategorize = document.getElementById("windowAiCategorize");
-const windowDownload = document.getElementById("windowDownload");
 const windowSettings = document.getElementById("windowSettings");
 const windowCurrentControlsMount = document.getElementById("windowCurrentControlsMount");
 const windowCurrentSectionsMount = document.getElementById("windowCurrentSectionsMount");
@@ -925,7 +895,6 @@ const windowLocalPlaylistsMount = document.getElementById("windowLocalPlaylistsM
 const windowSubscriptionsMount = document.getElementById("windowSubscriptionsMount");
 const windowCategoriesMount = document.getElementById("windowCategoriesMount");
 const windowAiCategorizeMount = document.getElementById("windowAiCategorizeMount");
-const windowDownloadMount = document.getElementById("windowDownloadMount");
 const windowSettingsMount = document.getElementById("windowSettingsMount");
 const sidebarRecentTablists = document.getElementById("sidebarRecentTablists");
 const btnRecentTablistsMore = document.getElementById("btnRecentTablistsMore");
@@ -1373,8 +1342,6 @@ async function loadState() {
     oai.value = "";
     oai.placeholder = hasOpenaiKey ? "Key on file — enter only to replace" : "sk-… (optional)";
   }
-  const ytdlpExtId = document.getElementById("ytdlpExtId");
-  if (ytdlpExtId) ytdlpExtId.textContent = chrome.runtime.id || "—";
   if (settings.currentPlaylistName) currentPlaylistName = settings.currentPlaylistName;
   const savedCtxId = String(settings.currentPlaylistId || "").trim();
   if (savedCtxId && localPlaylists.some((x) => x.id === savedCtxId)) activeLocalPlaylistId = savedCtxId;
@@ -1845,14 +1812,6 @@ function buildOpenUrl(it) {
   return base;
 }
 
-const YTDLP_PRESET_OPTIONS = [
-  ["mp4", "MP4"],
-  ["mkv", "MKV"],
-  ["m4a", "M4A"],
-  ["mp3", "MP3"],
-  ["opus", "Opus"],
-];
-
 function bindPlaylistPackDelegation() {
   if (!playlistOut || playlistOut.dataset.packDelegation === "1") return;
   playlistOut.dataset.packDelegation = "1";
@@ -1874,53 +1833,11 @@ function bindPlaylistPackDelegation() {
     if (queued) queued.themeId = themeId;
     render();
   });
-
-  playlistOut.addEventListener("click", async (e) => {
-    const copyBtn = e.target.closest("[data-playlist-ytdlp-copy]");
-    if (copyBtn && playlistOut.contains(copyBtn)) {
-      e.preventDefault();
-      const row = copyBtn.closest(".playlist-pack-item");
-      const url = row?.getAttribute("data-item-url") || "";
-      const preset = row?.querySelector(".playlist-ytdlp-preset")?.value || "mp4";
-      if (!url.trim()) return;
-      const line = buildYtDlpCliLine(url, preset);
-      try {
-        await navigator.clipboard.writeText(line);
-        if (ytdlpStatus) ytdlpStatus.textContent = "Copied yt-dlp command to clipboard.";
-      } catch {
-        if (ytdlpStatus) ytdlpStatus.textContent = "Could not write to clipboard.";
-        alert(line);
-      }
-      return;
-    }
-    const natBtn = e.target.closest("[data-playlist-ytdlp-native]");
-    if (natBtn && playlistOut.contains(natBtn)) {
-      e.preventDefault();
-      const row = natBtn.closest(".playlist-pack-item");
-      const url = row?.getAttribute("data-item-url") || "";
-      const preset = row?.querySelector(".playlist-ytdlp-preset")?.value || "mp4";
-      if (!url.trim()) return;
-      if (ytdlpStatus) ytdlpStatus.textContent = "Starting native yt-dlp helper…";
-      const r = await send("TUBESTACK_YTDLP_NATIVE", { preset, urls: [url] });
-      if (!r?.ok) {
-        const hint =
-          r?.error === "native_host_not_found"
-            ? " Install the native helper (native-host/INSTALL.txt) or use Copy yt-dlp."
-            : "";
-        if (ytdlpStatus) ytdlpStatus.textContent = (r?.message || r?.error || "Download failed.") + hint;
-        return;
-      }
-      const okn = (r.results || []).filter((x) => x.ok).length;
-      const folder = r.output_folder || "Downloads/TubeStack";
-      if (ytdlpStatus) ytdlpStatus.textContent = `Done: ${okn}/1 ok → ${folder}`;
-    }
-  });
 }
 
 function createPlaylistPackRow(it) {
   const row = document.createElement("div");
   row.className = "playlist-pack-item";
-  row.setAttribute("data-item-url", it.url || "");
 
   const thumb = document.createElement("img");
   thumb.className = "playlist-pack-thumb";
@@ -1953,41 +1870,11 @@ function createPlaylistPackRow(it) {
   themeRow.appendChild(labTh);
   themeRow.appendChild(selTh);
 
-  const dl = document.createElement("div");
-  dl.className = "playlist-pack-download";
-  const labDl = document.createElement("span");
-  labDl.className = "playlist-pack-label";
-  labDl.textContent = "Download";
-  const preset = document.createElement("select");
-  preset.className = "playlist-ytdlp-preset oobe-input";
-  for (const [v, lab] of YTDLP_PRESET_OPTIONS) {
-    const o = document.createElement("option");
-    o.value = v;
-    o.textContent = lab;
-    preset.appendChild(o);
-  }
-  const btnCopy = document.createElement("button");
-  btnCopy.type = "button";
-  btnCopy.className = "btn small";
-  btnCopy.textContent = "Copy yt-dlp";
-  btnCopy.setAttribute("data-playlist-ytdlp-copy", "1");
-  const btnNat = document.createElement("button");
-  btnNat.type = "button";
-  btnNat.className = "btn small primary";
-  btnNat.textContent = "Download";
-  btnNat.title = "Download via native yt-dlp helper (if installed)";
-  btnNat.setAttribute("data-playlist-ytdlp-native", "1");
-  dl.appendChild(labDl);
-  dl.appendChild(preset);
-  dl.appendChild(btnCopy);
-  dl.appendChild(btnNat);
-
   const main = document.createElement("div");
   main.className = "playlist-pack-main";
   main.appendChild(title);
   main.appendChild(meta);
   main.appendChild(themeRow);
-  main.appendChild(dl);
 
   row.appendChild(thumb);
   row.appendChild(main);
@@ -2610,7 +2497,6 @@ function setActiveWindow(next) {
     subscriptions: windowSubscriptions,
     categories: windowCategories,
     aiCategorize: windowAiCategorize,
-    download: windowDownload,
     settings: windowSettings,
   };
   for (const [id, el] of Object.entries(panels)) {
@@ -2809,8 +2695,6 @@ function setupWindowLayout() {
   if (catSection) windowCategoriesMount?.appendChild(catSection);
   const aiCatSection = document.querySelector('[data-sidebar-section="aiCategorize"]');
   if (aiCatSection) windowAiCategorizeMount?.appendChild(aiCatSection);
-  const dlSection = document.querySelector('[data-sidebar-section="ytdlp"]');
-  if (dlSection) windowDownloadMount?.appendChild(dlSection);
   const settingsSection = document.querySelector('[data-sidebar-section="settings"]');
   if (settingsSection) windowSettingsMount?.appendChild(settingsSection);
 }
@@ -3694,53 +3578,6 @@ btnDismissImportPanel?.addEventListener("click", async () => {
   latestKnownBatchId = null;
   latestImportHiddenGenres.clear();
   renderLatestImportPanel();
-});
-
-const ytdlpPreset = document.getElementById("ytdlpPreset");
-const btnYtdlpCopy = document.getElementById("btnYtdlpCopy");
-const btnYtdlpNative = document.getElementById("btnYtdlpNative");
-const ytdlpStatus = document.getElementById("ytdlpStatus");
-
-btnYtdlpCopy?.addEventListener("click", async () => {
-  const preset = ytdlpPreset?.value || "mp4";
-  const urls = getYtdlpUrlsFromLibrarySelection();
-  if (!urls.length) {
-    alert("Check one or more videos in the library list first.");
-    return;
-  }
-  const lines = urls.map((u) => buildYtDlpCliLine(u, preset)).join("\n");
-  try {
-    await navigator.clipboard.writeText(lines);
-    if (ytdlpStatus) ytdlpStatus.textContent = `Copied ${urls.length} command(s) to clipboard. Paste into a terminal.`;
-  } catch {
-    if (ytdlpStatus) ytdlpStatus.textContent = "Could not write to clipboard — copy manually from the alert.";
-    alert(lines);
-  }
-});
-
-btnYtdlpNative?.addEventListener("click", async () => {
-  const preset = ytdlpPreset?.value || "mp4";
-  const urls = getYtdlpUrlsFromLibrarySelection();
-  if (!urls.length) {
-    alert("Check one or more videos in the library list first.");
-    return;
-  }
-  if (ytdlpStatus) ytdlpStatus.textContent = "Starting native yt-dlp helper…";
-  const r = await send("TUBESTACK_YTDLP_NATIVE", { preset, urls });
-  if (!r?.ok) {
-    const hint =
-      r?.error === "native_host_not_found"
-        ? " Install the native helper (native-host/INSTALL.txt) or use Copy yt-dlp commands."
-        : "";
-    if (ytdlpStatus) ytdlpStatus.textContent = (r?.message || r?.error || "Download failed.") + hint;
-    return;
-  }
-  const okn = (r.results || []).filter((x) => x.ok).length;
-  const bad = (r.results || []).filter((x) => !x.ok);
-  const folder = r.output_folder || "Downloads/TubeStack";
-  if (ytdlpStatus) {
-    ytdlpStatus.textContent = `Done: ${okn}/${urls.length} ok → ${folder}${bad.length ? ` (${bad.length} failed — check FFmpeg & yt-dlp).` : ""}`;
-  }
 });
 
 btnFocusStart.addEventListener("click", async () => {

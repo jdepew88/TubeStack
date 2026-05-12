@@ -236,7 +236,6 @@
           </div>
           <button type="button" class="sidebar-win-btn" data-window-target="aiCategorize">AI categorize</button>
           <button type="button" class="sidebar-win-btn" data-window-target="subscriptions">Subbed Channels</button>
-          <button type="button" class="sidebar-win-btn" data-window-target="download">Download</button>
           <button type="button" class="sidebar-win-btn" data-window-target="localPlaylists">Playlist Manager</button>
           <button type="button" class="sidebar-win-btn" data-window-target="usage">Usage Graphs</button>
           <button type="button" class="sidebar-win-btn" data-window-target="settings">Settings</button>
@@ -486,33 +485,6 @@
           <button type="button" id="btnDelete" class="btn small danger">Remove selected</button>
           <button type="button" id="btnDeleteLocalPlaylist" class="btn small danger hidden">Delete playlist</button>
         </div>
-
-        <section class="panel-block" data-sidebar-section="ytdlp">
-          <span class="label">Download (yt-dlp)</span>
-          <p class="panel-hint">
-            <a href="https://github.com/yt-dlp/yt-dlp#embedding-yt-dlp" target="_blank" rel="noopener noreferrer">yt-dlp</a>
-            can merge video+audio to <strong>MP4</strong> or <strong>MKV</strong>, or extract <strong>AAC/M4A</strong>,
-            <strong>MP3</strong>, or <strong>Opus</strong>. Requires FFmpeg on your system for merge / transcode. Only
-            download what you have the right to keep.
-          </p>
-          <label class="ob-label" for="ytdlpPreset">Format</label>
-          <select id="ytdlpPreset" class="oobe-input">
-            <option value="mp4">Video — MP4 (best video + audio)</option>
-            <option value="mkv">Video — MKV (best video + audio)</option>
-            <option value="m4a">Audio — AAC / M4A</option>
-            <option value="mp3">Audio — MP3</option>
-            <option value="opus">Audio — Opus</option>
-          </select>
-          <div class="ytdlp-actions">
-            <button type="button" id="btnYtdlpCopy" class="btn small">Copy yt-dlp commands</button>
-            <button type="button" id="btnYtdlpNative" class="btn small primary">Download (native helper)</button>
-          </div>
-          <p id="ytdlpStatus" class="stat-line small" role="status"></p>
-          <p class="panel-hint">
-            <strong>Native helper</strong> (optional): Python host embeds yt-dlp — see <code>native-host/INSTALL.txt</code>.
-            This extension ID: <code id="ytdlpExtId" class="ytdlp-code">—</code>
-          </p>
-        </section>
 
         <section class="panel-block" data-sidebar-section="settings">
           <span class="label">Settings</span>
@@ -886,11 +858,6 @@
         <section id="windowAiCategorize" class="window-panel hidden" data-window="aiCategorize">
           <h3 class="window-title">AI categorize</h3>
           <div id="windowAiCategorizeMount" class="window-sections-mount"></div>
-        </section>
-
-        <section id="windowDownload" class="window-panel hidden" data-window="download">
-          <h3 class="window-title">Download</h3>
-          <div id="windowDownloadMount" class="window-sections-mount"></div>
         </section>
 
         <section id="windowSettings" class="window-panel hidden" data-window="settings">

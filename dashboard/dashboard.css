@@ -1945,6 +1945,80 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
   margin-top: 18px;
 }
 
+.settings-section-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 14px 12px;
+  margin-top: 14px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.settings-section-card:first-of-type {
+  margin-top: 10px;
+}
+
+.settings-section-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.settings-section-lead {
+  margin-top: 0;
+}
+
+.settings-subhead-sm {
+  margin: 4px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e4edff;
+}
+
+.settings-integration-block {
+  margin-top: 4px;
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+.settings-divider-major {
+  margin: 18px 0 14px;
+}
+
+.settings-section-setup .settings-oobe-actions {
+  margin-top: 4px;
+}
+
+.settings-section-integrations .oauth-redirect {
+  margin: 6px 0 10px;
+}
+
+.watch-history-opens {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.watch-history-hint {
+  margin: 6px 0 4px;
+  font-size: 12px;
+}
+
+.watch-history-meta {
+  margin: -6px 0 10px;
+  min-height: 1.2em;
+}
+
+.watch-bars-history .watch-bar-fill {
+  background: linear-gradient(180deg, #8ab8ff, #3d6cad);
+}
+
 .settings-youtube-api-actions,
 .settings-oauth-actions,
 .settings-youtube-import-actions,

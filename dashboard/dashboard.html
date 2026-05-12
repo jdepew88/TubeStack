@@ -263,12 +263,12 @@
           <p id="historySummary" class="stat-line small">—</p>
           <button type="button" id="btnHistoryScan" class="btn small">Refresh history tally</button>
           <p class="panel-hint">Niche labels from history use the same permission — run from the toolbar button <strong>Categories from history…</strong> (not shown here).</p>
-          <p class="panel-hint">In-player watch time chart opens in a separate window.</p>
+          <p class="panel-hint">Usage Graphs (toolbar) includes watch time plus optional Chrome history open counts.</p>
         </section>
 
         <section class="panel-block" data-sidebar-section="watchAnalytics">
           <span class="label">YouTube watch time</span>
-          <p class="panel-hint">Open watch-time charts in a separate window.</p>
+          <p class="panel-hint">Open <strong>Usage Graphs</strong> for in-player watch time and optional Chrome history open counts.</p>
           <button type="button" id="btnWatchAnalytics" class="btn small">Open watch-time window</button>
         </section>
 
@@ -505,174 +505,204 @@
 
         <section class="panel-block" data-sidebar-section="settings">
           <span class="label">Settings</span>
-          <p class="panel-hint">Show or hide sidebar blocks. “Library” is the aggregate 3-column browser page.</p>
-          <div id="sidebarVisibilityHost" class="sidebar-visibility-host"></div>
+          <p class="panel-hint">Tune the sidebar and external connections. “Library” is the aggregate 3-column browser page.</p>
 
-          <span class="label settings-sub-label">YouTube Data API</span>
-          <p class="panel-hint">
-            Used for channel scans and public metadata. Stored only on this device (same key as onboarding).
-          </p>
-          <label class="ob-label" for="settingsYoutubeApiKey">API key</label>
-          <input
-            type="password"
-            id="settingsYoutubeApiKey"
-            class="oobe-input"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="AIza…"
-          />
-          <p class="panel-hint ob-muted" id="settingsYoutubeKeyHint">Enter only to add or replace a stored key.</p>
-          <div class="settings-youtube-api-actions">
-            <button type="button" id="btnSaveYoutubeApiKey" class="btn small">Save API key</button>
-            <button type="button" id="btnTestYoutubeApiKey" class="btn small ghost">Test API key</button>
-            <button
-              type="button"
-              id="btnClearYoutubeApiKey"
-              class="btn small danger ghost"
-              title="Deletes the YouTube Data API v3 key from chrome.storage.local on this device only. Does not change your Google Cloud project."
-            >
-              Remove YouTube Data API key
-            </button>
+          <div class="settings-section-card">
+            <h3 class="settings-section-title">Layout</h3>
+            <p class="panel-hint">Show or hide sidebar blocks in the main dashboard.</p>
+            <div id="sidebarVisibilityHost" class="sidebar-visibility-host"></div>
           </div>
-          <p id="youtubeApiKeyTestStatus" class="stat-line small settings-test-status" role="status"></p>
 
-          <span class="label settings-sub-label">YouTube OAuth (playlist creation)</span>
-          <p class="panel-hint">
-            Create playlists on your signed-in Google account from saved queues. In Google Cloud Console, use an OAuth
-            client of type <strong>Web application</strong> and add this authorized redirect URI (from
-            <code>chrome.identity</code> — paste exactly into Google Cloud “Authorized redirect URIs”):
-          </p>
-          <code id="oauthRedirectDisplay" class="oauth-redirect">—</code>
-          <p class="panel-hint ob-muted">
-            A Google sign-in tab opens only when you click <strong>Test Google sign-in</strong>, sync subscriptions, open
-            the YouTube playlist importer, or save a queue to YouTube — not automatically in the background. TubeStack
-            requests <code>https://www.googleapis.com/auth/youtube</code> (full YouTube account access) so it can create
-            playlists and read your subscriptions/playlists; read-only scopes cannot create playlists, so they are not
-            used here. OAuth tokens are sent only to Google, not to any TubeStack server.
-          </p>
-          <label class="ob-label" for="oauthClientId">OAuth 2.0 Client ID</label>
-          <input
-            type="text"
-            id="oauthClientId"
-            class="oobe-input oauth-input"
-            spellcheck="false"
-            autocomplete="off"
-            placeholder="xxxx.apps.googleusercontent.com"
-          />
-          <div class="settings-oauth-actions">
-            <button type="button" id="btnSaveOAuth" class="btn small">Save Client ID</button>
-            <button type="button" id="btnTestYoutubeOAuth" class="btn small ghost">Test Google sign-in</button>
-            <button
-              type="button"
-              id="btnSignOutGoogleSession"
-              class="btn small danger ghost"
-              title="Clears TubeStack’s in-memory Google OAuth access token in this extension. Your saved OAuth Web Client ID stays on this device until you remove it below."
-            >
-              Sign out of Google (clear session)
-            </button>
-            <button
-              type="button"
-              id="btnClearYoutubeOAuth"
-              class="btn small danger ghost"
-              title="Deletes the saved OAuth 2.0 Web application Client ID from chrome.storage.local and clears the in-memory Google token cache. Does not delete your Google account."
-            >
-              Remove OAuth Client ID
-            </button>
-          </div>
-          <p id="youtubeOAuthTestStatus" class="stat-line small settings-test-status" role="status"></p>
+          <div class="settings-section-card settings-section-integrations">
+            <h3 class="settings-section-title">Integrations</h3>
+            <p class="panel-hint settings-section-lead">
+              Connect your own cloud projects here. Keys and Client IDs stay in <strong>Chrome extension storage on this
+              device</strong>; requests go <strong>directly</strong> from the browser to Google or OpenAI when you use a
+              feature that needs them — not through a TubeStack backend.
+            </p>
 
-          <span class="label settings-sub-label">YouTube saved playlists (back catalog)</span>
-          <p class="panel-hint">
-            Open the chooser to <strong>list</strong> playlists, <strong>preview</strong> video title and channel, then
-            <strong>import only what you select</strong>. Each playlist becomes a historical snapshot; videos get an
-            <strong>Album</strong> field matching that playlist name. Re-importing replaces the prior YouTube import
-            catalog.
-          </p>
-          <label class="modal-checkbox"
-            ><input type="checkbox" id="libShowYoutubeImported" checked /> Show imported back catalog in Playlist Manager,
-            sidebar, and Playlist home</label
-          >
-          <p class="panel-hint ob-muted">
-            Turn off to focus on <strong>recent browser-tab sessions</strong> and hide imported playlists everywhere
-            except this Settings control.
-          </p>
-          <div class="settings-youtube-import-actions">
-            <button type="button" id="btnImportYoutubePlaylists" class="btn small primary">
-              Choose playlists to import…
-            </button>
-          </div>
-          <p id="youtubeImportPlaylistsStatus" class="stat-line small settings-test-status" role="status"></p>
+            <div class="settings-integration-block">
+              <h4 class="settings-subhead-sm">Google (YouTube)</h4>
+              <p class="panel-hint">
+                <strong>Data API key</strong> — import and analyze public metadata (channel scans, tags, etc.).
+                <strong>OAuth Web Client ID</strong> — sign in to your Google account for playlists, subscription sync, and
+                importing playlists you choose.
+              </p>
+              <label class="ob-label" for="settingsYoutubeApiKey">YouTube Data API key</label>
+              <input
+                type="password"
+                id="settingsYoutubeApiKey"
+                class="oobe-input"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="AIza…"
+              />
+              <p class="panel-hint ob-muted" id="settingsYoutubeKeyHint">Enter only to add or replace a stored key.</p>
+              <div class="settings-youtube-api-actions">
+                <button type="button" id="btnSaveYoutubeApiKey" class="btn small">Save API key</button>
+                <button type="button" id="btnTestYoutubeApiKey" class="btn small ghost">Test API key</button>
+                <button
+                  type="button"
+                  id="btnClearYoutubeApiKey"
+                  class="btn small danger ghost"
+                  title="Deletes the YouTube Data API v3 key from chrome.storage.local on this device only. Does not change your Google Cloud project."
+                >
+                  Remove YouTube Data API key
+                </button>
+              </div>
+              <p id="youtubeApiKeyTestStatus" class="stat-line small settings-test-status" role="status"></p>
 
-          <label class="ob-label" for="settingsOpenaiKey">OpenAI API key (optional, for AI category rebuild)</label>
-          <input type="password" id="settingsOpenaiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
-          <p class="panel-hint ob-muted">
-            Stored only in this browser’s <code>chrome.storage.local</code>. The key is never sent to TubeStack — only
-            in the <code>Authorization</code> header to <strong>api.openai.com</strong> when you explicitly run Test, AI
-            categorize, or an OpenAI history rebuild.
-          </p>
-          <div class="settings-openai-actions">
-            <button type="button" id="btnSaveOpenaiKey" class="btn small">Save OpenAI key</button>
-            <button type="button" id="btnTestOpenaiConnection" class="btn small ghost">Test API connection</button>
-            <button
-              type="button"
-              id="btnClearOpenaiKey"
-              class="btn small danger ghost"
-              title="Deletes the OpenAI API key from chrome.storage.local on this device. Does not change your OpenAI account."
-            >
-              Remove OpenAI API key
-            </button>
-          </div>
-          <p id="openaiTestStatus" class="stat-line small openai-test-status" role="status"></p>
-          <p class="panel-hint ob-muted">
-            <strong>Test</strong> calls OpenAI (models list + a 2-token completion). If your account exposes it, we also
-            request prepaid <strong>credit balance</strong>. Otherwise we only show <strong>rolling rate limits</strong>
-            (requests/tokens left in the current short window — not the same as monthly quota).
-          </p>
+              <hr class="settings-divider" />
 
-          <span class="label settings-sub-label">Data &amp; privacy</span>
-          <p class="panel-hint">
-            These actions run only when you click and confirm. They affect this browser profile’s extension storage (and
-            in-memory Google OAuth when noted), not your YouTube or Google account in the cloud.
-          </p>
-          <div class="settings-data-actions">
-            <button
-              type="button"
-              id="btnEraseLocalLibrary"
-              class="btn small danger"
-              title="Removes all saved library videos, per-video watch progress, daily watch tallies, every local playlist snapshot, import triage metadata, and the last YouTube channel scan summary from this device. Keeps API keys, OAuth Client ID, themes/categories, and the Subbed Channels list unless you use the next button."
-            >
-              Delete saved videos, progress &amp; local playlists…
-            </button>
-            <button
-              type="button"
-              id="btnClearSubscriptionDirectory"
-              class="btn small danger ghost"
-              title="Clears the Subbed Channels list stored in chrome.storage.local on this device. You can sync again from YouTube later."
-            >
-              Clear Subbed Channels list…
-            </button>
-            <button
-              type="button"
-              id="btnClearOpenaiClassifyCache"
-              class="btn small danger ghost"
-              title="Deletes TubeStack’s local OpenAI title-classification cache (openAiHistoryClassifyV1). Does not remove your videos, themes, or API keys."
-            >
-              Clear AI categorization cache…
-            </button>
-          </div>
-          <p id="dataPrivacyStatus" class="stat-line small settings-test-status" role="status"></p>
+              <p class="panel-hint">
+                OAuth: in Google Cloud Console create a <strong>Web application</strong> client and add this authorized
+                redirect URI (from <code>chrome.identity</code> — paste exactly into “Authorized redirect URIs”):
+              </p>
+              <code id="oauthRedirectDisplay" class="oauth-redirect">—</code>
+              <p class="panel-hint ob-muted">
+                Google sign-in opens only when you use a feature that needs it (test sign-in, subscription sync, playlist
+                import, save queue to YouTube). TubeStack requests
+                <code>https://www.googleapis.com/auth/youtube</code> so it can create playlists and read your
+                subscriptions/playlists. Tokens go to Google only, not to any TubeStack server.
+              </p>
+              <label class="ob-label" for="oauthClientId">OAuth 2.0 Web Client ID</label>
+              <input
+                type="text"
+                id="oauthClientId"
+                class="oobe-input oauth-input"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="xxxx.apps.googleusercontent.com"
+              />
+              <div class="settings-oauth-actions">
+                <button type="button" id="btnSaveOAuth" class="btn small">Save Client ID</button>
+                <button type="button" id="btnTestYoutubeOAuth" class="btn small ghost">Test Google sign-in</button>
+                <button
+                  type="button"
+                  id="btnSignOutGoogleSession"
+                  class="btn small danger ghost"
+                  title="Clears TubeStack’s in-memory Google OAuth access token in this extension. Your saved OAuth Web Client ID stays on this device until you remove it below."
+                >
+                  Sign out of Google (clear session)
+                </button>
+                <button
+                  type="button"
+                  id="btnClearYoutubeOAuth"
+                  class="btn small danger ghost"
+                  title="Deletes the saved OAuth 2.0 Web application Client ID from chrome.storage.local and clears the in-memory Google token cache. Does not delete your Google account."
+                >
+                  Remove OAuth Client ID
+                </button>
+              </div>
+              <p id="youtubeOAuthTestStatus" class="stat-line small settings-test-status" role="status"></p>
+            </div>
 
-          <div class="settings-oobe-actions">
-            <button type="button" id="btnRunOobeAgain" class="btn small">Run setup wizard again</button>
-            <a
-              class="btn small ghost"
-              href="setup-guide.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              >Setup guide (Google &amp; OpenAI)</a
-            >
+            <hr class="settings-divider settings-divider-major" />
+
+            <div class="settings-integration-block">
+              <h4 class="settings-subhead-sm">OpenAI</h4>
+              <p class="panel-hint">Optional API key for AI categorization and related tools. Used only when you run those features.</p>
+              <label class="ob-label" for="settingsOpenaiKey">OpenAI API key</label>
+              <input type="password" id="settingsOpenaiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+              <p class="panel-hint ob-muted">
+                Stored only in this browser’s <code>chrome.storage.local</code>. The key is never sent to TubeStack — only
+                in the <code>Authorization</code> header to <strong>api.openai.com</strong> when you explicitly run Test,
+                AI categorize, or an OpenAI history rebuild.
+              </p>
+              <div class="settings-openai-actions">
+                <button type="button" id="btnSaveOpenaiKey" class="btn small">Save OpenAI key</button>
+                <button type="button" id="btnTestOpenaiConnection" class="btn small ghost">Test API connection</button>
+                <button
+                  type="button"
+                  id="btnClearOpenaiKey"
+                  class="btn small danger ghost"
+                  title="Deletes the OpenAI API key from chrome.storage.local on this device. Does not change your OpenAI account."
+                >
+                  Remove OpenAI API key
+                </button>
+              </div>
+              <p id="openaiTestStatus" class="stat-line small openai-test-status" role="status"></p>
+              <p class="panel-hint ob-muted">
+                <strong>Test</strong> calls OpenAI (models list + a 2-token completion). If your account exposes it, we also
+                request prepaid <strong>credit balance</strong>. Otherwise we only show <strong>rolling rate limits</strong>
+                (requests/tokens left in the current short window — not the same as monthly quota).
+              </p>
+            </div>
           </div>
-          <p class="panel-hint ob-muted">Re-opens onboarding without deleting your library. Finish or skip to return.</p>
+
+          <div class="settings-section-card">
+            <h3 class="settings-section-title">YouTube playlist import</h3>
+            <p class="panel-hint">
+              Open the chooser to <strong>list</strong> playlists, <strong>preview</strong> video title and channel, then
+              <strong>import only what you select</strong>. Each playlist becomes a historical snapshot; videos get an
+              <strong>Album</strong> field matching that playlist name. Re-importing replaces the prior YouTube import
+              catalog.
+            </p>
+            <label class="modal-checkbox"
+              ><input type="checkbox" id="libShowYoutubeImported" checked /> Show imported back catalog in Playlist Manager,
+              sidebar, and Playlist home</label
+            >
+            <p class="panel-hint ob-muted">
+              Turn off to focus on <strong>recent browser-tab sessions</strong> and hide imported playlists everywhere
+              except this Settings control.
+            </p>
+            <div class="settings-youtube-import-actions">
+              <button type="button" id="btnImportYoutubePlaylists" class="btn small primary">
+                Choose playlists to import…
+              </button>
+            </div>
+            <p id="youtubeImportPlaylistsStatus" class="stat-line small settings-test-status" role="status"></p>
+          </div>
+
+          <div class="settings-section-card">
+            <h3 class="settings-section-title">Data &amp; privacy</h3>
+            <p class="panel-hint">
+              These actions run only when you click and confirm. They affect this browser profile’s extension storage (and
+              in-memory Google OAuth when noted), not your YouTube or Google account in the cloud.
+            </p>
+            <div class="settings-data-actions">
+              <button
+                type="button"
+                id="btnEraseLocalLibrary"
+                class="btn small danger"
+                title="Removes all saved library videos, per-video watch progress, daily watch tallies, every local playlist snapshot, import triage metadata, and the last YouTube channel scan summary from this device. Keeps API keys, OAuth Client ID, themes/categories, and the Subbed Channels list unless you use the next button."
+              >
+                Delete saved videos, progress &amp; local playlists…
+              </button>
+              <button
+                type="button"
+                id="btnClearSubscriptionDirectory"
+                class="btn small danger ghost"
+                title="Clears the Subbed Channels list stored in chrome.storage.local on this device. You can sync again from YouTube later."
+              >
+                Clear Subbed Channels list…
+              </button>
+              <button
+                type="button"
+                id="btnClearOpenaiClassifyCache"
+                class="btn small danger ghost"
+                title="Deletes TubeStack’s local OpenAI title-classification cache (openAiHistoryClassifyV1). Does not remove your videos, themes, or API keys."
+              >
+                Clear AI categorization cache…
+              </button>
+            </div>
+            <p id="dataPrivacyStatus" class="stat-line small settings-test-status" role="status"></p>
+          </div>
+
+          <div class="settings-section-card settings-section-setup">
+            <h3 class="settings-section-title">Setup</h3>
+            <div class="settings-oobe-actions">
+              <button type="button" id="btnRunOobeAgain" class="btn small">Run setup wizard again</button>
+              <a
+                class="btn small ghost"
+                href="setup-guide.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Setup guide (Google &amp; OpenAI)</a
+              >
+            </div>
+            <p class="panel-hint ob-muted">Re-opens onboarding without deleting your library. Finish or skip to return.</p>
+          </div>
         </section>
 
         <p class="hint">Tip: Pin this tab while triaging a long session.</p>
@@ -895,8 +925,13 @@
           <div id="windowUsageMount" class="window-sections-mount"></div>
           <section class="watch-analytics" aria-labelledby="watchHeading">
             <div class="watch-analytics-head">
-              <h3 id="watchHeading" class="watch-heading">YouTube watch time</h3>
-              <p class="watch-sub">In-player time tracked on this device (TubeStack content script on watch pages).</p>
+              <h3 id="watchHeading" class="watch-heading">Watch time (this extension)</h3>
+              <p class="watch-sub">
+                TubeStack records <strong>active in-tab playback time</strong> on YouTube watch/shorts pages while this
+                extension is installed (not a download of your entire Google watch history). YouTube’s public Data API
+                does not expose per-viewer “minutes watched in history” the way a studio analytics product would, so
+                this chart is the accurate on-device signal for time spent with the player playing.
+              </p>
             </div>
             <div class="watch-controls">
               <div class="watch-range-pills" role="tablist" aria-label="Date range">
@@ -929,6 +964,29 @@
             <div id="watchChartHost" class="watch-chart-host">
               <div id="watchChartEmpty" class="watch-chart-empty hidden">No watch time logged for this range yet.</div>
               <div id="watchBars" class="watch-bars" aria-hidden="true"></div>
+            </div>
+          </section>
+
+          <section class="watch-analytics watch-history-opens" aria-labelledby="historyOpensHeading">
+            <div class="watch-analytics-head">
+              <h3 id="historyOpensHeading" class="watch-heading">YouTube page opens (Chrome history)</h3>
+              <p class="watch-sub">
+                For a second view, TubeStack can <strong>count how often</strong> you opened watch or Shorts URLs in
+                Chrome’s <strong>local browsing history</strong> (optional permission). That is <strong>not</strong> the
+                same as watch minutes—use the chart above for playback time tracked by TubeStack.
+              </p>
+            </div>
+            <p id="watchHistoryHint" class="watch-history-hint ob-muted">
+              Pick the same date range as above, then load. Large ranges may be summarized from a sample of URLs.
+            </p>
+            <div class="watch-history-actions">
+              <button type="button" id="btnWatchHistoryOpensRefresh" class="btn small">Load page-open counts</button>
+            </div>
+            <p id="watchHistoryTotalLine" class="watch-total">—</p>
+            <p id="watchHistoryMeta" class="stat-line small watch-history-meta ob-muted hidden"></p>
+            <div id="watchHistoryChartHost" class="watch-chart-host">
+              <div id="watchHistoryChartEmpty" class="watch-chart-empty hidden">—</div>
+              <div id="watchHistoryBars" class="watch-bars watch-bars-history hidden" aria-hidden="true"></div>
             </div>
           </section>
         </section>

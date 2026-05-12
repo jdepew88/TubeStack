@@ -53,6 +53,9 @@ let playlistViewVideoIds = null;
 /** @type {{ id: string; name: string } | null} */
 let playlistViewMeta = null;
 let watchRangeMode = "day";
+/** null = Chrome history chart not loaded for the current range yet. */
+let historyOpensByDay = null;
+let historyOpensMeta = null;
 /** Genres hidden from the “latest import” triage list (labels). */
 const latestImportHiddenGenres = new Set();
 let latestKnownBatchId = null;
@@ -239,6 +242,46 @@ function buildWatchSeries() {
   }));
 }
 
+function getWatchRangeBoundsMs() {
+  const now = new Date();
+  if (watchRangeMode === "day") {
+    const v = document.getElementById("watchDayPick")?.value;
+    const d = parseYMDSafe(v) || now;
+    const fromMs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+    const toMs = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    return { fromMs, toMs };
+  }
+  if (watchRangeMode === "week") {
+    const v = document.getElementById("watchWeekOf")?.value;
+    const d = parseYMDSafe(v) || now;
+    const mon = mondayOfWeekContaining(d);
+    const fromMs = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate(), 0, 0, 0, 0).getTime();
+    const toMs = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6, 23, 59, 59, 999).getTime();
+    return { fromMs, toMs };
+  }
+  if (watchRangeMode === "month") {
+    const v = document.getElementById("watchMonthPick")?.value || "";
+    const parts = v.split("-").map((x) => parseInt(x, 10));
+    const y = parts[0] || now.getFullYear();
+    const mo = (parts[1] || now.getMonth() + 1) - 1;
+    const fromMs = new Date(y, mo, 1, 0, 0, 0, 0).getTime();
+    const last = new Date(y, mo + 1, 0).getDate();
+    const toMs = new Date(y, mo, last, 23, 59, 59, 999).getTime();
+    return { fromMs, toMs };
+  }
+  const from = document.getElementById("watchFrom")?.value;
+  const to = document.getElementById("watchTo")?.value;
+  const a = parseYMDSafe(from);
+  const b = parseYMDSafe(to);
+  if (!a || !b) {
+    const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0).getTime();
+    return { fromMs: t0, toMs: now.getTime() };
+  }
+  const fromMs = new Date(a.getFullYear(), a.getMonth(), a.getDate(), 0, 0, 0, 0).getTime();
+  const toMs = new Date(b.getFullYear(), b.getMonth(), b.getDate(), 23, 59, 59, 999).getTime();
+  return { fromMs, toMs };
+}
+
 function updateWatchPickerVisibility() {
   document.getElementById("watchPickDay")?.classList.toggle("hidden", watchRangeMode !== "day");
   document.getElementById("watchPickWeek")?.classList.toggle("hidden", watchRangeMode !== "week");
@@ -254,6 +297,18 @@ function setWatchRange(mode) {
   });
   updateWatchPickerVisibility();
   renderWatchAnalytics();
+  invalidateHistoryOpensCache();
+}
+
+function invalidateHistoryOpensCache() {
+  historyOpensByDay = null;
+  historyOpensMeta = null;
+  const metaEl = document.getElementById("watchHistoryMeta");
+  if (metaEl) {
+    metaEl.textContent = "";
+    metaEl.classList.add("hidden");
+  }
+  renderHistoryOpensChart();
 }
 
 function initWatchDateDefaults() {
@@ -318,6 +373,126 @@ function renderWatchAnalytics() {
     col.appendChild(lab);
     col.appendChild(val);
     bars.appendChild(col);
+  }
+}
+
+function renderHistoryOpensChart() {
+  const series = buildWatchSeries();
+  const totalEl = document.getElementById("watchHistoryTotalLine");
+  const bars = document.getElementById("watchHistoryBars");
+  const empty = document.getElementById("watchHistoryChartEmpty");
+  const metaEl = document.getElementById("watchHistoryMeta");
+  if (!bars || !empty || !totalEl) return;
+  bars.innerHTML = "";
+  if (historyOpensByDay == null) {
+    empty.textContent =
+      "Click “Load page-open counts” to analyze Chrome history for this range (optional history permission).";
+    empty.classList.remove("hidden");
+    bars.classList.add("hidden");
+    totalEl.textContent = "—";
+    if (metaEl) {
+      metaEl.textContent = "";
+      metaEl.classList.add("hidden");
+    }
+    return;
+  }
+  if (!series.length) {
+    empty.textContent = "Choose a valid custom date range (from ≤ to, max 90 days).";
+    empty.classList.remove("hidden");
+    bars.classList.add("hidden");
+    totalEl.textContent = "—";
+    if (metaEl) {
+      metaEl.textContent = "";
+      metaEl.classList.add("hidden");
+    }
+    return;
+  }
+  const counts = series.map((pt) => historyOpensByDay[pt.key] || 0);
+  const total = counts.reduce((a, x) => a + x, 0);
+  if (metaEl && historyOpensMeta && (historyOpensMeta.capped || historyOpensMeta.urlCapHit)) {
+    metaEl.textContent = `Based on up to ${historyOpensMeta.urlsScanned || 0} distinct watch URLs in Chrome history (sample cap may omit some activity).`;
+    metaEl.classList.remove("hidden");
+  } else if (metaEl) {
+    metaEl.textContent = "";
+    metaEl.classList.add("hidden");
+  }
+  const plural = series.length === 1 ? "day" : "days";
+  totalEl.textContent = `Total opens: ${total.toLocaleString()} · ${series.length} ${plural} in view`;
+  empty.classList.add("hidden");
+  bars.classList.remove("hidden");
+  const max = Math.max(1, ...counts);
+  for (let i = 0; i < series.length; i++) {
+    const pt = series[i];
+    const n = counts[i];
+    const pct = (n / max) * 100;
+    const col = document.createElement("div");
+    col.className = "watch-col";
+    const track = document.createElement("div");
+    track.className = "watch-bar-track";
+    const fill = document.createElement("div");
+    fill.className = "watch-bar-fill";
+    fill.style.height = `${pct}%`;
+    fill.title = `${pt.key}: ${n} opens`;
+    const lab = document.createElement("div");
+    lab.className = "watch-col-label";
+    lab.textContent = pt.label;
+    const val = document.createElement("div");
+    val.className = "watch-col-val";
+    val.textContent = String(n);
+    track.appendChild(fill);
+    col.appendChild(track);
+    col.appendChild(lab);
+    col.appendChild(val);
+    bars.appendChild(col);
+  }
+}
+
+async function refreshWatchHistoryOpens() {
+  const btn = document.getElementById("btnWatchHistoryOpensRefresh");
+  const empty = document.getElementById("watchHistoryChartEmpty");
+  if (btn) btn.disabled = true;
+  try {
+    let hasHist = await chrome.permissions.contains({ permissions: ["history"] });
+    if (!hasHist) {
+      try {
+        hasHist = await chrome.permissions.request({ permissions: ["history"] });
+      } catch {
+        hasHist = false;
+      }
+    }
+    if (!hasHist) {
+      if (empty) {
+        empty.textContent =
+          "Chrome history permission is required for page-open counts. Enable “History” for TubeStack under chrome://extensions → TubeStack → Details, then try again.";
+        empty.classList.remove("hidden");
+      }
+      document.getElementById("watchHistoryBars")?.classList.add("hidden");
+      return;
+    }
+    const { fromMs, toMs } = getWatchRangeBoundsMs();
+    const r = await send("TUBESTACK_USAGE_HISTORY_OPENS_BY_DAY", { fromMs, toMs });
+    if (!r?.ok) {
+      historyOpensByDay = {};
+      historyOpensMeta = null;
+      if (empty) {
+        empty.textContent =
+          r?.error === "history_not_granted"
+            ? "History permission unavailable. Enable it for TubeStack, then retry."
+            : "Could not read Chrome history for this range.";
+        empty.classList.remove("hidden");
+      }
+      document.getElementById("watchHistoryBars")?.classList.add("hidden");
+      return;
+    }
+    historyOpensByDay = r.byDay && typeof r.byDay === "object" ? r.byDay : {};
+    historyOpensMeta = {
+      capped: Boolean(r.capped),
+      urlCapHit: Boolean(r.urlCapHit),
+      urlsScanned: r.urlsScanned || 0,
+    };
+    renderHistoryOpensChart();
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1409,6 +1584,7 @@ async function loadState() {
   initWatchDateDefaults();
   updateWatchPickerVisibility();
   renderWatchAnalytics();
+  renderHistoryOpensChart();
   updateFocusUi();
   renderLocalPlaylists();
   renderSidebarRecentTablists();
@@ -2556,6 +2732,10 @@ function setActiveWindow(next) {
     syncAiCategorizeStrategyUi();
     updateAiCatScopeCount();
   }
+  if (next === "usage") {
+    renderWatchAnalytics();
+    renderHistoryOpensChart();
+  }
   layoutRoot?.classList.toggle("layout--library-mode", false);
   layoutRoot?.classList.toggle("layout--sidebar-hidden", sidebarHidden);
   btnShowSidebarFloating?.classList.toggle("hidden", !sidebarHidden);
@@ -3121,7 +3301,14 @@ document.querySelectorAll(".watch-pill").forEach((el) => {
   el.addEventListener("click", () => setWatchRange(el.dataset.watchRange || "day"));
 });
 ["watchDayPick", "watchWeekOf", "watchMonthPick", "watchFrom", "watchTo"].forEach((id) => {
-  document.getElementById(id)?.addEventListener("change", () => renderWatchAnalytics());
+  document.getElementById(id)?.addEventListener("change", () => {
+    renderWatchAnalytics();
+    invalidateHistoryOpensCache();
+  });
+});
+
+document.getElementById("btnWatchHistoryOpensRefresh")?.addEventListener("click", () => {
+  void refreshWatchHistoryOpens();
 });
 
 document.getElementById("btnSaveOAuth")?.addEventListener("click", async () => {

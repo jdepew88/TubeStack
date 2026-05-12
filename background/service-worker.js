@@ -885,6 +885,78 @@ async function loadWatchByDay() {
   return watchByDay && typeof watchByDay === "object" ? watchByDay : {};
 }
 
+function localDateKeyFromMs(ms) {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Optional usage chart: count YouTube watch/shorts page opens per local calendar day from Chrome’s
+ * browsing history (optional `history` permission). YouTube Data API v3 does not expose per-viewer
+ * “minutes watched in account history” for normal users, so watch duration in TubeStack comes from
+ * the in-page tracker (see TUBESTACK_PROGRESS_TICK), not from Google’s APIs.
+ */
+async function aggregateYoutubeHistoryOpensByDay({ fromMs, toMs }) {
+  const ok = await chrome.permissions.contains({ permissions: ["history"] });
+  if (!ok) return { ok: false, error: "history_not_granted" };
+  const from = Math.max(0, Number(fromMs) || 0);
+  const to = Math.max(from + 60_000, Number(toMs) || Date.now());
+  const maxUrls = 450;
+  const maxVisitEvents = 55_000;
+  const rows = await chrome.history.search({
+    text: "youtube.com",
+    startTime: from,
+    endTime: to,
+    maxResults: 12000,
+  });
+  const urls = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const u = row.url;
+    if (!u || seen.has(u)) continue;
+    if (!isYouTubeWatchUrl(u)) continue;
+    seen.add(u);
+    urls.push(u);
+    if (urls.length >= maxUrls) break;
+  }
+  const byDay = {};
+  let visitEvents = 0;
+  for (const url of urls) {
+    let visits;
+    try {
+      visits = await chrome.history.getVisits({ url });
+    } catch {
+      continue;
+    }
+    for (const v of visits) {
+      const t = v.visitTime;
+      if (t < from || t > to) continue;
+      const key = localDateKeyFromMs(t);
+      byDay[key] = (byDay[key] || 0) + 1;
+      visitEvents++;
+      if (visitEvents >= maxVisitEvents) {
+        return {
+          ok: true,
+          byDay,
+          urlsScanned: urls.length,
+          capped: true,
+          urlCapHit: urls.length >= maxUrls,
+        };
+      }
+    }
+  }
+  return {
+    ok: true,
+    byDay,
+    urlsScanned: urls.length,
+    capped: false,
+    urlCapHit: urls.length >= maxUrls,
+  };
+}
+
 async function loadLocalPlaylists() {
   const { localPlaylists = [] } = await chrome.storage.local.get("localPlaylists");
   return Array.isArray(localPlaylists) ? localPlaylists : [];
@@ -3091,6 +3163,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "TUBESTACK_CLEAR_OPENAI_LOCAL_CACHE": {
         await chrome.storage.local.remove(OPENAI_HIST_CLASSIFY_CACHE_KEY);
         sendResponse({ ok: true });
+        break;
+      }
+      case "TUBESTACK_USAGE_HISTORY_OPENS_BY_DAY": {
+        sendResponse(await aggregateYoutubeHistoryOpensByDay({ fromMs: msg.fromMs, toMs: msg.toMs }));
         break;
       }
       case "TUBESTACK_MERGE_SUBSCRIPTION_CHANNELS": {

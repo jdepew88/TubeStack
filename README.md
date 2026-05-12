@@ -1,13 +1,17 @@
-<p align="center">
-  <img src="assets/8bit logo (512).png" width="220" alt="TubeStack Logo">
-</p>
+<table>
+  <tr>
+    <td width="240" align="center">
+      <img src="assets/icon512.png" width="220" alt="TubeStack Logo">
+    </td>
+    <td valign="middle">
 
-<h1 align="center" style="margin-top: 0;">TubeStack</h1>
+# TubeStack
 
-<p align="center">
-  Chrome extension (Manifest V3) to save YouTube tabs, organize by theme and time,
-  run focus sessions, and resume watch progress without losing your place.
-</p>
+Chrome extension (Manifest V3) to save YouTube tabs, organize by theme and time, run focus sessions, and resume watch progress without losing your place.
+
+   </td>
+  </tr>
+</table>
 
 ---
 

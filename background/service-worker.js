@@ -238,6 +238,11 @@ async function saveItems(items) {
   await chrome.storage.local.set({ items });
 }
 
+/**
+ * API keys and the YouTube OAuth Web Client ID persist only inside the `settings` object in
+ * chrome.storage.local. The extension has no first-party backend; values leave the device only when
+ * you trigger calls to Google or OpenAI. OAuth access tokens for playlist import are RAM-only (__youtubeImportAuth).
+ */
 async function loadSettings() {
   const data = await chrome.storage.local.get("settings");
   return data.settings && typeof data.settings === "object" ? data.settings : {};
@@ -349,6 +354,7 @@ function tokenizeTitle(title) {
     .filter((w) => w.length > 3 && !TOKEN_STOP.has(w));
 }
 
+/** YouTube Data API v3 with API key — HTTPS only to www.googleapis.com; key is never sent to non-Google hosts. */
 async function ytDataApi(apiKey, path, params) {
   await ensureGoogleApisHostAccess();
   const u = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
@@ -494,7 +500,9 @@ async function testYoutubeOAuthConnection(msg = {}) {
     };
   }
   try {
-    await getYoutubeOAuthAccessToken(clientId);
+    const token = await getYoutubeOAuthAccessToken(clientId);
+    const now = Date.now();
+    __youtubeImportAuth = { token, clientId: clientId.trim(), expiresAt: now + 45 * 60 * 1000 };
     return {
       ok: true,
       message: "Google sign-in completed; YouTube scope was granted for this extension.",
@@ -610,6 +618,7 @@ async function runYoutubeApiScan({ boostThemes = true } = {}) {
   };
 }
 
+/** Strip secret values before sending `settings` to the dashboard UI (OAuth Client ID stays; it is public). */
 function sanitizeSettingsForClient(raw) {
   if (!raw || typeof raw !== "object") return {};
   const s = { ...raw };
@@ -618,12 +627,100 @@ function sanitizeSettingsForClient(raw) {
   return s;
 }
 
+/** Stable short hash for cache keys (titles only; no crypto guarantee). */
+function hashStringDjb2(s) {
+  const str = String(s || "");
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h, 33) ^ str.charCodeAt(i);
+  return String(h >>> 0);
+}
+
+/**
+ * User-facing copy for OpenAI HTTP failures (quota, billing, rate limits). Never includes request bodies or keys.
+ */
+function openAiHttpErrorMessage(status, json) {
+  const err = json?.error;
+  const code = String(err?.code || "");
+  const msg = String(err?.message || "");
+  const blob = `${code} ${msg} ${status}`.toLowerCase();
+  if (status === 429 || blob.includes("rate_limit") || blob.includes("rate limit")) {
+    return "OpenAI rate limit reached. Wait a few minutes or check usage limits on platform.openai.com, then try again.";
+  }
+  if (
+    blob.includes("insufficient_quota") ||
+    blob.includes("billing") ||
+    blob.includes("payment") ||
+    blob.includes("credit") ||
+    blob.includes("exceeded your")
+  ) {
+    return "OpenAI quota or billing blocked this request. Add credits or fix billing on platform.openai.com, then try again.";
+  }
+  if (status === 401) {
+    return "OpenAI rejected the API key (401). Paste a valid secret key in Settings and try again.";
+  }
+  if (msg) return msg;
+  return `OpenAI request failed (${status}).`;
+}
+
+const OPENAI_HIST_CLASSIFY_CACHE_KEY = "openAiHistoryClassifyV1";
+const OPENAI_HIST_CLASSIFY_TTL_MS = 7 * 86400000;
+const OPENAI_HIST_CLASSIFY_MAX_KEYS = 2500;
+
+async function loadOpenAiHistClassifyCache() {
+  const bag = await chrome.storage.local.get(OPENAI_HIST_CLASSIFY_CACHE_KEY);
+  const c = bag[OPENAI_HIST_CLASSIFY_CACHE_KEY];
+  return c && typeof c === "object" ? c : {};
+}
+
+function pruneOpenAiHistClassifyCache(cache) {
+  const entries = Object.entries(cache);
+  if (entries.length <= OPENAI_HIST_CLASSIFY_MAX_KEYS) return cache;
+  entries.sort((a, b) => (a[1]?.at || 0) - (b[1]?.at || 0));
+  const drop = entries.length - OPENAI_HIST_CLASSIFY_MAX_KEYS;
+  const next = { ...cache };
+  for (let i = 0; i < drop; i++) delete next[entries[i][0]];
+  return next;
+}
+
+async function saveOpenAiHistClassifyCache(cache) {
+  await chrome.storage.local.set({ [OPENAI_HIST_CLASSIFY_CACHE_KEY]: pruneOpenAiHistClassifyCache(cache) });
+}
+
+/** Minimal library fields sent to OpenAI (no URLs, transcripts, or Google secrets). */
+function buildLibraryItemPayloadForOpenAi(it, themeLabelById) {
+  const tags = [...(it.tags || [])].map((t) => String(t).trim()).filter(Boolean).slice(0, 15);
+  const suggestedTags = [...(it.suggestedTags || [])].map((t) => String(t).trim()).filter(Boolean).slice(0, 10);
+  const out = {
+    id: it.id,
+    title: String(it.title || "").slice(0, 200),
+    channel: String(it.channel || "").slice(0, 120),
+    listCategory: String(it.category || "").slice(0, 48),
+  };
+  const tid = it.themeId != null ? String(it.themeId).trim() : "";
+  if (tid && themeLabelById.has(tid)) {
+    out.currentCategoryLabel = String(themeLabelById.get(tid) || "").slice(0, 80);
+  }
+  if (tags.length) out.tags = tags;
+  if (suggestedTags.length) out.suggestedTags = suggestedTags;
+  const notes = String(it.notes || "").trim();
+  if (notes) out.notes = notes.slice(0, 240);
+  const desc = it.description != null ? String(it.description).trim() : "";
+  if (desc) out.descriptionSnippet = desc.slice(0, 320);
+  return out;
+}
+
+/**
+ * Full YouTube account scope (not youtube.readonly): required for user-initiated writes such as
+ * playlists.insert / playlistItems.insert. Read-only scope would suffice for subscriptions.list alone, but
+ * TubeStack uses one consent flow for create + import + sync to avoid multiple Google prompts.
+ */
 const YOUTUBE_OAUTH_SCOPE = "https://www.googleapis.com/auth/youtube";
 
 function isValidVideoId(id) {
   return typeof id === "string" && /^[\w-]{11}$/.test(id);
 }
 
+/** Opens Google’s OAuth page with interactive: true only. Call only from handlers tied to explicit user actions (dashboard buttons, etc.). */
 function getYoutubeOAuthAccessToken(clientId) {
   const redirectUri = chrome.identity.getRedirectURL();
   const params = new URLSearchParams({
@@ -663,6 +760,7 @@ function getYoutubeOAuthAccessToken(clientId) {
   });
 }
 
+/** YouTube Data API v3 with OAuth Bearer — HTTPS only to www.googleapis.com; bearer never sent to non-Google hosts. */
 async function ytOAuthJson(accessToken, method, pathWithQuery, body) {
   await ensureGoogleApisHostAccess();
   const url = `https://www.googleapis.com/youtube/v3/${pathWithQuery}`;
@@ -700,12 +798,15 @@ async function createYoutubePlaylistOnAccount({ title, description, privacyStatu
     return { ok: false, error: "no_videos", hint: "No valid YouTube video IDs were found in this selection." };
   }
 
-  let accessToken;
-  try {
-    accessToken = await getYoutubeOAuthAccessToken(clientId);
-  } catch (e) {
-    return { ok: false, error: "oauth_failed", message: String(e.message || e) };
+  const auth = await getYoutubeImportAccessTokenCached(clientId);
+  if (!auth.ok) {
+    return {
+      ok: false,
+      error: auth.error || "oauth_failed",
+      message: auth.message || "Google sign-in was cancelled or failed.",
+    };
   }
+  const accessToken = auth.accessToken;
 
   const rawTitle = (title && String(title).trim()) || "TubeStack playlist";
   const ytTitle = rawTitle.length > 150 ? rawTitle.slice(0, 150) : rawTitle;
@@ -803,6 +904,34 @@ async function saveSubscriptionChannels(rows) {
 }
 
 /**
+ * Settings → Data & privacy: wipe saved videos, progress, local playlists, and import/scan summaries
+ * stored alongside the library. Does not remove API keys, OAuth Client ID, themes, or the subscription directory.
+ */
+async function eraseLocalLibraryData() {
+  await saveItems([]);
+  await chrome.storage.local.set({
+    videoProgress: {},
+    watchByDay: {},
+    localPlaylists: [],
+  });
+  const cur = await loadSettings();
+  const next = { ...cur };
+  for (const k of [
+    "latestImportBatchId",
+    "latestImportAt",
+    "youtubeHistorySummary",
+    "youtubeHistoryGenreScanSummary",
+    "youtubeLastScanSummary",
+  ]) {
+    delete next[k];
+  }
+  next.currentPlaylistId = null;
+  next.currentPlaylistName = defaultYtTabgroupPlaylistName();
+  await chrome.storage.local.set({ settings: next });
+  return { ok: true };
+}
+
+/**
  * Replace subscription directory with the signed-in user’s YouTube subscriptions (OAuth).
  * Uses contentDetails.newItemCount — YouTube’s “new since last read on YouTube” signal (may lag vs the app/website).
  */
@@ -824,12 +953,15 @@ async function syncYoutubeSubscriptionsViaOAuth() {
         "TubeStack needs permission to contact Google’s YouTube API. Allow the browser prompt, then sync again.",
     };
   }
-  let accessToken;
-  try {
-    accessToken = await getYoutubeOAuthAccessToken(clientId);
-  } catch (e) {
-    return { ok: false, error: "oauth_failed", message: String(e?.message || e) };
+  const auth = await getYoutubeImportAccessTokenCached(clientId);
+  if (!auth.ok) {
+    return {
+      ok: false,
+      error: auth.error || "oauth_failed",
+      message: auth.message || "Google sign-in was cancelled or failed.",
+    };
   }
+  const accessToken = auth.accessToken;
 
   const prev = await loadSubscriptionChannels();
   const prevByChannelId = new Map();
@@ -857,16 +989,16 @@ async function syncYoutubeSubscriptionsViaOAuth() {
     }
     const items = data.items || [];
     for (const it of items) {
-      const cid = it?.snippet?.resourceId?.channelId;
-      if (!cid || typeof cid !== "string") continue;
+      const chId = it?.snippet?.resourceId?.channelId;
+      if (!chId || typeof chId !== "string") continue;
       const title = String(it?.snippet?.title || "Channel").trim() || "Channel";
       const thumbs = it?.snippet?.thumbnails;
       const thumbUrl = thumbs?.high?.url || thumbs?.medium?.url || thumbs?.default?.url || "";
       const newN = Math.max(0, Math.floor(Number(it?.contentDetails?.newItemCount) || 0));
-      const old = prevByChannelId.get(cid) || prevByName.get(normalizeSubChannelName(title));
+      const old = prevByChannelId.get(chId) || prevByName.get(normalizeSubChannelName(title));
       rows.push({
         name: title,
-        channelId: cid,
+        channelId: chId,
         thumbnailUrl: thumbUrl,
         newItemCount: newN,
         fetchedAt: new Date().toISOString(),
@@ -960,7 +1092,12 @@ function durationSecFromIso8601Duration(iso) {
   return Math.round(h * 3600 + min * 60 + s);
 }
 
-/** Reuse one Google sign-in across list → preview → import in the dashboard. */
+/**
+ * Reuse one Google sign-in across list → preview → import in the dashboard.
+ * Bearer access token is kept in service worker memory only (never written to chrome.storage.local).
+ * Reusing the cache is not a silent sign-in: it only skips the browser window if the user already
+ * completed launchWebAuthFlow within the TTL below.
+ */
 let __youtubeImportAuth = { token: "", clientId: "", expiresAt: 0 };
 
 function clearYoutubeImportAuthCache() {
@@ -2026,7 +2163,7 @@ async function deleteThemeEntry(themeId) {
 
 async function fetchVideoTagsForItem({ id, videoId, max = 6 }) {
   const settings = await loadSettings();
-  const apiKey = String(settings.youtubeApiKey || "").trim();
+  const apiKey = String(settings.youtubeDataApiKey || "").trim();
   if (!apiKey) return { ok: false, error: "missing_api_key" };
   const vid = String(videoId || "").trim();
   if (!isValidVideoId(vid)) return { ok: false, error: "invalid_video_id" };
@@ -2072,10 +2209,15 @@ function nearestBroadLabel(raw, labels) {
 
 async function openAiClassifyHistoryChunk({ items, apiKey, model, broadLabels }) {
   await ensureOpenaiHostAccess();
-  const payload = items.map((x) => ({
-    videoId: x.videoId,
-    title: String(x.title || "").slice(0, 200),
-  }));
+  const payload = items.map((x) => {
+    const row = {
+      videoId: x.videoId,
+      title: String(x.title || "").slice(0, 200),
+    };
+    const ch = String(x.channel || "").trim();
+    if (ch) row.channel = ch.slice(0, 120);
+    return row;
+  });
   const user = `Input (JSON array of watch history rows):\n${JSON.stringify(payload)}`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -2090,8 +2232,9 @@ async function openAiClassifyHistoryChunk({ items, apiKey, model, broadLabels })
       messages: [
         {
           role: "system",
-          content: `You read YouTube watch-history titles (no channel metadata). For each row, suggest niche: a short 2-6 word user-specific sub-interest when the title clearly implies one; otherwise "".
-Broad must be EXACTLY one of: ${broadLabels.join(" | ")} (best guess from title only).
+          content: `Each row is a YouTube video the user watched: videoId, title, and optional channel name from the browser history title only.
+There are no transcripts, page URLs, or API keys in this payload. For each row, suggest niche: a short 2-6 word user-specific sub-interest when the title clearly implies one; otherwise "".
+Broad must be EXACTLY one of: ${broadLabels.join(" | ")} (best guess from title and optional channel only).
 Respond as JSON: {"items":[{"videoId":"","broad":"","niche":""}]}`,
         },
         { role: "user", content: user },
@@ -2100,8 +2243,7 @@ Respond as JSON: {"items":[{"videoId":"","broad":"","niche":""}]}`,
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = json?.error?.message || `${res.status}`;
-    throw new Error(msg);
+    throw new Error(openAiHttpErrorMessage(res.status, json));
   }
   const content = json?.choices?.[0]?.message?.content;
   if (!content) throw new Error("Empty model response");
@@ -2138,8 +2280,7 @@ async function openAiJsonCompletion({ apiKey, model, system, user }) {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = json?.error?.message || `${res.status}`;
-    throw new Error(msg);
+    throw new Error(openAiHttpErrorMessage(res.status, json));
   }
   const content = json?.choices?.[0]?.message?.content;
   if (!content) throw new Error("Empty model response");
@@ -2176,7 +2317,7 @@ async function testOpenAiConnection(msg = {}) {
       return {
         ok: false,
         error: "openai_http",
-        message: j?.error?.message || `${r.status} ${r.statusText}`,
+        message: openAiHttpErrorMessage(r.status, j),
       };
     }
     modelCount = Array.isArray(j?.data) ? j.data.length : 0;
@@ -2215,7 +2356,7 @@ async function testOpenAiConnection(msg = {}) {
       lastUsage = body?.usage || null;
     } else {
       const j2 = await r2.json().catch(() => ({}));
-      completionError = j2?.error?.message || `${r2.status}`;
+      completionError = openAiHttpErrorMessage(r2.status, j2);
     }
   } catch (e) {
     completionError = String(e.message || e);
@@ -2289,11 +2430,8 @@ async function aiCategorizeLibrary(msg = {}) {
   const model = String(msg.openaiModel || "").trim() || "gpt-4o-mini";
   let themes = await loadThemes();
 
-  const rows = targets.map((it) => ({
-    id: it.id,
-    title: String(it.title || "").slice(0, 200),
-    channel: String(it.channel || "").slice(0, 100),
-  }));
+  const themeLabelById = new Map(themes.map((t) => [t.id, String(t.label || "").trim()]));
+  const rows = targets.map((it) => buildLibraryItemPayloadForOpenAi(it, themeLabelById));
 
   try {
     if (strategy === "existing") {
@@ -2305,7 +2443,7 @@ async function aiCategorizeLibrary(msg = {}) {
       const chunkSize = 36;
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize);
-        const system = `You assign each YouTube library video to exactly one saved category. Use only themeId values from categories[]. Pick the closest fit when uncertain. JSON only: {"assignments":[{"itemId":"","themeId":""}]} — include every video in videos[] exactly once.`;
+        const system = `You assign each YouTube library video to exactly one saved category. Each object in videos[] only contains metadata TubeStack already stored (title, channel, listCategory, optional tags/suggestedTags/notes/descriptionSnippet, optional currentCategoryLabel). Do not assume transcripts, watch URLs, or Google/OpenAI secrets are available. Use only themeId values from categories[]. Pick the closest fit when uncertain. JSON only: {"assignments":[{"itemId":"","themeId":""}]} — include every video in videos[] exactly once.`;
         const user = JSON.stringify({ categories: catList, videos: chunk });
         const parsed = await openAiJsonCompletion({ apiKey, model, system, user });
         const arr = parsed.assignments || parsed.results;
@@ -2351,8 +2489,8 @@ async function aiCategorizeLibrary(msg = {}) {
 
     const phase1System =
       strategy === "criteria"
-        ? `You name exactly ${targetK} category labels for a personal YouTube library. Follow the user's instructions in the JSON field userCriteria. ${granHint} JSON only: {"categories":["label1",...]} — categories.length must equal ${targetK}. Labels must be unique (case-insensitive).`
-        : `You name exactly ${targetK} category labels that best group the user's saved YouTube videos (see videoSamples). ${granHint} JSON only: {"categories":["label1",...]} — categories.length must equal ${targetK}. Labels must be unique (case-insensitive).`;
+        ? `You name exactly ${targetK} category labels for a personal YouTube library. Follow the user's instructions in the JSON field userCriteria. ${granHint} videoSamples contain only stored TubeStack fields (no transcripts, no YouTube/Google API keys). JSON only: {"categories":["label1",...]} — categories.length must equal ${targetK}. Labels must be unique (case-insensitive).`
+        : `You name exactly ${targetK} category labels that best group the user's saved YouTube videos (see videoSamples). ${granHint} videoSamples contain only stored TubeStack fields (no transcripts, no URLs, no API keys). JSON only: {"categories":["label1",...]} — categories.length must equal ${targetK}. Labels must be unique (case-insensitive).`;
 
     const phase1User =
       strategy === "criteria"
@@ -2407,7 +2545,7 @@ async function aiCategorizeLibrary(msg = {}) {
     const chunk2 = 40;
     for (let i = 0; i < rows.length; i += chunk2) {
       const chunk = rows.slice(i, i + chunk2);
-      const system2 = `Assign each video to exactly one category from allowedCategories (copy categoryLabel text exactly as listed). JSON only: {"assignments":[{"itemId":"","categoryLabel":""}]} — include every video in videos[] exactly once.`;
+      const system2 = `Assign each video to exactly one category from allowedCategories (copy categoryLabel text exactly as listed). videos[] objects include only TubeStack metadata already listed (no transcripts). JSON only: {"assignments":[{"itemId":"","categoryLabel":""}]} — include every video in videos[] exactly once.`;
       const user2 = JSON.stringify({
         allowedCategories: categoryLabels,
         videos: chunk,
@@ -2539,19 +2677,57 @@ async function rebuildGenresFromHistoryOpenAI({
   const broadLabels = BROAD_GENRE_TAXONOMY.map((x) => x.label);
   const nicheWeight = new Map();
   const chunkSize = 28;
-  for (let i = 0; i < videos.length; i += chunkSize) {
-    const chunk = videos.slice(i, i + chunkSize);
-    const rows = await openAiClassifyHistoryChunk({ items: chunk, apiKey: key, model, broadLabels });
-    const byId = new Map(chunk.map((x) => [x.videoId, x]));
-    for (const row of rows) {
-      const niche = String(row.niche || "")
-        .trim()
-        .slice(0, 80);
-      if (niche.length <= 3) continue;
-      const rec = byId.get(row.videoId);
-      const w = rec?.visitCount || 1;
-      nicheWeight.set(niche, (nicheWeight.get(niche) || 0) + w);
+  const now = Date.now();
+  let cache = await loadOpenAiHistClassifyCache();
+  try {
+    for (let i = 0; i < videos.length; i += chunkSize) {
+      const chunk = videos.slice(i, i + chunkSize);
+      const need = [];
+      const cachedRows = [];
+      for (const v of chunk) {
+        const th = hashStringDjb2(String(v.title || "").slice(0, 240));
+        const ent = cache[v.videoId];
+        if (ent && ent.th === th && now - ent.at < OPENAI_HIST_CLASSIFY_TTL_MS) {
+          cachedRows.push({ videoId: v.videoId, broad: ent.broad, niche: ent.niche });
+        } else {
+          need.push(v);
+        }
+      }
+      let rows = cachedRows.slice();
+      if (need.length) {
+        const fresh = await openAiClassifyHistoryChunk({ items: need, apiKey: key, model, broadLabels });
+        for (const row of fresh) {
+          const vid = String(row.videoId || "").trim();
+          const rec = need.find((x) => x.videoId === vid);
+          if (rec) {
+            cache[vid] = {
+              th: hashStringDjb2(String(rec.title || "").slice(0, 240)),
+              broad: String(row.broad || ""),
+              niche: String(row.niche || ""),
+              at: now,
+            };
+          }
+        }
+        rows = rows.concat(fresh);
+        await saveOpenAiHistClassifyCache(cache);
+      }
+      const byId = new Map(chunk.map((x) => [x.videoId, x]));
+      for (const row of rows) {
+        const niche = String(row.niche || "")
+          .trim()
+          .slice(0, 80);
+        if (niche.length <= 3) continue;
+        const rec = byId.get(row.videoId);
+        const w = rec?.visitCount || 1;
+        nicheWeight.set(niche, (nicheWeight.get(niche) || 0) + w);
+      }
     }
+  } catch (e) {
+    return {
+      ok: false,
+      error: "openai_failed",
+      message: String(e?.message || e) || "OpenAI request failed during category rebuild.",
+    };
   }
 
   const topNiches = [...nicheWeight.entries()]
@@ -2844,7 +3020,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_PATCH_SETTINGS": {
-        const merged = await saveSettings(msg.patch || {});
+        const patch = msg.patch || {};
+        if (Object.prototype.hasOwnProperty.call(patch, "youtubeOAuthClientId")) {
+          clearYoutubeImportAuthCache();
+        }
+        const merged = await saveSettings(patch);
         sendResponse({
           ok: true,
           settings: sanitizeSettingsForClient(merged),
@@ -2896,6 +3076,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_YOUTUBE_IMPORT_SESSION_CLEAR": {
         clearYoutubeImportAuthCache();
+        sendResponse({ ok: true });
+        break;
+      }
+      case "TUBESTACK_ERASE_LOCAL_LIBRARY_DATA": {
+        sendResponse(await eraseLocalLibraryData());
+        break;
+      }
+      case "TUBESTACK_CLEAR_SUBSCRIPTION_CHANNELS": {
+        await saveSubscriptionChannels([]);
+        sendResponse({ ok: true });
+        break;
+      }
+      case "TUBESTACK_CLEAR_OPENAI_LOCAL_CACHE": {
+        await chrome.storage.local.remove(OPENAI_HIST_CLASSIFY_CACHE_KEY);
         sendResponse({ ok: true });
         break;
       }
@@ -3191,8 +3385,9 @@ function rebuildTubeStackContextMenus() {
           contexts: ["action"],
         });
       }
-    } catch (e) {
-      console.error("TubeStack: context menu setup failed", e);
+    } catch {
+      /* Avoid logging full Error objects (could surface sensitive context in edge cases). */
+      console.error("TubeStack: context menu setup failed");
     }
   })();
 }

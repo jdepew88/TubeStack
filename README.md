@@ -19,6 +19,14 @@ TubeStack helps reduce browser resource usage, organize large video queues, buil
 
 ---
 
+## Privacy summary
+
+TubeStack is **local-first**: your saved videos, playlists, organization data, watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server. **YouTube API keys**, **OAuth client/session data used by the extension**, and **OpenAI API keys** you provide are also kept **locally on your device**. Google API calls go **directly** from the extension to Google; OpenAI calls go **directly** to OpenAI **only when you use optional AI features** (which may send selected video metadata needed for those features). TubeStack **does not sell your data** or collect **unrelated browsing history** as a product feature. You can **delete stored data** from the extension’s Settings. TubeStack is **not affiliated with YouTube, Google, or OpenAI**.
+
+**[Full privacy policy →](PRIVACY.md)**
+
+---
+
 # Installing TubeStack (Developer Mode)
 
 TubeStack is currently installed as an unpacked Chrome Extension.

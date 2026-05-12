@@ -1947,7 +1947,8 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
 
 .settings-youtube-api-actions,
 .settings-oauth-actions,
-.settings-youtube-import-actions {
+.settings-youtube-import-actions,
+.settings-data-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

@@ -3153,7 +3153,12 @@ document.getElementById("btnTestYoutubeOAuth")?.addEventListener("click", async 
 });
 
 document.getElementById("btnClearYoutubeOAuth")?.addEventListener("click", async () => {
-  if (!confirm("Remove the saved OAuth Client ID from this device?")) return;
+  if (
+    !confirm(
+      "Remove the saved OAuth Web Client ID from this device? TubeStack will also clear its in-memory Google sign-in session cache. Your Google account itself is unchanged."
+    )
+  )
+    return;
   const r = await send("TUBESTACK_PATCH_SETTINGS", { patch: { youtubeOAuthClientId: "" } });
   if (!r?.ok) {
     alert("Could not clear.");
@@ -3166,6 +3171,21 @@ document.getElementById("btnClearYoutubeOAuth")?.addEventListener("click", async
   if (oo) oo.value = "";
   const st = document.getElementById("youtubeOAuthTestStatus");
   if (st) st.textContent = "Client ID removed.";
+});
+
+document.getElementById("btnSignOutGoogleSession")?.addEventListener("click", async () => {
+  if (
+    !confirm(
+      "Sign out of Google for TubeStack? This clears only the in-memory OAuth access token held by this extension until you sign in again. Your saved OAuth Client ID is not removed."
+    )
+  )
+    return;
+  const st = document.getElementById("youtubeOAuthTestStatus");
+  const r = await send("TUBESTACK_YOUTUBE_IMPORT_SESSION_CLEAR");
+  if (st) {
+    st.classList.remove("success");
+    st.textContent = r?.ok ? "Google session cleared (in-memory token discarded)." : "Could not clear session.";
+  }
 });
 
 document.getElementById("btnSaveYoutubeApiKey")?.addEventListener("click", async () => {
@@ -3228,6 +3248,68 @@ document.getElementById("btnClearYoutubeApiKey")?.addEventListener("click", asyn
   }
   const st = document.getElementById("youtubeApiKeyTestStatus");
   if (st) st.textContent = "Stored API key removed.";
+});
+
+document.getElementById("btnEraseLocalLibrary")?.addEventListener("click", async () => {
+  const st = document.getElementById("dataPrivacyStatus");
+  const msg =
+    "Delete ALL saved TubeStack library data on this device? This removes every saved video, per-video watch progress, daily watch tallies, all local playlist snapshots, import triage metadata, YouTube history scan summaries stored in settings, and the last YouTube channel scan summary. It does NOT remove your YouTube Data API key, OAuth Client ID, OpenAI API key, themes/categories, or the Subbed Channels list.";
+  if (!confirm(msg)) return;
+  const r = await send("TUBESTACK_ERASE_LOCAL_LIBRARY_DATA");
+  if (!r?.ok) {
+    if (st) st.textContent = "Could not erase library data.";
+    return;
+  }
+  await loadState();
+  const idSet = new Set(allItems.map((x) => x.id));
+  for (const id of [...selected]) {
+    if (!idSet.has(id)) selected.delete(id);
+  }
+  render();
+  if (st) {
+    st.classList.add("success");
+    st.textContent = "Library data removed from this device.";
+  }
+});
+
+document.getElementById("btnClearSubscriptionDirectory")?.addEventListener("click", async () => {
+  const st = document.getElementById("dataPrivacyStatus");
+  if (
+    !confirm(
+      "Clear the entire Subbed Channels list stored on this device? You can run “Sync subscriptions” again later to repopulate it from YouTube."
+    )
+  )
+    return;
+  const r = await send("TUBESTACK_CLEAR_SUBSCRIPTION_CHANNELS");
+  if (!r?.ok) {
+    if (st) st.textContent = "Could not clear subscription list.";
+    return;
+  }
+  await loadState();
+  render();
+  if (st) {
+    st.classList.add("success");
+    st.textContent = "Subbed Channels list cleared.";
+  }
+});
+
+document.getElementById("btnClearOpenaiClassifyCache")?.addEventListener("click", async () => {
+  const st = document.getElementById("dataPrivacyStatus");
+  if (
+    !confirm(
+      "Clear TubeStack’s local AI categorization cache? This deletes cached OpenAI classification results (title dedup / history helpers) from storage. Your saved videos, themes, and API keys are not removed."
+    )
+  )
+    return;
+  const r = await send("TUBESTACK_CLEAR_OPENAI_LOCAL_CACHE");
+  if (!r?.ok) {
+    if (st) st.textContent = "Could not clear AI cache.";
+    return;
+  }
+  if (st) {
+    st.classList.add("success");
+    st.textContent = "AI categorization cache cleared.";
+  }
 });
 
 document.getElementById("libShowYoutubeImported")?.addEventListener("change", async () => {
@@ -4083,6 +4165,28 @@ document.getElementById("btnSaveOpenaiKey")?.addEventListener("click", async () 
   alert("OpenAI key saved on this device.");
 });
 
+document.getElementById("btnClearOpenaiKey")?.addEventListener("click", async () => {
+  if (!confirm("Remove the stored OpenAI API key from this device? It is deleted from chrome.storage.local only."))
+    return;
+  const r = await send("TUBESTACK_PATCH_SETTINGS", { patch: { openaiApiKey: "" } });
+  if (!r?.ok) {
+    alert("Could not clear key.");
+    return;
+  }
+  if (r.settings) settings = { ...settings, ...r.settings };
+  hasOpenaiKey = Boolean(r.hasOpenaiKey);
+  const oai = document.getElementById("settingsOpenaiKey");
+  if (oai) {
+    oai.value = "";
+    oai.placeholder = hasOpenaiKey ? "Key on file — enter only to replace" : "sk-… (optional)";
+  }
+  const st = document.getElementById("openaiTestStatus");
+  if (st) {
+    st.classList.remove("success");
+    st.textContent = "Stored OpenAI API key removed.";
+  }
+});
+
 document.getElementById("btnTestOpenaiConnection")?.addEventListener("click", async () => {
   const st = document.getElementById("openaiTestStatus");
   const raw = document.getElementById("settingsOpenaiKey")?.value.trim() || "";
@@ -4180,7 +4284,7 @@ document.getElementById("btnRunAiCategorize")?.addEventListener("click", async (
   }
   if (
     !confirm(
-      "This will call OpenAI with video titles (and channel names) from your library and may update category assignments. Continue?"
+      "This will send each selected video’s stored metadata (title, channel, list category, tags/notes when present — no transcripts or URLs) to OpenAI and may update category assignments. Your OpenAI key is used only on api.openai.com. Continue?"
     )
   ) {
     return;
@@ -4245,9 +4349,12 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
     if (st) st.textContent = "Merge mode is not implemented yet — enable “Replace” for a full rebuild.";
     return;
   }
+  const openAiMode = mode === "openai";
   if (
     !confirm(
-      "This replaces all category chips and re-tags your library from the new list. Continue?"
+      openAiMode
+        ? "This replaces all category chips and re-tags your library. OpenAI mode sends batched video titles (and optional channel text from history) to api.openai.com only — no transcripts, Google keys, or OAuth tokens. Continue?"
+        : "This replaces all category chips and re-tags your library from the new list. Continue?"
     )
   ) {
     return;

@@ -9,10 +9,13 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "scripting", "identity", "contextMenus", "windows"],
+  "permissions": ["contextMenus", "identity", "scripting", "storage", "windows"],
   "optional_permissions": ["history"],
   "host_permissions": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
   "optional_host_permissions": ["https://www.googleapis.com/*", "https://api.openai.com/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",

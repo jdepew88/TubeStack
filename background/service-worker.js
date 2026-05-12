@@ -1,5 +1,7 @@
 /**
- * TubeStack — background: tabs, library, themes, progress, history scan, playlist pack.
+ * TubeStack — background: YouTube tabs, library, themes, progress, history scan, playlist pack.
+ * Host access: youtube.com / m.youtube.com (manifest). Google YouTube API + OpenAI are optional_host_permissions
+ * and are requested at runtime only when those features run (see ensureGoogleApisHostAccess / ensureOpenaiHostAccess).
  */
 
 const YT_HOSTS = new Set(["www.youtube.com", "m.youtube.com"]);
@@ -113,6 +115,45 @@ function parseVideoId(url) {
     return null;
   } catch {
     return null;
+  }
+}
+
+/** Match manifest optional_host_permissions (requested before network calls to these origins). */
+const OPTIONAL_ORIGINS_GOOGLE_APIS = ["https://www.googleapis.com/*"];
+const OPTIONAL_ORIGINS_OPENAI = ["https://api.openai.com/*"];
+
+async function ensureOptionalHostOrigins(origins) {
+  try {
+    if (await chrome.permissions.contains({ origins })) return true;
+  } catch {
+    return false;
+  }
+  try {
+    return await chrome.permissions.request({ origins });
+  } catch {
+    return false;
+  }
+}
+
+async function ensureGoogleApisHostAccess() {
+  const ok = await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_GOOGLE_APIS);
+  if (!ok) {
+    const e = new Error(
+      "TubeStack needs permission to reach Google’s YouTube API (www.googleapis.com). Allow the browser prompt, or enable that optional site access for this extension, then try again."
+    );
+    e.code = "host_permission_denied_googleapis";
+    throw e;
+  }
+}
+
+async function ensureOpenaiHostAccess() {
+  const ok = await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_OPENAI);
+  if (!ok) {
+    const e = new Error(
+      "TubeStack needs permission to reach OpenAI (api.openai.com) when you use AI features. Allow the prompt or enable optional site access, then try again."
+    );
+    e.code = "host_permission_denied_openai";
+    throw e;
   }
 }
 
@@ -309,6 +350,7 @@ function tokenizeTitle(title) {
 }
 
 async function ytDataApi(apiKey, path, params) {
+  await ensureGoogleApisHostAccess();
   const u = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
   u.searchParams.set("key", apiKey);
   for (const [k, v] of Object.entries(params)) {
@@ -474,6 +516,14 @@ async function testYoutubeDataApiKey(apiKeyFromClient) {
       message: "Paste your API key (at least 20 characters), or keep a key already saved on this device.",
     };
   }
+  if (!(await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_GOOGLE_APIS))) {
+    return {
+      ok: false,
+      error: "host_permission_denied",
+      message:
+        "Allow TubeStack to contact Google’s YouTube API when prompted (optional www.googleapis.com access), then test again.",
+    };
+  }
   const testUrl = `https://www.googleapis.com/youtube/v3/videos?part=id&id=dQw4w9WgXcQ&key=${encodeURIComponent(key)}`;
   try {
     const res = await fetch(testUrl);
@@ -614,6 +664,7 @@ function getYoutubeOAuthAccessToken(clientId) {
 }
 
 async function ytOAuthJson(accessToken, method, pathWithQuery, body) {
+  await ensureGoogleApisHostAccess();
   const url = `https://www.googleapis.com/youtube/v3/${pathWithQuery}`;
   const res = await fetch(url, {
     method,
@@ -763,6 +814,14 @@ async function syncYoutubeSubscriptionsViaOAuth() {
       ok: false,
       error: "missing_oauth_client_id",
       message: "Add a YouTube OAuth Client ID in Settings, then try again.",
+    };
+  }
+  if (!(await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_GOOGLE_APIS))) {
+    return {
+      ok: false,
+      error: "host_permission_denied",
+      message:
+        "TubeStack needs permission to contact Google’s YouTube API. Allow the browser prompt, then sync again.",
     };
   }
   let accessToken;
@@ -2012,6 +2071,7 @@ function nearestBroadLabel(raw, labels) {
 }
 
 async function openAiClassifyHistoryChunk({ items, apiKey, model, broadLabels }) {
+  await ensureOpenaiHostAccess();
   const payload = items.map((x) => ({
     videoId: x.videoId,
     title: String(x.title || "").slice(0, 200),
@@ -2059,6 +2119,7 @@ Respond as JSON: {"items":[{"videoId":"","broad":"","niche":""}]}`,
 async function openAiJsonCompletion({ apiKey, model, system, user }) {
   const key = String(apiKey || "").trim();
   if (key.length < 20) throw new Error("openai_key_required");
+  await ensureOpenaiHostAccess();
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2097,6 +2158,13 @@ async function testOpenAiConnection(msg = {}) {
   const apiKey = String(msg.openaiApiKey || "").trim() || String(settings.openaiApiKey || "").trim();
   if (apiKey.length < 20) {
     return { ok: false, error: "openai_key_required", message: "Paste a key or save one in Settings first." };
+  }
+  if (!(await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_OPENAI))) {
+    return {
+      ok: false,
+      error: "host_permission_denied",
+      message: "Allow TubeStack to contact OpenAI (api.openai.com) when prompted, then try again.",
+    };
   }
   const auth = { Authorization: `Bearer ${apiKey}` };
 

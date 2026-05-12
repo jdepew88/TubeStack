@@ -413,10 +413,13 @@ inside the OpenAI Platform account.
 
 # Security
 
-- Do not commit API keys to GitHub
-- Do not expose OAuth secrets publicly
-- TubeStack stores credentials locally using Chrome extension storage
-- Keys entered into settings remain on the local device
+**If you develop or fork this repo:** do not commit real API keys, OAuth client secrets, or other credentials to GitHub, and do not paste them into public issues or screenshots.
+
+**If you use TubeStack as an extension:** anything you enter in Settings—YouTube Data API key, OAuth Web Client ID, OpenAI API key—is stored only in **Chrome extension storage on your own device**. TubeStack **does not** upload those values to a TubeStack server or operate a backend that collects your secrets.
+
+You create and control access in **your** cloud accounts (for example **Google Cloud Console** for the YouTube Data API and OAuth client, and **OpenAI** for API keys). Those services decide what your project is allowed to do; the extension keeps your credentials **locally** and, when you run a feature that needs them, sends requests **directly from your browser** to Google or OpenAI—not through TubeStack.
+
+For more detail, see **[PRIVACY.md](PRIVACY.md)**.
 
 ---
 

@@ -1,6 +1,15 @@
-# TubeStack
+<p align="center">
+  <img src="assets/8bit logo (512).png" width="220" alt="TubeStack Logo">
+</p>
 
-Chrome extension (Manifest V3) to **save YouTube tabs**, organize by theme and time, run **focus sessions**, and **resume watch progress** without losing your place.
+<h1 align="center" style="margin-top: 0;">TubeStack</h1>
+
+<p align="center">
+  Chrome extension (Manifest V3) to save YouTube tabs, organize by theme and time,
+  run focus sessions, and resume watch progress without losing your place.
+</p>
+
+---
 
 ## Features
 

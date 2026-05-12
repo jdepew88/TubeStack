@@ -826,6 +826,10 @@ body {
   color: var(--muted);
 }
 
+.stat-line.small.success {
+  color: var(--green);
+}
+
 .layout {
   display: grid;
   grid-template-columns: 300px 1fr;
@@ -2952,10 +2956,10 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
 
 .subs-card {
   display: grid;
-  grid-template-columns: 24px 1fr;
+  grid-template-columns: 28px 1fr;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
+  min-height: 36px;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2966,6 +2970,27 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
   cursor: default;
 }
 
+.subs-card.subs-card--link {
+  cursor: pointer;
+}
+
+.subs-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(120, 180, 255, 0.35);
+  flex-shrink: 0;
+}
+
+.subs-text-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
 .subs-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2973,9 +2998,18 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
   font-size: 12px;
 }
 
+.subs-meta {
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--muted, rgba(255, 255, 255, 0.55));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .subs-logo {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;

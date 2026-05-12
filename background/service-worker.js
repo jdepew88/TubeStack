@@ -751,6 +751,79 @@ async function saveSubscriptionChannels(rows) {
   await chrome.storage.local.set({ subscriptionChannels: rows });
 }
 
+/**
+ * Replace subscription directory with the signed-in user’s YouTube subscriptions (OAuth).
+ * Uses contentDetails.newItemCount — YouTube’s “new since last read on YouTube” signal (may lag vs the app/website).
+ */
+async function syncYoutubeSubscriptionsViaOAuth() {
+  const settings = await loadSettings();
+  const clientId = String(settings.youtubeOAuthClientId || "").trim();
+  if (!clientId) {
+    return {
+      ok: false,
+      error: "missing_oauth_client_id",
+      message: "Add a YouTube OAuth Client ID in Settings, then try again.",
+    };
+  }
+  let accessToken;
+  try {
+    accessToken = await getYoutubeOAuthAccessToken(clientId);
+  } catch (e) {
+    return { ok: false, error: "oauth_failed", message: String(e?.message || e) };
+  }
+
+  const prev = await loadSubscriptionChannels();
+  const prevByChannelId = new Map();
+  const prevByName = new Map();
+  for (const row of prev) {
+    if (row.channelId) prevByChannelId.set(row.channelId, row);
+    const nk = normalizeSubChannelName(row.name);
+    if (nk) prevByName.set(nk, row);
+  }
+
+  const rows = [];
+  let pageToken = "";
+  for (let page = 0; page < 80; page++) {
+    const qs = new URLSearchParams({
+      part: "snippet,contentDetails",
+      mine: "true",
+      maxResults: "50",
+    });
+    if (pageToken) qs.set("pageToken", pageToken);
+    let data;
+    try {
+      data = await ytOAuthJson(accessToken, "GET", `subscriptions?${qs.toString()}`);
+    } catch (e) {
+      return { ok: false, error: "subscriptions_failed", message: String(e?.message || e) };
+    }
+    const items = data.items || [];
+    for (const it of items) {
+      const cid = it?.snippet?.resourceId?.channelId;
+      if (!cid || typeof cid !== "string") continue;
+      const title = String(it?.snippet?.title || "Channel").trim() || "Channel";
+      const thumbs = it?.snippet?.thumbnails;
+      const thumbUrl = thumbs?.high?.url || thumbs?.medium?.url || thumbs?.default?.url || "";
+      const newN = Math.max(0, Math.floor(Number(it?.contentDetails?.newItemCount) || 0));
+      const old = prevByChannelId.get(cid) || prevByName.get(normalizeSubChannelName(title));
+      rows.push({
+        name: title,
+        channelId: cid,
+        thumbnailUrl: thumbUrl,
+        newItemCount: newN,
+        fetchedAt: new Date().toISOString(),
+        addedAt: old?.addedAt || new Date().toISOString(),
+        source: "youtube_oauth",
+      });
+    }
+    pageToken = data.nextPageToken || "";
+    if (!pageToken) break;
+  }
+
+  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  await saveSubscriptionChannels(rows);
+  return { ok: true, subscriptionChannels: rows, count: rows.length };
+}
+
 function normalizeSubChannelName(name) {
   return String(name || "")
     .trim()
@@ -2762,12 +2835,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse(await mergeSubscriptionChannelLabels(msg.labels || []));
         break;
       }
+      case "TUBESTACK_YOUTUBE_SUBSCRIPTIONS_SYNC": {
+        sendResponse(await syncYoutubeSubscriptionsViaOAuth());
+        break;
+      }
       case "TUBESTACK_DELETE_SUBSCRIPTION_CHANNEL": {
         sendResponse(await deleteSubscriptionChannelEntry(msg.name));
         break;
       }
       case "TUBESTACK_RESET_ONBOARDING": {
         await saveSettings({ onboardingComplete: false });
+        rebuildTubeStackContextMenus();
         sendResponse({ ok: true });
         break;
       }
@@ -2918,6 +2996,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_COMPLETE_ONBOARDING": {
         await saveSettings({ onboardingComplete: true });
+        rebuildTubeStackContextMenus();
         sendResponse({ ok: true });
         break;
       }
@@ -2949,7 +3028,8 @@ const TUBESTACK_CTX = {
   saveExcept: "tubestack-ctx-save-except",
   scrapeChannels: "tubestack-ctx-scrape-channels",
   dashboard: "tubestack-ctx-dashboard",
-  runOobe: "tubestack-ctx-run-oobe",
+  /** Right-click extension icon (toolbar) — only while onboarding not finished */
+  setupWizardAction: "tubestack-ctx-action-setup-wizard",
 };
 
 const TUBESTACK_CTX_WEB = ["http://*/*", "https://*/*"];
@@ -2976,7 +3056,19 @@ function createContextMenuEntry(partial) {
 }
 
 function rebuildTubeStackContextMenus() {
-  chrome.contextMenus.removeAll(() => {
+  void (async () => {
+    let wizardDone = false;
+    try {
+      const settings = await loadSettings();
+      wizardDone = settings.onboardingComplete === true;
+    } catch {
+      /* keep wizardDone false */
+    }
+
+    await new Promise((resolve) => {
+      chrome.contextMenus.removeAll(() => resolve());
+    });
+
     try {
       const child = {
         contexts: TUBESTACK_CTX_CONTEXTS,
@@ -3024,16 +3116,17 @@ function rebuildTubeStackContextMenus() {
         title: "Open dashboard",
         ...child,
       });
-      createContextMenuEntry({
-        id: TUBESTACK_CTX.runOobe,
-        parentId: TUBESTACK_CTX.root,
-        title: "Run setup wizard again",
-        ...child,
-      });
+      if (!wizardDone) {
+        createContextMenuEntry({
+          id: TUBESTACK_CTX.setupWizardAction,
+          title: "Setup wizard",
+          contexts: ["action"],
+        });
+      }
     } catch (e) {
       console.error("TubeStack: context menu setup failed", e);
     }
-  });
+  })();
 }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -3046,10 +3139,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     else chrome.tabs.create({ url });
     return;
   }
-  if (id === TUBESTACK_CTX.runOobe) {
-    const url = `${chrome.runtime.getURL("dashboard/dashboard.html")}?runOobe=1`;
-    if (tab?.id != null) chrome.tabs.update(tab.id, { url });
-    else chrome.tabs.create({ url });
+  if (id === TUBESTACK_CTX.setupWizardAction) {
+    const url = chrome.runtime.getURL("dashboard/dashboard.html");
+    chrome.tabs.create({ url, active: true });
     return;
   }
   if (id === TUBESTACK_CTX.scrapeChannels) {
@@ -3074,12 +3166,40 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   void saveYouTubeTabsByMode(mode);
 });
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   const data = await chrome.storage.local.get(["items", "themes", "localPlaylists"]);
   if (!Array.isArray(data.items)) await chrome.storage.local.set({ items: [] });
   if (!Array.isArray(data.themes) || !data.themes.length) await seedThemes();
   if (!Array.isArray(data.localPlaylists)) await chrome.storage.local.set({ localPlaylists: [] });
   const ch = await chrome.storage.local.get("subscriptionChannels");
   if (!Array.isArray(ch.subscriptionChannels)) await chrome.storage.local.set({ subscriptionChannels: [] });
+
+  if (details.reason === "install") {
+    try {
+      const settings = await loadSettings();
+      if (settings.onboardingComplete !== true) {
+        await chrome.tabs.create({
+          url: chrome.runtime.getURL("dashboard/dashboard.html"),
+          active: true,
+        });
+      }
+    } catch {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL("dashboard/dashboard.html"),
+        active: true,
+      });
+    }
+  }
+
+  rebuildTubeStackContextMenus();
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.settings) return;
+  const oldVal = changes.settings.oldValue;
+  const newVal = changes.settings.newValue;
+  const oldDone = oldVal && typeof oldVal === "object" ? oldVal.onboardingComplete : undefined;
+  const newDone = newVal && typeof newVal === "object" ? newVal.onboardingComplete : undefined;
+  if (oldDone === newDone) return;
   rebuildTubeStackContextMenus();
 });

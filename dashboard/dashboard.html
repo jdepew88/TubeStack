@@ -280,10 +280,12 @@
         <section class="panel-block" data-sidebar-section="subscriptions">
           <span class="label">Subbed Channels</span>
           <p class="panel-hint">
-            Import your channels from YouTube, then browse them here in a compact grid.
+            Sync loads your full subscription list from YouTube using Google sign-in (same OAuth Client ID as playlist
+            features). “New” counts come from YouTube’s API (<code>newItemCount</code>) and reflect activity on YouTube
+            itself; they can lag until you visit YouTube or the mobile app.
           </p>
           <div class="subs-actions">
-            <button type="button" id="btnSubsImport" class="btn small primary">Import your channels</button>
+            <button type="button" id="btnSubsYoutubeSync" class="btn small primary">Sync from YouTube</button>
           </div>
           <p id="subsImportStatus" class="stat-line small" role="status"></p>
           <div class="subs-toolbar">
@@ -291,8 +293,9 @@
             <select id="subsChannelSort" class="oobe-input">
               <option value="name_asc">Name (A–Z)</option>
               <option value="name_desc">Name (Z–A)</option>
+              <option value="youtube_new">Most new uploads (YouTube)</option>
               <option value="activity">Most in your library first</option>
-              <option value="recent">Recently imported first</option>
+              <option value="recent">Recently added first</option>
             </select>
             <button type="button" id="btnSubsRemoveMode" class="btn small ghost">Remove channels</button>
           </div>

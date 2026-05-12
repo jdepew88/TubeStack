@@ -523,6 +523,14 @@ function sortSubscriptionChannels(rows, mode) {
         return nameCmp(a, b);
       });
       break;
+    case "youtube_new":
+      copy.sort((a, b) => {
+        const na = Math.max(0, Math.floor(Number(a.newItemCount) || 0));
+        const nb = Math.max(0, Math.floor(Number(b.newItemCount) || 0));
+        if (nb !== na) return nb - na;
+        return nameCmp(a, b);
+      });
+      break;
     case "name_asc":
     default:
       copy.sort(nameCmp);
@@ -539,7 +547,7 @@ function renderSubscriptionDirectory() {
   if (!subscriptionChannels.length) {
     const p = document.createElement("p");
     p.className = "panel-hint";
-    p.textContent = "No channels yet — click “Import your channels”.";
+    p.textContent = "No channels yet — click “Sync from YouTube” and complete Google sign-in.";
     host.appendChild(p);
     return;
   }
@@ -552,17 +560,53 @@ function renderSubscriptionDirectory() {
 
     const line = document.createElement("button");
     line.type = "button";
-    line.className = "subs-card";
-    const logo = document.createElement("span");
-    logo.className = "subs-logo";
-    const first = String(row.name || "?").trim().charAt(0).toUpperCase();
-    logo.textContent = first || "?";
+    line.className = "subs-card" + (row.channelId && !subsRemoveMode ? " subs-card--link" : "");
+    const thumbUrl = String(row.thumbnailUrl || "").trim();
+    if (thumbUrl) {
+      const img = document.createElement("img");
+      img.className = "subs-thumb";
+      img.alt = "";
+      img.loading = "lazy";
+      img.src = thumbUrl;
+      line.appendChild(img);
+    } else {
+      const logo = document.createElement("span");
+      logo.className = "subs-logo";
+      const first = String(row.name || "?").trim().charAt(0).toUpperCase();
+      logo.textContent = first || "?";
+      line.appendChild(logo);
+    }
+    const textCol = document.createElement("span");
+    textCol.className = "subs-text-col";
     const nameEl = document.createElement("span");
     nameEl.className = "subs-name";
     nameEl.textContent = row.name;
-    line.title = row.name || "";
-    line.appendChild(logo);
-    line.appendChild(nameEl);
+    textCol.appendChild(nameEl);
+    const newN = Math.max(0, Math.floor(Number(row.newItemCount) || 0));
+    const meta = document.createElement("span");
+    meta.className = "subs-meta";
+    if (newN > 0) {
+      meta.textContent = `${newN} new on YouTube`;
+    } else if (row.channelId) {
+      meta.textContent = "No new uploads (YouTube)";
+    } else {
+      meta.textContent = "Open YouTube to refresh counts";
+    }
+    textCol.appendChild(meta);
+    const hint =
+      row.channelId && !subsRemoveMode
+        ? `${row.name} — click to open channel`
+        : subsRemoveMode
+          ? `${row.name} — remove with ×`
+          : row.name || "";
+    line.title = hint;
+    line.appendChild(textCol);
+    line.addEventListener("click", () => {
+      if (subsRemoveMode) return;
+      const cid = String(row.channelId || "").trim();
+      if (!cid) return;
+      chrome.tabs.create({ url: `https://www.youtube.com/channel/${cid}`, active: true });
+    });
 
     const del = document.createElement("button");
     del.type = "button";
@@ -1353,7 +1397,7 @@ async function loadState() {
 
   if (subsChannelSort) {
     const saved = localStorage.getItem("ts_subs_sort");
-    const allowed = ["name_asc", "name_desc", "activity", "recent"];
+    const allowed = ["name_asc", "name_desc", "youtube_new", "activity", "recent"];
     if (saved && allowed.includes(saved)) subsChannelSort.value = saved;
   }
 
@@ -3936,29 +3980,22 @@ document.getElementById("btnRunOobeAgain")?.addEventListener("click", async () =
   renderObGenreTiles();
 });
 
-document.getElementById("btnSubsImport")?.addEventListener("click", async () => {
+document.getElementById("btnSubsYoutubeSync")?.addEventListener("click", async () => {
   const statusEl = document.getElementById("subsImportStatus");
-  const tabs = await chrome.tabs.query({ url: ["https://www.youtube.com/*", "https://m.youtube.com/*"] });
-  const channelTab = tabs.find((t) => /youtube\.com\/feed\/channels/i.test(t.url || ""));
-  const fallback = tabs[0];
-  const id = Number(channelTab?.id || fallback?.id || 0);
-  if (!id) {
-    if (statusEl) statusEl.textContent = "Open YouTube channels page first, then click import.";
-    return;
+  if (statusEl) {
+    statusEl.textContent = "Contacting YouTube…";
+    statusEl.classList.remove("success");
   }
-  if (statusEl) statusEl.textContent = "Reading tab…";
-  const scrape = await send("TUBESTACK_SCRAPE_TAB", { tabId: id });
-  if (!scrape?.ok) {
-    if (statusEl) statusEl.textContent = scrape?.error || "Could not read that tab.";
-    return;
-  }
-  const r = await send("TUBESTACK_MERGE_SUBSCRIPTION_CHANNELS", { labels: scrape.channels || [] });
+  const r = await send("TUBESTACK_YOUTUBE_SUBSCRIPTIONS_SYNC");
   if (!r?.ok) {
-    if (statusEl) statusEl.textContent = "Could not merge channel list.";
+    if (statusEl) statusEl.textContent = r?.message || r?.error || "Sync failed.";
     return;
   }
-  subscriptionChannels = r.subscriptionChannels || subscriptionChannels;
-  if (statusEl) statusEl.textContent = `Directory updated (+${r.addedCount || 0} new).`;
+  subscriptionChannels = Array.isArray(r.subscriptionChannels) ? r.subscriptionChannels : subscriptionChannels;
+  if (statusEl) {
+    statusEl.classList.add("success");
+    statusEl.textContent = `Synced ${r.count ?? subscriptionChannels.length} channel(s).`;
+  }
   renderSubscriptionDirectory();
 });
 

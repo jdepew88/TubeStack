@@ -19,9 +19,37 @@ TubeStack helps reduce browser resource usage, organize large video queues, buil
 
 ---
 
-# Features
+# Installing TubeStack (Developer Mode)
 
-## OneTab-style YouTube tab saving
+TubeStack is currently installed as an unpacked Chrome Extension.
+
+## Installation steps
+
+1. Download the TubeStack ZIP or download the repository
+2. Extract/unzip the folder somewhere on your computer
+3. Open Google Chrome
+4. Navigate to:
+
+```txt
+chrome://extensions
+```
+
+5. Enable **Developer mode** (top-right corner)
+6. Click **Load unpacked**
+7. Select the TubeStack folder containing:
+
+```txt
+manifest.json
+```
+
+TubeStack should now appear in your Extensions manager.
+
+Pin it to the right of the address bar by selecting the puzzle piece and pinning TubeStack.
+
+---
+## Features
+
+# OneTab-style YouTube tab saving
 
 - Save all open YouTube tabs into TubeStack playlists
 - Close tabs after saving to reduce RAM and browser clutter
@@ -31,19 +59,53 @@ TubeStack helps reduce browser resource usage, organize large video queues, buil
 
 ---
 
-# Long-term library system
+# Focus and resource management tools
+
+TubeStack is designed to help reduce YouTube overload, browser clutter, and unnecessary RAM usage from large YouTube tab sessions.
+
+Features include:
+
+- Save tabs instead of leaving them open indefinitely
+- Close saved YouTube tabs to reduce browser RAM usage
+- OneTab-style YouTube queue management
+- Focus sessions
+- Queue management
+- Prioritization systems
+- Watch tracking
+- Resume later workflows
+- Preserve watch progress when possible
+
+Future versions may include:
+
+- screen-time analytics
+- session tracking
+- recommendation filtering
+- creator frequency analysis
+- watch habit insights
+
+---
+
+# Playlist features and long-term YouTube library
 
 TubeStack is designed as more than temporary tab storage.
 
-Build a permanent personal YouTube library with:
+Instead of losing track of hundreds of YouTube tabs, playlists, and saved videos, TubeStack allows you to build a long-term organized YouTube library directly inside the extension.
+
+TubeStack supports:
+
+- Local playlists stored directly inside the extension
+- Favorite videos
+- Watch later queues
+- Priority systems
+- Long-term archives
+- Topic-based collections
+- YouTube playlist importing/exporting
+
+TubeStack organizes videos using:
 
 - **Artists** → YouTube creators/channels
 - **Albums** → user-defined topic collections
 - **Categories** → organizational groupings
-- Custom playlists
-- Favorites
-- Priority queues
-- Watch later lists
 
 Examples:
 
@@ -58,8 +120,6 @@ Artist: Veritasium
 Album: Physics Concepts
 Category: Education
 ```
-
----
 
 # AI-assisted categorization (Optional OpenAI integration)
 
@@ -152,57 +212,6 @@ OpenAI features include:
 - future recommendation tools
 
 Your OpenAI API key is stored locally on your device and only used when AI features are run.
-
----
-
-# Focus and resource management tools
-
-TubeStack is designed to help reduce YouTube overload and browser clutter.
-
-Features include:
-
-- Save tabs instead of leaving them open indefinitely
-- Reduce RAM usage from large YouTube tab sessions
-- Focus sessions
-- Queue management
-- Prioritization systems
-- Watch tracking
-- Resume later workflows
-
-Future versions may include:
-
-- screen-time analytics
-- session tracking
-- recommendation filtering
-- creator frequency analysis
-- watch habit insights
-
----
-
-# Installing TubeStack (Developer Mode)
-
-TubeStack is currently installed as an unpacked Chrome Extension.
-
-## Installation steps
-
-1. Download the TubeStack project ZIP or clone/download the repository
-2. Extract/unzip the folder somewhere on your computer
-3. Open Google Chrome
-4. Navigate to:
-
-```txt
-chrome://extensions
-```
-
-5. Enable **Developer mode** (top-right corner)
-6. Click **Load unpacked**
-7. Select the TubeStack folder containing:
-
-```txt
-manifest.json
-```
-
-8. TubeStack should now appear in your Chrome toolbar
 
 ---
 

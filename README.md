@@ -403,20 +403,6 @@ inside the OpenAI Platform account.
 
 ---
 
-# Optional native messaging host
-
-TubeStack optionally supports native helper integrations such as yt-dlp.
-
-See:
-
-```txt
-native-host/INSTALL.txt
-```
-
-before enabling native download functionality.
-
----
-
 # Disclaimer
 
 TubeStack is not affiliated with YouTube or Google.

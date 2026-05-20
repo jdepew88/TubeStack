@@ -439,7 +439,8 @@
           <span class="label">Playlist Manager</span>
           <p class="panel-hint playlist-manager-lead">
             Saved on this device only. Use <strong>Save playlist…</strong> → <em>Save locally only</em> for
-            <strong>recent browser-tab sessions</strong>. <strong>View</strong> opens the list in the dashboard. Import
+            <strong>recent browser-tab sessions</strong>. <strong>Restore session</strong> reopens every saved video as
+            YouTube tabs. <strong>View</strong> opens the list in the dashboard. Import
             playlists from YouTube in <strong>Settings</strong> — those get a <strong>YouTube import</strong> badge.
             Uncheck “Show imported back catalog” in Settings to hide imports here and on Playlist home.
             <strong>Create YouTube playlist</strong> needs OAuth Client ID + sign-in. Default session names look like
@@ -499,6 +500,14 @@
           <button type="button" id="btnSmartPlaylist" class="btn small">Smart playlist…</button>
           <button type="button" id="btnExportYouTube" class="btn small primary">Save playlist…</button>
           <button type="button" id="btnRestore" class="btn small">Open selected</button>
+          <button
+            type="button"
+            id="btnRestorePlaylistSession"
+            class="btn small primary hidden"
+            title="Open every video in the current playlist snapshot as YouTube tabs (background tabs, resume where possible)"
+          >
+            Restore playlist session
+          </button>
           <button type="button" id="btnDelete" class="btn small danger">Remove selected</button>
           <button type="button" id="btnDeleteLocalPlaylist" class="btn small danger hidden">Delete playlist</button>
         </div>

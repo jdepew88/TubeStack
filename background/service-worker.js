@@ -2994,21 +2994,46 @@ async function deleteItems(ids) {
   return { ok: true };
 }
 
-async function restoreItems(ids) {
-  const set = new Set(ids);
-  const items = await loadItems();
-  const progressMap = await loadVideoProgress();
-  const toOpen = items.filter((x) => set.has(x.id));
-  for (const it of toOpen) {
+/** Open saved snapshot rows (library items or local playlist entries) as YouTube tabs. */
+async function openSnapshotItemsAsTabs(items, progressMap) {
+  const list = Array.isArray(items) ? items : [];
+  let opened = 0;
+  for (const it of list) {
     const vid = it.videoId;
     const pos = getPlayheadFromStorage(it, progressMap);
     const url =
       vid != null
         ? normalizeWatchUrl(vid, pos > 2 ? pos : it.timestampSec ?? null)
         : it.url || null;
-    if (url) await chrome.tabs.create({ url, active: false });
+    if (!url) continue;
+    await chrome.tabs.create({ url, active: false });
+    opened++;
   }
-  return { ok: true, opened: toOpen.length };
+  return { ok: true, opened, requested: list.length };
+}
+
+async function restoreItems(ids) {
+  const set = new Set(ids);
+  const items = await loadItems();
+  const progressMap = await loadVideoProgress();
+  const toOpen = items.filter((x) => set.has(x.id));
+  return openSnapshotItemsAsTabs(toOpen, progressMap);
+}
+
+/** Restore session: open every video in a saved local playlist as tabs. */
+async function restoreLocalPlaylistSession(playlistId) {
+  const id = String(playlistId || "").trim();
+  if (!id) return { ok: false, error: "missing_id" };
+  const lists = await loadLocalPlaylists();
+  const pl = lists.find((x) => x.id === id);
+  if (!pl) return { ok: false, error: "not_found" };
+  const items = Array.isArray(pl.items) ? pl.items : [];
+  if (!items.length) {
+    return { ok: false, error: "empty_playlist", message: "This playlist has no videos." };
+  }
+  const progressMap = await loadVideoProgress();
+  const r = await openSnapshotItemsAsTabs(items, progressMap);
+  return { ...r, playlistName: pl.name || "" };
 }
 
 function matchesSearch(item, q) {
@@ -3216,6 +3241,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_RESTORE": {
         sendResponse(await restoreItems(msg.ids || []));
+        break;
+      }
+      case "TUBESTACK_RESTORE_LOCAL_PLAYLIST": {
+        sendResponse(await restoreLocalPlaylistSession(msg.playlistId));
         break;
       }
       case "TUBESTACK_SEARCH": {

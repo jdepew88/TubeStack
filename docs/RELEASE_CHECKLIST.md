@@ -2,7 +2,7 @@
 
 Use this before uploading a build to the Chrome Web Store or tagging a release. Check boxes as you complete each item.
 
-**Related docs:** [PRIVACY.md](PRIVACY.md) · [STORE_LISTING.md](STORE_LISTING.md) · [README.md](README.md)
+**Related docs:** [PRIVACY.md](PRIVACY.md) · [STORE_LISTING.md](STORE_LISTING.md) · [README.md](../README.md)
 
 ---
 

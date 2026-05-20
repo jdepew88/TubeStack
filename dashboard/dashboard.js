@@ -636,6 +636,35 @@ function activatePlaylistView(playlistId, { replaceUrl = true } = {}) {
   render();
 }
 
+async function restoreLocalPlaylistSessionById(playlistId) {
+  const id = String(playlistId || "").trim();
+  const pl = localPlaylists.find((x) => x.id === id);
+  const n = (pl?.items || []).length;
+  if (!n) {
+    alert("This playlist has no videos.");
+    return false;
+  }
+  const label = pl?.name || "this playlist";
+  if (
+    !confirm(
+      `Open ${n} YouTube tab${n === 1 ? "" : "s"} for “${label}”? Tabs open in the background; resume positions apply when TubeStack has tracked them.`
+    )
+  ) {
+    return false;
+  }
+  const r = await send("TUBESTACK_RESTORE_LOCAL_PLAYLIST", { playlistId: id });
+  if (!r?.ok) {
+    alert(r?.message || r?.error || "Could not restore session.");
+    return false;
+  }
+  const opened = r.opened ?? 0;
+  const requested = r.requested ?? n;
+  if (opened < requested) {
+    alert(`Opened ${opened} of ${requested} tabs (some entries had no watch URL).`);
+  }
+  return true;
+}
+
 function applySidebarSectionVisibility() {
   const hidden = new Set(settings.sidebarHidden || []);
   document.querySelectorAll("[data-sidebar-section]").forEach((el) => {
@@ -1714,6 +1743,16 @@ function visibleItems() {
 
 function render() {
   const list = visibleItems();
+  const btnRestorePl = document.getElementById("btnRestorePlaylistSession");
+  if (btnRestorePl) {
+    const showPlRestore = Boolean(playlistViewMeta?.id);
+    btnRestorePl.classList.toggle("hidden", !showPlRestore);
+    if (showPlRestore) {
+      const pl = localPlaylists.find((x) => x.id === playlistViewMeta.id);
+      const n = (pl?.items || []).length;
+      btnRestorePl.textContent = n ? `Restore playlist session (${n})` : "Restore playlist session";
+    }
+  }
   if (summary) {
     summary.classList.toggle("summary--playlist-filter", Boolean(playlistViewVideoIds?.size && playlistViewMeta));
     summary.replaceChildren();
@@ -2421,9 +2460,15 @@ function renderLocalPlaylists() {
 
     const actions = document.createElement("div");
     actions.className = "local-pl-actions";
+    const btnSession = document.createElement("button");
+    btnSession.type = "button";
+    btnSession.className = "btn small primary";
+    btnSession.textContent = "Restore session";
+    btnSession.dataset.action = "restore-session";
+    btnSession.title = "Open every video in this playlist as YouTube tabs (background tabs)";
     const btnView = document.createElement("button");
     btnView.type = "button";
-    btnView.className = "btn small primary";
+    btnView.className = "btn small";
     btnView.textContent = "View";
     btnView.dataset.action = "view";
     btnView.title = "Open this list in the library (playlist view)";
@@ -2437,6 +2482,7 @@ function renderLocalPlaylists() {
     btnDel.className = "btn small danger";
     btnDel.textContent = "Erase";
     btnDel.dataset.action = "delete";
+    actions.appendChild(btnSession);
     actions.appendChild(btnView);
     actions.appendChild(btnRen);
     actions.appendChild(btnDel);
@@ -3626,6 +3672,8 @@ localPlaylistList?.addEventListener("click", async (e) => {
   } else if (action === "delete") {
     if (!confirm("Erase this local playlist? This cannot be undone.")) return;
     await eraseLocalPlaylist(id);
+  } else if (action === "restore-session") {
+    await restoreLocalPlaylistSessionById(id);
   } else if (action === "view") {
     activatePlaylistView(id, { replaceUrl: true });
     setActiveWindow("current");
@@ -3727,6 +3775,12 @@ btnRestore.addEventListener("click", async () => {
     return;
   }
   await send("TUBESTACK_RESTORE", { ids });
+});
+
+document.getElementById("btnRestorePlaylistSession")?.addEventListener("click", async () => {
+  const pid = playlistViewMeta?.id;
+  if (!pid) return;
+  await restoreLocalPlaylistSessionById(pid);
 });
 
 btnDelete.addEventListener("click", async () => {

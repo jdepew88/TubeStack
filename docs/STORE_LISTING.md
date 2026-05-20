@@ -143,7 +143,7 @@ Copy as needed into the listing or “Additional information”:
 
 - [ ] Short description within Chrome’s character limit.  
 - [ ] Screenshots and promotional images prepared.  
-- [ ] Privacy policy URL points to **`PRIVACY.md`** (hosted where the store can fetch HTTPS) or an equivalent page.  
+- [ ] Privacy policy URL points to **`docs/PRIVACY.md`** (hosted where the store can fetch HTTPS) or an equivalent page.  
 - [ ] OAuth consent screen (Google Cloud) matches the scopes and branding you describe.  
 - [ ] `manifest.json` version bumped for the build you upload.  
 - [ ] Permission justifications in the dashboard match the **actual** shipped build.

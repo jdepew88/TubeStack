@@ -269,6 +269,12 @@ TubeStack does **not** request Chrome History permission and does **not** scan u
 
 One-time Google Cloud configuration for the YouTube Data API v3 key and OAuth playlist tools, plus optional OpenAI setup for AI categorization.
 
+**In the extension:**
+
+- **Connect YouTube** ([dashboard/connect-youtube.html](dashboard/connect-youtube.html)) — plain-language, step-by-step sign-in for playlist import/export (OAuth Client ID + test sign-in). No TubeStack server.
+- **Setup Integrations** — advanced checklist for YouTube Data API key, OAuth, and OpenAI.
+- Manual fields remain in **Settings**. Full reference: [dashboard/setup-guide.html](dashboard/setup-guide.html).
+
 ---
 
 ### Google Cloud — one project

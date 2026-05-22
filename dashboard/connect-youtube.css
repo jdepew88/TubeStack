@@ -1,0 +1,262 @@
+.cy-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.cy-wrap {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.cy-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.cy-top h1 {
+  margin: 0 0 8px;
+  font-size: 1.55rem;
+}
+
+.cy-lead {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 52ch;
+}
+
+.cy-steps {
+  margin-bottom: 20px;
+}
+
+.cy-step-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cy-step-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.cy-step-pill span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--elevated);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.cy-step-pill.active {
+  border-color: rgba(47, 211, 138, 0.45);
+  color: var(--text);
+}
+
+.cy-step-pill.active span {
+  background: var(--green-dim);
+  color: #fff;
+}
+
+.cy-step-pill.done {
+  color: var(--green);
+}
+
+.cy-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 22px 18px;
+}
+
+.cy-panel.hidden {
+  display: none;
+}
+
+.cy-panel-title {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+}
+
+.cy-hint {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+.cy-muted {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.cy-choice-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cy-choice {
+  text-align: left;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--elevated);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.cy-choice strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1rem;
+}
+
+.cy-choice span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cy-choice:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.cy-choice--highlight {
+  border-color: rgba(47, 211, 138, 0.35);
+}
+
+.cy-help {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.cy-help summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.cy-help-list {
+  margin: 10px 0;
+  padding-left: 1.25rem;
+  line-height: 1.5;
+}
+
+.cy-help a {
+  color: var(--green);
+}
+
+.cy-copy-block {
+  margin: 10px 0;
+}
+
+.cy-copy-block .oauth-redirect {
+  display: block;
+  word-break: break-all;
+  margin-bottom: 8px;
+}
+
+.cy-copy-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cy-copy-meta code {
+  font-size: 12px;
+}
+
+.cy-client-input {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.cy-actions,
+.cy-nav-row,
+.cy-done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cy-nav-row {
+  margin-top: 20px;
+  justify-content: space-between;
+}
+
+.cy-status-box {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  min-height: 1.2em;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.cy-status-box.ok {
+  border-color: rgba(47, 211, 138, 0.4);
+  color: var(--green);
+}
+
+.cy-status-box.err {
+  border-color: rgba(255, 80, 80, 0.35);
+  color: #f99;
+}
+
+.cy-status-line {
+  margin: 12px 0 0;
+  min-height: 1.3em;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.cy-status-line.ok {
+  color: var(--green);
+}
+
+.cy-status-line.err {
+  color: #f99;
+}
+
+.cy-feature-list {
+  margin: 0 0 18px;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.cy-signin-btn {
+  font-size: 15px;
+  padding: 12px 20px;
+}

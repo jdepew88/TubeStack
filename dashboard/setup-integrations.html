@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TubeStack — Setup Integrations</title>
+    <link rel="icon" type="image/png" href="../icons/logo.png" />
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="setup-integrations.css" />
+  </head>
+  <body class="si-page">
+    <div class="si-wrap">
+      <header class="si-top">
+        <div>
+          <h1>Setup Integrations</h1>
+          <p class="si-lead">
+            Optional YouTube Data API, Google OAuth, and OpenAI — all stored locally. TubeStack works without any of
+            these.
+          </p>
+        </div>
+        <nav class="si-nav" aria-label="Back">
+          <a id="siBackDashboard" class="btn small ghost" href="dashboard.html">← Back to TubeStack</a>
+          <a id="siBackSettings" class="btn small ghost hidden" href="dashboard.html#settings">← Back to Settings</a>
+        </nav>
+      </header>
+
+      <section class="si-card si-reminder" aria-labelledby="si-local-heading">
+        <h2 id="si-local-heading" class="si-section-title">Local-first</h2>
+        <p>
+          TubeStack works locally without Google, YouTube API, OpenAI, or any TubeStack server. Optional integrations
+          only run when you enable and use them.
+        </p>
+      </section>
+
+      <aside class="si-card si-checklist" aria-labelledby="si-check-heading">
+        <h2 id="si-check-heading" class="si-section-title">Setup checklist</h2>
+        <ul id="siChecklist" class="si-checklist-list"></ul>
+        <div class="si-check-actions">
+          <button type="button" id="siBtnSkip" class="btn ghost">Skip for now</button>
+          <button type="button" id="siBtnSaveContinue" class="btn primary">Save and continue</button>
+        </div>
+      </aside>
+
+      <section class="si-card" id="siSectionYoutubeApi" aria-labelledby="si-yt-api-heading">
+        <h2 id="si-yt-api-heading" class="si-section-title">YouTube Data API key</h2>
+        <p class="si-hint">
+          Used for metadata, playlist imports, channel scans, and YouTube Data API features. Your API key is stored
+          locally in Chrome extension storage. It is sent only to Google’s YouTube Data API when you use YouTube API
+          features.
+        </p>
+        <label class="ob-label" for="siYoutubeApiKey">YouTube Data API key</label>
+        <input
+          type="password"
+          id="siYoutubeApiKey"
+          class="oobe-input"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="AIza…"
+        />
+        <p class="si-hint ob-muted" id="siYoutubeKeyHint">Paste a key to add or replace.</p>
+        <div class="si-actions">
+          <button type="button" id="siSaveYoutubeApi" class="btn small">Save API key</button>
+          <button type="button" id="siTestYoutubeApi" class="btn small ghost">Test API key</button>
+          <button type="button" id="siClearYoutubeApi" class="btn small danger ghost">Clear key</button>
+        </div>
+        <p id="siYoutubeApiStatus" class="si-status" role="status"></p>
+        <details class="si-help">
+          <summary>How to get a YouTube Data API key</summary>
+          <ol>
+            <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a>.</li>
+            <li>Create or select a project.</li>
+            <li>Enable <strong>YouTube Data API v3</strong>.</li>
+            <li>Create an <strong>API key</strong> under Credentials.</li>
+            <li>Paste it into TubeStack and test.</li>
+            <li>Optional: restrict the key to YouTube Data API v3.</li>
+          </ol>
+        </details>
+      </section>
+
+      <section class="si-card" id="siSectionOAuth" aria-labelledby="si-oauth-heading">
+        <h2 id="si-oauth-heading" class="si-section-title">Google OAuth Client ID</h2>
+        <p class="si-hint">
+          Used for user-authorized YouTube actions such as playlist import/export. TubeStack uses your own Google Cloud
+          OAuth Client ID. OAuth access tokens stay temporary in this extension — TubeStack does not run a backend to
+          store Google account tokens.
+        </p>
+        <div class="si-meta-block">
+          <span class="si-meta-label">Extension ID</span>
+          <code id="siExtensionId" class="oauth-redirect">—</code>
+          <button type="button" class="btn small ghost si-copy" data-copy-target="siExtensionId">Copy extension ID</button>
+        </div>
+        <div class="si-meta-block">
+          <span class="si-meta-label">Authorized redirect URI</span>
+          <code id="siOAuthRedirect" class="oauth-redirect">—</code>
+          <button type="button" class="btn small ghost si-copy" data-copy-target="siOAuthRedirect">Copy redirect URI</button>
+        </div>
+        <p class="si-hint ob-muted">
+          In Google Cloud Console, create an OAuth client of type <strong>Web application</strong> and add the redirect
+          URI above exactly.
+        </p>
+        <label class="ob-label" for="siOAuthClientId">OAuth 2.0 Client ID</label>
+        <input
+          type="text"
+          id="siOAuthClientId"
+          class="oobe-input oauth-input"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="xxxx.apps.googleusercontent.com"
+        />
+        <div class="si-actions">
+          <button type="button" id="siSaveOAuth" class="btn small">Save Client ID</button>
+          <button type="button" id="siTestOAuth" class="btn small ghost">Test Google sign-in</button>
+          <button type="button" class="btn small ghost si-copy" data-copy-source="siOAuthClientId">Copy Client ID</button>
+          <button type="button" id="siClearOAuth" class="btn small danger ghost">Clear Client ID</button>
+        </div>
+        <p id="siOAuthStatus" class="si-status" role="status"></p>
+        <details class="si-help">
+          <summary>How to get an OAuth Client ID</summary>
+          <ol>
+            <li>Go to Google Cloud Console → <strong>OAuth consent screen</strong> and configure it.</li>
+            <li>Create <strong>OAuth 2.0 Client ID</strong> → type <strong>Web application</strong>.</li>
+            <li>Add the redirect URI shown above (from <code>chrome.identity.getRedirectURL()</code>).</li>
+            <li>Paste the Client ID into TubeStack and use <strong>Test Google sign-in</strong>.</li>
+          </ol>
+        </details>
+      </section>
+
+      <section class="si-card" id="siSectionOpenai" aria-labelledby="si-openai-heading">
+        <h2 id="si-openai-heading" class="si-section-title">OpenAI API key</h2>
+        <p class="si-hint">
+          OpenAI is optional. TubeStack only contacts OpenAI when you explicitly use AI features. Selected video metadata
+          or notes may be sent depending on the feature.
+        </p>
+        <label class="ob-label" for="siOpenaiKey">OpenAI API key</label>
+        <input type="password" id="siOpenaiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+        <p class="si-hint ob-muted" id="siOpenaiKeyHint">Paste a key to add or replace.</p>
+        <div class="si-actions">
+          <button type="button" id="siSaveOpenai" class="btn small">Save OpenAI key</button>
+          <button type="button" id="siTestOpenai" class="btn small ghost">Test OpenAI connection</button>
+          <button type="button" id="siClearOpenai" class="btn small danger ghost">Clear key</button>
+        </div>
+        <p id="siOpenaiStatus" class="si-status" role="status"></p>
+        <details class="si-help">
+          <summary>How to get an OpenAI API key</summary>
+          <ol>
+            <li>Sign in at <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer">OpenAI</a>.</li>
+            <li>Create an API key under API keys.</li>
+            <li>Paste it here and test when you want AI features.</li>
+          </ol>
+        </details>
+      </section>
+
+      <footer class="si-footer">
+        <a class="btn ghost" href="setup-guide.html" target="_blank" rel="noopener noreferrer">Full setup guide (Google &amp; OpenAI)</a>
+      </footer>
+    </div>
+    <script src="setup-integrations.js"></script>
+  </body>
+</html>

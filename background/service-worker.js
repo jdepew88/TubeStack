@@ -515,11 +515,13 @@ async function testYoutubeOAuthConnection(msg = {}) {
     const token = await getYoutubeOAuthAccessToken(clientId);
     const now = Date.now();
     __youtubeImportAuth = { token, clientId: clientId.trim(), expiresAt: now + 45 * 60 * 1000 };
+    await markIntegrationTest("youtube_oauth", true);
     return {
       ok: true,
       message: "Google sign-in completed; YouTube scope was granted for this extension.",
     };
   } catch (e) {
+    await markIntegrationTest("youtube_oauth", false);
     return { ok: false, error: "oauth_failed", message: String(e.message || e) };
   }
 }
@@ -537,11 +539,12 @@ async function testYoutubeDataApiKey(apiKeyFromClient) {
     };
   }
   if (!(await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_GOOGLE_APIS))) {
+    await markIntegrationTest("youtube_api", false);
     return {
       ok: false,
       error: "host_permission_denied",
       message:
-        "Allow TubeStack to contact Google’s YouTube API when prompted (optional www.googleapis.com access), then test again.",
+        "TubeStack needs optional access to www.googleapis.com only when you use YouTube API features. Allow the browser prompt and try again.",
     };
   }
   const testUrl = `https://www.googleapis.com/youtube/v3/videos?part=id&id=dQw4w9WgXcQ&key=${encodeURIComponent(key)}`;
@@ -550,16 +553,20 @@ async function testYoutubeDataApiKey(apiKeyFromClient) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = json?.error?.message || `${res.status} ${res.statusText}`;
+      await markIntegrationTest("youtube_api", false);
       return { ok: false, error: "api_error", message: msg };
     }
     if (json.error) {
+      await markIntegrationTest("youtube_api", false);
       return { ok: false, error: "api_error", message: json.error.message || "YouTube API returned an error." };
     }
+    await markIntegrationTest("youtube_api", true);
     return {
       ok: true,
       message: "YouTube Data API v3 accepted this key (videos.list probe).",
     };
   } catch (e) {
+    await markIntegrationTest("youtube_api", false);
     return { ok: false, error: "network", message: String(e.message || e) };
   }
 }
@@ -637,6 +644,46 @@ function sanitizeSettingsForClient(raw) {
   delete s.youtubeDataApiKey;
   delete s.openaiApiKey;
   return s;
+}
+
+async function markIntegrationTest(kind, ok) {
+  const now = new Date().toISOString();
+  const patch = {};
+  if (kind === "youtube_api") {
+    patch.youtubeApiLastTestAt = now;
+    patch.youtubeApiLastTestOk = ok === true;
+  } else if (kind === "youtube_oauth") {
+    patch.youtubeOAuthLastTestAt = now;
+    patch.youtubeOAuthLastTestOk = ok === true;
+  } else if (kind === "openai") {
+    patch.openaiLastTestAt = now;
+    patch.openaiLastTestOk = ok === true;
+  } else {
+    return;
+  }
+  await saveSettings(patch);
+}
+
+function integrationHealthFromSettings(raw) {
+  const s = raw && typeof raw === "object" ? raw : {};
+  return {
+    localMode: true,
+    youtubeApi: {
+      configured: Boolean(String(s.youtubeDataApiKey || "").trim()),
+      lastTestAt: s.youtubeApiLastTestAt || null,
+      lastTestOk: s.youtubeApiLastTestOk === true,
+    },
+    youtubeOAuth: {
+      configured: Boolean(String(s.youtubeOAuthClientId || "").trim()),
+      lastTestAt: s.youtubeOAuthLastTestAt || null,
+      lastTestOk: s.youtubeOAuthLastTestOk === true,
+    },
+    openai: {
+      configured: Boolean(String(s.openaiApiKey || "").trim()),
+      lastTestAt: s.openaiLastTestAt || null,
+      lastTestOk: s.openaiLastTestOk === true,
+    },
+  };
 }
 
 /** Stable short hash for cache keys (titles only; no crypto guarantee). */
@@ -2381,10 +2428,12 @@ async function testOpenAiConnection(msg = {}) {
     return { ok: false, error: "openai_key_required", message: "Paste a key or save one in Settings first." };
   }
   if (!(await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_OPENAI))) {
+    await markIntegrationTest("openai", false);
     return {
       ok: false,
       error: "host_permission_denied",
-      message: "Allow TubeStack to contact OpenAI (api.openai.com) when prompted, then try again.",
+      message:
+        "TubeStack needs optional access to api.openai.com only when you use AI features. Allow the browser prompt and try again.",
     };
   }
   const auth = { Authorization: `Bearer ${apiKey}` };
@@ -2394,6 +2443,7 @@ async function testOpenAiConnection(msg = {}) {
     const r = await fetch("https://api.openai.com/v1/models", { method: "GET", headers: auth });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
+      await markIntegrationTest("openai", false);
       return {
         ok: false,
         error: "openai_http",
@@ -2402,6 +2452,7 @@ async function testOpenAiConnection(msg = {}) {
     }
     modelCount = Array.isArray(j?.data) ? j.data.length : 0;
   } catch (e) {
+    await markIntegrationTest("openai", false);
     return { ok: false, error: "network", message: String(e.message || e) };
   }
 
@@ -2462,6 +2513,8 @@ async function testOpenAiConnection(msg = {}) {
     /* billing endpoint often 401 for standard keys */
   }
 
+  const allOk = completionOk && modelCount > 0;
+  await markIntegrationTest("openai", allOk);
   return {
     ok: true,
     modelCount,
@@ -3275,6 +3328,9 @@ async function getFullState() {
     settings: sanitizeSettingsForClient(rawSettings),
     hasYoutubeApiKey: Boolean(rawSettings.youtubeDataApiKey),
     hasOpenaiKey: Boolean(rawSettings.openaiApiKey),
+    hasYoutubeOAuthClientId: Boolean(String(rawSettings.youtubeOAuthClientId || "").trim()),
+    integrationHealth: integrationHealthFromSettings(rawSettings),
+    extensionId: chrome.runtime?.id || "",
     oauthRedirectUri,
     videoProgress,
     watchByDay,

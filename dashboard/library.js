@@ -131,6 +131,14 @@ function libItemNote(it) {
   return TS_WATCH ? TS_WATCH.itemNoteText(it) : String(it?.notes || "").trim();
 }
 
+function refillLibSelectPreservingFocus(sel, html) {
+  if (!sel) return;
+  if (document.activeElement === sel) return;
+  const cur = sel.value;
+  sel.innerHTML = html;
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
+
 function fillLibWatchStateFilterOptions() {
   const targets = [document.getElementById("libWatchStateFilter"), document.getElementById("libBulkWatchState")].filter(
     Boolean
@@ -143,9 +151,7 @@ function fillLibWatchStateFilterOptions() {
     '<option value="">Set Watch State…</option>' +
     TS_WATCH.WATCH_STATE_LIST.map((x) => `<option value="${x.id}">${x.label}</option>`).join("");
   for (const sel of targets) {
-    const cur = sel.value;
-    sel.innerHTML = sel.id === "libBulkWatchState" ? bulkOpts : filterOpts;
-    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+    refillLibSelectPreservingFocus(sel, sel.id === "libBulkWatchState" ? bulkOpts : filterOpts);
   }
 }
 
@@ -724,6 +730,8 @@ function renderVideos() {
     actions.appendChild(catWrap);
     actions.appendChild(albWrap);
     actions.appendChild(del);
+    actions.addEventListener("click", (e) => e.stopPropagation());
+    actions.addEventListener("mousedown", (e) => e.stopPropagation());
 
     stack.appendChild(titleA);
     stack.appendChild(meta);
@@ -736,7 +744,7 @@ function renderVideos() {
       if (e.target.closest(".video-pick")) return;
       if (e.target.closest("a.video-thumb-link")) return;
       if (e.target.closest("a.video-title")) return;
-      if (e.target.closest("select, button.lib-video-del")) return;
+      if (e.target.closest(".lib-video-actions")) return;
       toggleLibraryVideoActions(it.id);
     });
 

@@ -66,7 +66,21 @@
             <span>Use <strong>local-only</strong> setup in this wizard (skip API key and OAuth steps)</span>
           </label>
           <p class="ob-muted">You can add an API key or OAuth later in Settings.</p>
-          <button type="button" class="btn oobe-cta primary" id="obNextFromIntro">Continue</button>
+          <div class="ob-actions ob-actions--stack">
+            <a
+              class="btn primary"
+              href="connect-youtube.html?from=onboarding"
+              id="obOpenConnectYoutube"
+              >Connect YouTube (easy setup)</a
+            >
+            <a
+              class="btn ghost"
+              href="setup-integrations.html?from=onboarding"
+              id="obOpenSetupIntegrations"
+              >Advanced: API keys &amp; OpenAI</a
+            >
+            <button type="button" class="btn oobe-cta primary" id="obNextFromIntro">Continue</button>
+          </div>
         </div>
 
         <div id="obStep2" class="ob-step hidden">
@@ -90,9 +104,13 @@
         <div id="obStep3" class="ob-step hidden">
           <h2 class="oobe-step-title">Google sign-in (OAuth)</h2>
           <p class="oobe-lead">
-            Optional. Lets you <strong>create YouTube playlists</strong> from saved queues. In Google Cloud Console,
-            create an OAuth client of type <strong>Web application</strong> and add this authorized redirect URI
-            (Chrome generates it for this extension — paste it exactly into Google Cloud):
+            Optional. Lets you <strong>create YouTube playlists</strong> from saved queues.
+            <a href="connect-youtube.html?from=onboarding">Use the easy Connect YouTube guide</a> for step-by-step setup,
+            or enter details here if you already use Google Cloud.
+          </p>
+          <p class="oobe-lead ob-muted">
+            In Google Cloud Console, create an OAuth client of type <strong>Web application</strong> and add this
+            authorized redirect URI (Chrome generates it for this extension — paste it exactly into Google Cloud):
           </p>
           <code id="obOAuthRedirect" class="oauth-redirect">—</code>
           <p class="ob-muted">
@@ -167,6 +185,13 @@
             <p class="ob-muted" id="obPullStatus"></p>
           </div>
 
+          <p class="ob-muted">
+            Optional:
+            <a href="connect-youtube.html?from=onboarding">Connect YouTube</a>
+            or
+            <a href="setup-integrations.html?from=onboarding">advanced integrations</a>
+            — skippable; TubeStack works locally without them.
+          </p>
           <button type="button" class="btn oobe-cta primary" id="obFinish">Complete setup</button>
         </div>
       </div>
@@ -225,6 +250,14 @@
           <button type="button" class="sidebar-win-btn" data-window-target="localPlaylists">Playlist Manager</button>
           <button type="button" class="sidebar-win-btn" data-window-target="usage">Usage Graphs</button>
           <button type="button" class="sidebar-win-btn" data-window-target="settings">Settings</button>
+        </section>
+
+        <section id="connectYoutubeHint" class="panel-block connect-youtube-hint hidden" data-sidebar-section="settings">
+          <span class="label">Connect YouTube</span>
+          <p class="panel-hint">
+            Optional — import playlists and save queues to your channel. TubeStack works locally without signing in.
+          </p>
+          <a class="btn small primary" href="connect-youtube.html?from=dashboard">Connect YouTube</a>
         </section>
 
         <section class="panel-block" data-sidebar-section="focus">
@@ -523,6 +556,25 @@
               device</strong>; requests go <strong>directly</strong> from the browser to Google or OpenAI when you use a
               feature that needs them — not through a TubeStack backend.
             </p>
+
+            <div class="settings-connect-youtube-cta">
+              <a class="btn small primary" href="connect-youtube.html?from=settings">Connect YouTube</a>
+              <p class="panel-hint ob-muted">
+                Easy step-by-step sign-in for playlist import and saving to your channel. Manual OAuth fields below stay
+                available.
+              </p>
+            </div>
+            <div class="settings-setup-integrations-cta">
+              <a class="btn small ghost" href="setup-integrations.html?from=settings">Setup Integrations (advanced)</a>
+              <p class="panel-hint ob-muted">
+                YouTube Data API key, OAuth, and OpenAI checklist. Use this if you prefer developer-style setup.
+              </p>
+            </div>
+
+            <div id="integrationHealthCard" class="settings-integration-health" aria-labelledby="integrationHealthTitle">
+              <h4 id="integrationHealthTitle" class="settings-subhead-sm">Integration health</h4>
+              <ul id="integrationHealthList" class="integration-health-list"></ul>
+            </div>
 
             <div class="settings-integration-block">
               <h4 class="settings-subhead-sm">Google (YouTube)</h4>

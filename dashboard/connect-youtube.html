@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TubeStack — Connect YouTube</title>
+    <link rel="icon" type="image/png" href="../icons/logo.png" />
+    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="connect-youtube.css" />
+  </head>
+  <body class="cy-page">
+    <div class="cy-wrap">
+      <header class="cy-top">
+        <div>
+          <h1>Connect YouTube</h1>
+          <p class="cy-lead">
+            TubeStack works locally without connecting YouTube. Connecting is optional and only needed for YouTube
+            account features like playlist import and saving playlists to your channel.
+          </p>
+        </div>
+        <a id="cyBackLink" class="btn small ghost" href="dashboard.html">← Back to TubeStack</a>
+      </header>
+
+      <nav class="cy-steps" aria-label="Setup progress">
+        <ol id="cyStepNav" class="cy-step-nav">
+          <li class="cy-step-pill active" data-step="1"><span>1</span> Choose</li>
+          <li class="cy-step-pill" data-step="2"><span>2</span> Connect</li>
+          <li class="cy-step-pill" data-step="3"><span>3</span> Test</li>
+          <li class="cy-step-pill" data-step="4"><span>4</span> Done</li>
+        </ol>
+      </nav>
+
+      <!-- Step 1 -->
+      <section id="cyPanel1" class="cy-panel" data-step="1">
+        <h2 class="cy-panel-title">How do you want to use TubeStack?</h2>
+        <div class="cy-choice-grid">
+          <button type="button" class="cy-choice" id="cyChooseLocal" data-choice="local">
+            <strong>Local only</strong>
+            <span>Save tabs, organize your library, track watch time — no Google sign-in.</span>
+          </button>
+          <button type="button" class="cy-choice cy-choice--highlight" id="cyChooseConnect" data-choice="connect">
+            <strong>Connect YouTube</strong>
+            <span>Import playlists from your account and save TubeStack queues to YouTube.</span>
+          </button>
+        </div>
+        <p class="cy-muted">You can change this anytime in Settings. Nothing is sent to a TubeStack server.</p>
+      </section>
+
+      <!-- Step 2 -->
+      <section id="cyPanel2" class="cy-panel hidden" data-step="2">
+        <h2 class="cy-panel-title">Connect your YouTube account</h2>
+        <p class="cy-hint">
+          TubeStack uses <strong>your own</strong> free Google Cloud project (one-time setup). You paste one ID into
+          Google, then the same ID into TubeStack. We never store your Google password.
+        </p>
+
+        <div class="cy-status-box" id="cyClientIdStatus" role="status"></div>
+
+        <details class="cy-help" open>
+          <summary>Quick setup (about 10 minutes, one time)</summary>
+          <ol class="cy-help-list">
+            <li>
+              Open
+              <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a>
+              and create or pick a project.
+            </li>
+            <li>Enable <strong>YouTube Data API v3</strong> (APIs &amp; Services → Library).</li>
+            <li>
+              Set up the <strong>OAuth consent screen</strong> (External is fine for personal use). Add yourself as a
+              <strong>Test user</strong> if the app stays in Testing mode.
+            </li>
+            <li>
+              Create an OAuth client: type <strong>Web application</strong>. Under <strong>Authorized redirect URIs</strong>,
+              paste this exact URI:
+            </li>
+          </ol>
+          <div class="cy-copy-block">
+            <code id="cyRedirectUri" class="oauth-redirect">—</code>
+            <button type="button" class="btn small ghost" id="cyCopyRedirect">Copy redirect URI</button>
+          </div>
+          <p class="cy-muted cy-copy-meta">
+            Extension ID: <code id="cyExtensionId">—</code>
+            <button type="button" class="btn small ghost" id="cyCopyExtId">Copy</button>
+          </p>
+          <ol class="cy-help-list" start="5">
+            <li>Copy the <strong>Client ID</strong> Google gives you and paste it below.</li>
+          </ol>
+        </details>
+
+        <label class="ob-label" for="cyClientId">OAuth Client ID</label>
+        <input
+          type="text"
+          id="cyClientId"
+          class="oobe-input cy-client-input"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="123456789-xxxx.apps.googleusercontent.com"
+        />
+        <div class="cy-actions">
+          <button type="button" class="btn primary" id="cySaveClientId">Save Client ID</button>
+          <a
+            class="btn ghost"
+            href="setup-guide.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Full written guide</a
+          >
+          <a class="btn ghost" href="setup-integrations.html?from=connect-youtube">Advanced: API keys &amp; OpenAI</a>
+        </div>
+        <p class="cy-muted">
+          Already saved a Client ID in Settings? It appears here automatically. Manual fields in Settings still work.
+        </p>
+        <div class="cy-nav-row">
+          <button type="button" class="btn ghost" id="cyBackTo1">← Back</button>
+          <button type="button" class="btn primary" id="cyToStep3" disabled>Continue to test</button>
+        </div>
+      </section>
+
+      <!-- Step 3 -->
+      <section id="cyPanel3" class="cy-panel hidden" data-step="3">
+        <h2 class="cy-panel-title">Test your connection</h2>
+        <p class="cy-hint">
+          Click below to open Google’s sign-in page. TubeStack only talks to Google when <strong>you</strong> click this
+          button (or use a feature that needs YouTube).
+        </p>
+        <ul class="cy-feature-list">
+          <li>Import playlists you choose from your YouTube account</li>
+          <li>Save a TubeStack queue as a playlist on your channel</li>
+          <li>Sync subscription list (when you use that feature)</li>
+        </ul>
+        <button type="button" class="btn primary cy-signin-btn" id="cyTestSignIn">Sign in with Google to test</button>
+        <p id="cyTestStatus" class="cy-status-line" role="status"></p>
+        <div class="cy-nav-row">
+          <button type="button" class="btn ghost" id="cyBackTo2">← Back</button>
+          <button type="button" class="btn primary" id="cyToStep4" disabled>Continue</button>
+        </div>
+      </section>
+
+      <!-- Step 4 -->
+      <section id="cyPanel4" class="cy-panel hidden" data-step="4">
+        <h2 class="cy-panel-title" id="cyDoneTitle">You’re set</h2>
+        <p class="cy-hint" id="cyDoneMessage"></p>
+        <div class="cy-done-actions">
+          <a class="btn primary" id="cyDoneDashboard" href="dashboard.html">Back to TubeStack</a>
+          <a class="btn ghost" href="dashboard.html#settings">Open Settings (advanced)</a>
+        </div>
+        <p class="cy-muted" id="cyDoneExtra"></p>
+      </section>
+    </div>
+    <script src="connect-youtube.js"></script>
+  </body>
+</html>

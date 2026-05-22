@@ -234,6 +234,11 @@ async function refresh() {
   }
   const lists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
   cachedRawPlaylists = playlistsVisibleOnHome(r.settings, lists);
+  const hint = document.getElementById("homeConnectYoutube");
+  if (hint) {
+    const connected = r.integrationHealth?.youtubeOAuth?.lastTestOk === true;
+    hint.classList.toggle("hidden", connected);
+  }
   renderHomePlaylists();
   syncHomeToolbarUi();
 }

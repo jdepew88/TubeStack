@@ -131,6 +131,14 @@ function makeWatchStateBadge(it) {
   return el;
 }
 
+function refillSelectPreservingFocus(sel, html) {
+  if (!sel) return;
+  if (document.activeElement === sel) return;
+  const cur = sel.value;
+  sel.innerHTML = html;
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
+
 function fillWatchStateFilterOptions() {
   const targets = [
     document.getElementById("filterWatchState"),
@@ -147,9 +155,7 @@ function fillWatchStateFilterOptions() {
     TS_WATCH.WATCH_STATE_LIST.map((x) => `<option value="${x.id}">${escapeHtml(x.label)}</option>`).join("");
   for (const sel of targets) {
     const isBulk = sel.id === "bulkWatchState" || sel.id === "libBulkWatchState";
-    const cur = sel.value;
-    sel.innerHTML = isBulk ? bulkOpts : opts;
-    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+    refillSelectPreservingFocus(sel, isBulk ? bulkOpts : opts);
   }
 }
 
@@ -1413,17 +1419,21 @@ const obScanResult = document.getElementById("obScanResult");
 
 function fillCategoryFilter() {
   const cats = Object.keys(LIST_LABELS);
-  filterCategory.innerHTML =
+  refillSelectPreservingFocus(
+    filterCategory,
     `<option value="">All lists</option>` +
-    cats.map((c) => `<option value="${c}">${LIST_LABELS[c]}</option>`).join("");
+      cats.map((c) => `<option value="${c}">${LIST_LABELS[c]}</option>`).join("")
+  );
   fillWatchStateFilterOptions();
 }
 
 function fillThemeFilter() {
   if (!filterItemCategory) return;
-  filterItemCategory.innerHTML =
+  refillSelectPreservingFocus(
+    filterItemCategory,
     `<option value="">All categories</option>` +
-    themes.map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`).join("");
+      themes.map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`).join("")
+  );
 }
 
 function renderPriorityFilterBar() {
@@ -1773,6 +1783,42 @@ function updateFocusUi() {
   }
 }
 
+function formatIntegrationHealthLine(h) {
+  if (!h) return "—";
+  if (!h.configured) return "Not configured";
+  if (h.lastTestAt) {
+    const when = new Date(h.lastTestAt).toLocaleString(undefined, {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+    return h.lastTestOk ? `Last test passed · ${when}` : `Last test failed · ${when}`;
+  }
+  return "Configured";
+}
+
+function renderIntegrationHealth(health) {
+  const list = document.getElementById("integrationHealthList");
+  if (!list) return;
+  const h = health || {};
+  const rows = [
+    ["Local mode", "Always available"],
+    ["YouTube Data API", formatIntegrationHealthLine(h.youtubeApi)],
+    ["Google OAuth", formatIntegrationHealthLine(h.youtubeOAuth)],
+    ["OpenAI", formatIntegrationHealthLine(h.openai)],
+  ];
+  list.innerHTML = rows
+    .map(([label, value]) => `<li><span class="ih-label">${label}</span><span class="ih-value">${value}</span></li>`)
+    .join("");
+}
+
+function updateConnectYoutubeHint(stateResponse) {
+  const el = document.getElementById("connectYoutubeHint");
+  if (!el) return;
+  const oauthHealth = stateResponse?.integrationHealth?.youtubeOAuth;
+  const connected = oauthHealth?.lastTestOk === true;
+  el.classList.toggle("hidden", connected);
+}
+
 async function loadState() {
   const r = await send("TUBESTACK_GET_STATE");
   if (!r?.ok) {
@@ -1790,6 +1836,8 @@ async function loadState() {
   hasYoutubeApiKey = Boolean(r.hasYoutubeApiKey);
   hasOpenaiKey = Boolean(r.hasOpenaiKey);
   oauthRedirectUri = r.oauthRedirectUri || "";
+  renderIntegrationHealth(r.integrationHealth);
+  updateConnectYoutubeHint(r);
   const rdUri = oauthRedirectUri || "—";
   const rd = document.getElementById("oauthRedirectDisplay");
   if (rd) rd.textContent = rdUri;
@@ -4807,12 +4855,22 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
 });
 
 async function bootDashboard() {
-  const runOobe = new URLSearchParams(window.location.search).get("runOobe") === "1";
+  const params = new URLSearchParams(window.location.search);
+  const runOobe = params.get("runOobe") === "1";
+  const resumeOobe = params.get("resumeOobe") === "1";
   if (runOobe) {
     await send("TUBESTACK_RESET_ONBOARDING");
     history.replaceState({}, "", "dashboard.html");
   }
   await loadState();
+  if (resumeOobe && !settings.onboardingComplete) {
+    history.replaceState({}, "", "dashboard.html");
+    populateOobeFields();
+    showObStep(1);
+  }
+  if (location.hash === "#settings") {
+    document.querySelector('[data-sidebar-section="settings"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 /** When playlists or settings change in another tab/page, stay in sync without a full reload. */

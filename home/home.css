@@ -20,6 +20,31 @@ body {
   padding: 20px 24px 48px;
 }
 
+.home-connect-youtube {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: var(--panel);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.home-connect-youtube.hidden {
+  display: none;
+}
+
+.home-connect-youtube p {
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
+}
+
 .home-header {
   display: flex;
   flex-wrap: wrap;

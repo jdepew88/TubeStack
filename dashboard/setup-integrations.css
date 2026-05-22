@@ -1,0 +1,179 @@
+.si-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.si-wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.si-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.si-top h1 {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+}
+
+.si-lead {
+  margin: 0;
+  color: var(--muted);
+  max-width: 52ch;
+  line-height: 1.45;
+}
+
+.si-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.si-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.si-reminder {
+  border-color: rgba(47, 211, 138, 0.25);
+  background: linear-gradient(165deg, #141a18 0%, var(--surface) 100%);
+}
+
+.si-section-title {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.si-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.si-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.si-status {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 1.2em;
+}
+
+.si-status.ok {
+  color: var(--green);
+}
+
+.si-status.err {
+  color: #f88;
+}
+
+.si-checklist {
+  position: sticky;
+  top: 12px;
+  z-index: 2;
+}
+
+.si-checklist-list {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.si-checklist-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.si-checklist-list li:last-child {
+  border-bottom: none;
+}
+
+.si-check-label {
+  color: var(--text);
+}
+
+.si-check-value {
+  color: var(--muted);
+  text-align: right;
+}
+
+.si-check-value.done {
+  color: var(--green);
+}
+
+.si-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.si-meta-block {
+  margin-bottom: 12px;
+}
+
+.si-meta-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.si-meta-block .oauth-redirect {
+  display: block;
+  word-break: break-all;
+  margin-bottom: 8px;
+}
+
+.si-help {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.si-help summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.si-help ol {
+  margin: 10px 0 0;
+  padding-left: 1.25rem;
+  line-height: 1.5;
+}
+
+.si-help a {
+  color: var(--green);
+}
+
+.si-footer {
+  margin-top: 8px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .si-checklist {
+    position: static;
+  }
+}

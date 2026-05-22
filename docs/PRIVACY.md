@@ -34,7 +34,8 @@ Depending on how you use TubeStack, the extension may store locally, among other
 
 **Credentials stay on your device:**
 
-- **YouTube Data API keys** you enter are stored locally in Chrome extension storage.
+- **YouTube Data API keys** you enter are stored locally in Chrome extension storage (Settings or the optional **Setup Integrations** guided page).
+- **OAuth Web Client IDs** for YouTube account features are stored locally; the optional **Connect YouTube** guide helps you set them up without sending credentials to TubeStack.
 - **YouTube OAuth** configuration (such as your OAuth Web Client ID) and **OAuth access tokens** used for signed-in Google features are handled **on your device**.
 - **OpenAI API keys** you enter are stored locally in Chrome extension storage.
 

@@ -1,5 +1,5 @@
 /**
- * TubeStack — background: YouTube tabs, library, themes, progress, history scan, playlist pack.
+ * TubeStack — background: YouTube tabs, library, themes, progress, playlist pack.
  * Host access: youtube.com / m.youtube.com (manifest). Google YouTube API + OpenAI are optional_host_permissions
  * and are requested at runtime only when those features run (see ensureGoogleApisHostAccess / ensureOpenaiHostAccess).
  */
@@ -883,78 +883,6 @@ async function saveVideoProgress(map) {
 async function loadWatchByDay() {
   const { watchByDay = {} } = await chrome.storage.local.get("watchByDay");
   return watchByDay && typeof watchByDay === "object" ? watchByDay : {};
-}
-
-function localDateKeyFromMs(ms) {
-  const d = new Date(ms);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-/**
- * Optional usage chart: count YouTube watch/shorts page opens per local calendar day from Chrome’s
- * browsing history (optional `history` permission). YouTube Data API v3 does not expose per-viewer
- * “minutes watched in account history” for normal users, so watch duration in TubeStack comes from
- * the in-page tracker (see TUBESTACK_PROGRESS_TICK), not from Google’s APIs.
- */
-async function aggregateYoutubeHistoryOpensByDay({ fromMs, toMs }) {
-  const ok = await chrome.permissions.contains({ permissions: ["history"] });
-  if (!ok) return { ok: false, error: "history_not_granted" };
-  const from = Math.max(0, Number(fromMs) || 0);
-  const to = Math.max(from + 60_000, Number(toMs) || Date.now());
-  const maxUrls = 450;
-  const maxVisitEvents = 55_000;
-  const rows = await chrome.history.search({
-    text: "youtube.com",
-    startTime: from,
-    endTime: to,
-    maxResults: 12000,
-  });
-  const urls = [];
-  const seen = new Set();
-  for (const row of rows) {
-    const u = row.url;
-    if (!u || seen.has(u)) continue;
-    if (!isYouTubeWatchUrl(u)) continue;
-    seen.add(u);
-    urls.push(u);
-    if (urls.length >= maxUrls) break;
-  }
-  const byDay = {};
-  let visitEvents = 0;
-  for (const url of urls) {
-    let visits;
-    try {
-      visits = await chrome.history.getVisits({ url });
-    } catch {
-      continue;
-    }
-    for (const v of visits) {
-      const t = v.visitTime;
-      if (t < from || t > to) continue;
-      const key = localDateKeyFromMs(t);
-      byDay[key] = (byDay[key] || 0) + 1;
-      visitEvents++;
-      if (visitEvents >= maxVisitEvents) {
-        return {
-          ok: true,
-          byDay,
-          urlsScanned: urls.length,
-          capped: true,
-          urlCapHit: urls.length >= maxUrls,
-        };
-      }
-    }
-  }
-  return {
-    ok: true,
-    byDay,
-    urlsScanned: urls.length,
-    capped: false,
-    urlCapHit: urls.length >= maxUrls,
-  };
 }
 
 async function loadLocalPlaylists() {
@@ -1928,110 +1856,6 @@ async function scrapeYouTubeChannelsPage(tabId) {
   }
 }
 
-async function scanYouTubeHistory(windowDays = 7) {
-  const ok = await chrome.permissions.contains({ permissions: ["history"] });
-  if (!ok) return { ok: false, error: "history_not_granted" };
-
-  const startTime = Date.now() - windowDays * 86400000;
-  const items = await chrome.history.search({
-    text: "youtube.com/watch",
-    maxResults: 25000,
-    startTime,
-  });
-
-  const videoIds = new Set();
-  for (const it of items || []) {
-    try {
-      const u = new URL(it.url);
-      if (!YT_HOSTS.has(u.hostname)) continue;
-      const v = u.searchParams.get("v");
-      if (v) videoIds.add(v);
-    } catch {
-      /* */
-    }
-  }
-
-  const summary = {
-    windowDays,
-    visitCount: (items || []).length,
-    uniqueVideos: videoIds.size,
-    lastComputed: new Date().toISOString(),
-  };
-  await saveSettings({ youtubeHistorySummary: summary });
-  return { ok: true, summary };
-}
-
-async function scanYouTubeHistoryGenreDNA(windowDays = 7) {
-  const ok = await chrome.permissions.contains({ permissions: ["history"] });
-  if (!ok) return { ok: false, error: "history_not_granted" };
-
-  const startTime = Date.now() - windowDays * 86400000;
-  const rows = await chrome.history.search({
-    text: "youtube.com/watch",
-    maxResults: 25000,
-    startTime,
-  });
-
-  const byVid = new Map();
-  for (const row of rows || []) {
-    try {
-      const u = new URL(row.url);
-      if (!YT_HOSTS.has(u.hostname)) continue;
-      const v = u.searchParams.get("v");
-      if (!v || !isValidVideoId(v)) continue;
-      const prev = byVid.get(v);
-      const visitAdd = row.visitCount != null ? row.visitCount : 1;
-      const visitCount = (prev?.visitCount || 0) + visitAdd;
-      const candTitle = (row.title && String(row.title).trim()) || "";
-      const title =
-        !prev?.title
-          ? candTitle || "YouTube video"
-          : candTitle.length > (prev.title?.length || 0)
-            ? candTitle
-            : prev.title;
-      const lastVisitTime = Math.max(prev?.lastVisitTime || 0, row.lastVisitTime || 0);
-      byVid.set(v, {
-        videoId: v,
-        url: normalizeWatchUrl(v),
-        title: title || "YouTube video",
-        visitCount,
-        lastVisitTime,
-      });
-    } catch {
-      /* */
-    }
-  }
-
-  const counts = new Map();
-  const videos = [];
-  for (const rec of byVid.values()) {
-    const genreLabel = inferGranularGenreForText(rec.title, null);
-    videos.push({ ...rec, genreLabel });
-    counts.set(genreLabel, (counts.get(genreLabel) || 0) + 1);
-  }
-  videos.sort((a, b) => b.visitCount - a.visitCount);
-  const genres = [...counts.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count);
-
-  const genreScanSummary = {
-    windowDays,
-    scannedAt: new Date().toISOString(),
-    videoCount: videos.length,
-    genreCount: genres.length,
-  };
-  await saveSettings({ youtubeHistoryGenreScanSummary: genreScanSummary });
-
-  return {
-    ok: true,
-    windowDays,
-    videoCount: videos.length,
-    genres,
-    videos: videos.slice(0, 400),
-    genreScanSummary,
-  };
-}
-
 async function mergeThemesFromGranularLabels(labels) {
   const presetMap = new Map(GRANULAR_GENRE_PRESETS.map((p) => [String(p.label).toLowerCase(), p]));
   const themes = await loadThemes();
@@ -2061,45 +1885,37 @@ async function mergeThemesFromGranularLabels(labels) {
   return { ok: true, themes, addedCount: added };
 }
 
-async function gatherHistoryWatchVideos(windowDays = 30, maxResults = 25000) {
-  const ok = await chrome.permissions.contains({ permissions: ["history"] });
-  if (!ok) return { ok: false, error: "history_not_granted", videos: [] };
-  const startTime = Date.now() - windowDays * 86400000;
-  const rows = await chrome.history.search({
-    text: "youtube.com/watch",
-    maxResults,
-    startTime,
-  });
+/** Unique saved library videos for category rebuild (titles/channels only; no Chrome History API). */
+async function gatherLibraryVideosForGenreRebuild() {
+  const items = await loadItems();
   const byVid = new Map();
-  for (const row of rows || []) {
-    try {
-      const u = new URL(row.url);
-      if (!YT_HOSTS.has(u.hostname)) continue;
-      const v = u.searchParams.get("v");
-      if (!v || !isValidVideoId(v)) continue;
-      const prev = byVid.get(v);
-      const visitAdd = row.visitCount != null ? row.visitCount : 1;
-      const visitCount = (prev?.visitCount || 0) + visitAdd;
-      const candTitle = (row.title && String(row.title).trim()) || "";
-      const title =
-        !prev?.title
-          ? candTitle || "YouTube video"
-          : candTitle.length > (prev.title?.length || 0)
-            ? candTitle
-            : prev.title;
-      const lastVisitTime = Math.max(prev?.lastVisitTime || 0, row.lastVisitTime || 0);
-      byVid.set(v, {
-        videoId: v,
-        url: normalizeWatchUrl(v),
-        title: title || "YouTube video",
-        visitCount,
-        lastVisitTime,
+  for (const it of items) {
+    const vid = String(it.videoId || "").trim();
+    if (!vid || !isValidVideoId(vid)) continue;
+    const title = String(it.title || "").trim() || "YouTube video";
+    const channel = String(it.channel || "").trim();
+    const prev = byVid.get(vid);
+    if (!prev || title.length > (prev.title?.length || 0)) {
+      byVid.set(vid, {
+        videoId: vid,
+        url: it.url || normalizeWatchUrl(vid),
+        title,
+        channel,
+        visitCount: 1,
+        lastVisitTime: it.savedAt ? new Date(it.savedAt).getTime() : 0,
       });
-    } catch {
-      /* */
     }
   }
-  return { ok: true, videos: [...byVid.values()] };
+  const videos = [...byVid.values()];
+  if (!videos.length) {
+    return {
+      ok: false,
+      error: "empty_library",
+      message: "Save some YouTube videos to your library first, then run rebuild.",
+      videos: [],
+    };
+  }
+  return { ok: true, videos };
 }
 
 function bestBroadGenreForTitle(title, channel) {
@@ -2279,7 +2095,7 @@ function nearestBroadLabel(raw, labels) {
   return best;
 }
 
-async function openAiClassifyHistoryChunk({ items, apiKey, model, broadLabels }) {
+async function openAiClassifyTitleChunk({ items, apiKey, model, broadLabels }) {
   await ensureOpenaiHostAccess();
   const payload = items.map((x) => {
     const row = {
@@ -2290,7 +2106,7 @@ async function openAiClassifyHistoryChunk({ items, apiKey, model, broadLabels })
     if (ch) row.channel = ch.slice(0, 120);
     return row;
   });
-  const user = `Input (JSON array of watch history rows):\n${JSON.stringify(payload)}`;
+  const user = `Input (JSON array of saved library videos):\n${JSON.stringify(payload)}`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2304,7 +2120,7 @@ async function openAiClassifyHistoryChunk({ items, apiKey, model, broadLabels })
       messages: [
         {
           role: "system",
-          content: `Each row is a YouTube video the user watched: videoId, title, and optional channel name from the browser history title only.
+          content: `Each row is a YouTube video saved in the user's TubeStack library: videoId, title, and optional channel name.
 There are no transcripts, page URLs, or API keys in this payload. For each row, suggest niche: a short 2-6 word user-specific sub-interest when the title clearly implies one; otherwise "".
 Broad must be EXACTLY one of: ${broadLabels.join(" | ")} (best guess from title and optional channel only).
 Respond as JSON: {"items":[{"videoId":"","broad":"","niche":""}]}`,
@@ -2670,8 +2486,8 @@ async function aiCategorizeLibrary(msg = {}) {
   }
 }
 
-async function rebuildGenresFromHistoryHeuristic({ windowDays = 30, maxUserNiches = 15, replaceExisting = true }) {
-  const g = await gatherHistoryWatchVideos(windowDays);
+async function rebuildGenresFromLibraryHeuristic({ maxUserNiches = 15, replaceExisting = true }) {
+  const g = await gatherLibraryVideosForGenreRebuild();
   if (!g.ok) return g;
   const videos = g.videos;
   const broadLower = new Set(BROAD_GENRE_TAXONOMY.map((x) => x.label.toLowerCase()));
@@ -2729,13 +2545,12 @@ async function rebuildGenresFromHistoryHeuristic({ windowDays = 30, maxUserNiche
     ok: true,
     mode: "heuristic",
     themes: newThemes,
-    historyVideos: videos.length,
+    libraryVideos: videos.length,
     userNiches: topNiches.length,
   };
 }
 
-async function rebuildGenresFromHistoryOpenAI({
-  windowDays = 30,
+async function rebuildGenresFromLibraryOpenAI({
   maxUserNiches = 15,
   replaceExisting = true,
   apiKey,
@@ -2743,7 +2558,7 @@ async function rebuildGenresFromHistoryOpenAI({
 }) {
   const key = String(apiKey || "").trim();
   if (key.length < 20) return { ok: false, error: "openai_key_required", message: "Add an OpenAI API key in settings or paste it in the rebuild dialog." };
-  const g = await gatherHistoryWatchVideos(windowDays);
+  const g = await gatherLibraryVideosForGenreRebuild();
   if (!g.ok) return g;
   let videos = g.videos.sort((a, b) => (b.visitCount || 0) - (a.visitCount || 0)).slice(0, 280);
   const broadLabels = BROAD_GENRE_TAXONOMY.map((x) => x.label);
@@ -2767,7 +2582,7 @@ async function rebuildGenresFromHistoryOpenAI({
       }
       let rows = cachedRows.slice();
       if (need.length) {
-        const fresh = await openAiClassifyHistoryChunk({ items: need, apiKey: key, model, broadLabels });
+        const fresh = await openAiClassifyTitleChunk({ items: need, apiKey: key, model, broadLabels });
         for (const row of fresh) {
           const vid = String(row.videoId || "").trim();
           const rec = need.find((x) => x.videoId === vid);
@@ -2838,14 +2653,13 @@ async function rebuildGenresFromHistoryOpenAI({
     ok: true,
     mode: "openai",
     themes: newThemes,
-    historyVideos: g.videos.length,
+    libraryVideos: g.videos.length,
     userNiches: topNiches.length,
   };
 }
 
-async function rebuildGenresFromHistory(msg = {}) {
+async function rebuildGenresFromLibrary(msg = {}) {
   const mode = msg.mode === "openai" ? "openai" : "heuristic";
-  const windowDays = Math.min(90, Math.max(1, Number(msg.windowDays) || 30));
   const maxUserNiches = Math.min(20, Math.max(5, Number(msg.maxUserNiches) || 15));
   const replaceExisting = msg.replaceExisting !== false;
   const settings = await loadSettings();
@@ -2856,15 +2670,14 @@ async function rebuildGenresFromHistory(msg = {}) {
       await saveSettings({ openaiApiKey: String(msg.openaiApiKey).trim() });
       apiKey = String(msg.openaiApiKey).trim();
     }
-    return rebuildGenresFromHistoryOpenAI({
-      windowDays,
+    return rebuildGenresFromLibraryOpenAI({
       maxUserNiches,
       replaceExisting,
       apiKey,
       model: msg.openaiModel,
     });
   }
-  return rebuildGenresFromHistoryHeuristic({ windowDays, maxUserNiches, replaceExisting });
+  return rebuildGenresFromLibraryHeuristic({ maxUserNiches, replaceExisting });
 }
 
 async function dismissLatestImportBatch() {
@@ -3190,10 +3003,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
-      case "TUBESTACK_USAGE_HISTORY_OPENS_BY_DAY": {
-        sendResponse(await aggregateYoutubeHistoryOpensByDay({ fromMs: msg.fromMs, toMs: msg.toMs }));
-        break;
-      }
       case "TUBESTACK_MERGE_SUBSCRIPTION_CHANNELS": {
         sendResponse(await mergeSubscriptionChannelLabels(msg.labels || []));
         break;
@@ -3296,20 +3105,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         );
         break;
       }
-      case "TUBESTACK_HISTORY_SCAN": {
-        sendResponse(await scanYouTubeHistory(msg.windowDays || 7));
-        break;
-      }
-      case "TUBESTACK_HISTORY_GENRE_SCAN": {
-        sendResponse(await scanYouTubeHistoryGenreDNA(msg.windowDays || 7));
-        break;
-      }
       case "TUBESTACK_MERGE_GRANULAR_GENRE_THEMES": {
         sendResponse(await mergeThemesFromGranularLabels(msg.labels || []));
         break;
       }
       case "TUBESTACK_REBUILD_GENRES_FROM_HISTORY": {
-        sendResponse(await rebuildGenresFromHistory(msg));
+        sendResponse(await rebuildGenresFromLibrary(msg));
         break;
       }
       case "TUBESTACK_AI_CATEGORIZE_LIBRARY": {
@@ -3338,11 +3139,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_DISMISS_IMPORT_BATCH": {
         sendResponse(await dismissLatestImportBatch());
-        break;
-      }
-      case "TUBESTACK_REQUEST_HISTORY_PERMISSION": {
-        const granted = await chrome.permissions.request({ permissions: ["history"] });
-        sendResponse({ ok: true, granted });
         break;
       }
       case "TUBESTACK_TEST_YOUTUBE_API_KEY": {

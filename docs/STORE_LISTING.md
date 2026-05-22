@@ -34,7 +34,7 @@ Inside the **dashboard**, you can **organize** saved videos with **lists**, **th
 - **YouTube OAuth (optional):** If you add a Google OAuth **Web application** client ID, you can sign in to Google **from the extension** for features that need your **YouTube account** (for example creating playlists or syncing subscription lists). Tokens are used **between your browser and Google**; TubeStack does **not** operate a backend that stores your Google password or OAuth tokens for its own servers.
 - **OpenAI (optional):** If you add an OpenAI API key, **AI-assisted** tools can run **only when you use them**. Requests go **directly** from the extension to **OpenAI**; they may include **selected video metadata** (for example titles and channel names) needed for categorization—not a separate log of all sites you visit.
 
-**Privacy in one line:** TubeStack is **local-first**. Your saved library, playlists, progress, and settings live in **extension storage on your device**. TubeStack **does not sell** your data. For the full policy, see **[PRIVACY.md](PRIVACY.md)**.
+**Privacy in one line:** TubeStack is **local-first**. Your saved library, playlists, progress, and settings live in **extension storage on your device**. **TubeStack does not request Chrome History permission and does not scan unrelated browsing history.** TubeStack **does not sell** your data. For the full policy, see **[PRIVACY.md](PRIVACY.md)**.
 
 **Disclaimers:** TubeStack is **not affiliated with**, **endorsed by**, or **sponsored by** **YouTube**, **Google**, or **OpenAI**. YouTube and Google trademarks belong to their owners. You are responsible for complying with YouTube’s Terms of Service, Google API/OAuth policies, and OpenAI’s terms when you use those services.
 
@@ -58,11 +58,7 @@ Use these in the **“Permission justification”** fields (paraphrase if the fo
 | **storage** | Persists your **local library**, playlists, settings, and progress in **Chrome extension storage** (`chrome.storage.local` / related APIs)—**on your device**. |
 | **windows** | Reads **open tabs in the current window** so TubeStack can **save YouTube watch tabs** by position (for example “tabs to the left/right”) in a predictable way. |
 
-### Optional permission
-
-| Permission | Why it is optional |
-|------------|---------------------|
-| **history** (optional) | Used **only if you explicitly opt in** to features that **analyze** your **Chrome browsing history** for **YouTube watch URLs** to suggest themes or similar insights. If you never grant it, those features stay off. |
+TubeStack **does not request Chrome History permission** and **does not scan unrelated browsing history**.
 
 ---
 
@@ -112,7 +108,7 @@ OpenAI is **optional**. If you paste an **OpenAI API key** into TubeStack:
 
 - The key is stored **locally** in extension storage on your device.
 - Network calls go **directly** from the extension to **`https://api.openai.com`** when **you** run a feature that needs a model (for example **AI categorization** or a **connection test**).
-- **AI categorization** may send **selected fields** from videos already in your library (such as **title**, **channel**, and **tags/notes** you have)—enough for the model to suggest categories—not your entire browsing history as an automatic feed.
+- **AI categorization** may send **selected fields** from videos already in your library (such as **title**, **channel**, and **tags/notes** you have)—enough for the model to suggest categories. TubeStack does **not** read Chrome browsing history for this.
 
 You can **remove the key** and **clear local AI cache** from Settings. OpenAI’s retention and logging are governed by **OpenAI’s** policies and your account settings there.
 

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TubeStack",
   "version": "0.9",
-  "description": "Save YouTube tabs, triage by theme and time, focus sessions, and resume without losing your place. Core access is limited to YouTube; Google YouTube API and OpenAI are optional, on-demand host permissions.",
+  "description": "Save YouTube tabs, organize a local video library, resume progress, and optionally use YouTube API and OpenAI tools.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -10,7 +10,6 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["contextMenus", "identity", "scripting", "storage", "windows"],
-  "optional_permissions": ["history"],
   "host_permissions": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
   "optional_host_permissions": ["https://www.googleapis.com/*", "https://api.openai.com/*"],
   "content_security_policy": {

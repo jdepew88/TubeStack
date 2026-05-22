@@ -1,5 +1,5 @@
 /**
- * Fixed broad genre buckets for history-based rebuild (~25).
+ * Fixed broad genre buckets for library-based category rebuild (~25).
  * Each entry: display label + keywords for local matching (titles/channels/tags text).
  * Loaded by service-worker via importScripts.
  */

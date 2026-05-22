@@ -14,104 +14,80 @@
         <a class="back-btn" href="../home/home.html">Go to Playlist Home</a>
       </header>
 
-      <section class="library-playlists-panel" aria-label="Saved playlists">
-        <div class="library-playlists-head">
-          <div class="library-playlists-title-row">
+      <section class="library-browse-panel" id="libBrowsePanel" aria-label="Browse by artist, album, and category">
+        <div class="library-browse-head">
+          <div class="library-browse-title-row">
             <button
               type="button"
-              id="libPlaylistPanelToggle"
-              class="lib-playlist-panel-toggle"
+              id="libBrowseCollapseToggle"
+              class="lib-browse-panel-toggle"
               aria-expanded="true"
-              aria-controls="libPlaylistPanelBody"
+              aria-controls="libBrowsePanelBody"
             >
-              <span class="lib-playlist-caret" aria-hidden="true"></span>
-              <span class="sr-only">Show or hide saved playlists</span>
+              <span class="lib-browse-caret" aria-hidden="true"></span>
+              <span class="sr-only">Show or hide artist, album, and category columns</span>
             </button>
-            <h2 class="library-playlists-title">Saved playlists</h2>
+            <h2 class="library-browse-title">Artist · Album · Category</h2>
           </div>
-          <div class="library-origin-toggle" role="group" aria-label="Playlist origin">
-            <button type="button" class="lib-origin-btn active" id="libOriginRecent" data-origin="recent">
-              Recent sessions
-            </button>
-            <button type="button" class="lib-origin-btn" id="libOriginImported" data-origin="imported">
-              All imported (YouTube)
-            </button>
+          <div class="library-browse-head-tools">
+            <label class="lib-browse-session-label">
+              <span class="sr-only">Session or playlist</span>
+              <select id="libSessionSelect" class="lib-browse-session-select" aria-label="Session or playlist">
+                <option value="recent">All recent saves</option>
+              </select>
+            </label>
+            <label class="lib-browse-search-wrap">
+              <span class="sr-only">Search library</span>
+              <input
+                type="search"
+                id="libSearch"
+                class="lib-browse-search-input"
+                placeholder="Search…"
+                autocomplete="off"
+              />
+            </label>
+          </div>
+          <div class="library-browse-actions">
+            <button type="button" id="libBrowseSizeBtn" class="lib-browse-size-btn">Show less</button>
+            <button type="button" id="libBrowseShowMoreBtn" class="lib-browse-show-more-btn">Show more</button>
           </div>
         </div>
-        <div id="libPlaylistPanelBody" class="library-playlists-body">
-          <p class="library-playlists-hint hidden" id="libOriginHint"></p>
-          <div id="libraryPlaylistChips" class="library-playlist-chips"></div>
-        </div>
-      </section>
+        <p class="library-browse-hint hidden" id="libBrowseOriginHint"></p>
+        <div id="libBrowsePanelBody" class="library-browse-body">
+          <div class="library-columns-head">
+            <div class="library-head-cell">
+              <span>Artist (YouTube channel)</span>
+              <select id="artistSortOrder" class="library-sort-select" aria-label="Sort artists alphabetically">
+                <option value="asc" selected>A to Z</option>
+                <option value="desc">Z to A</option>
+              </select>
+            </div>
+            <div class="library-head-cell">
+              <span>Album (from tags)</span>
+              <select id="albumSortOrder" class="library-sort-select" aria-label="Sort albums alphabetically">
+                <option value="asc" selected>A to Z</option>
+                <option value="desc">Z to A</option>
+              </select>
+            </div>
+            <div class="library-head-cell">
+              <span>Category</span>
+              <select id="categorySortOrder" class="library-sort-select" aria-label="Sort categories alphabetically">
+                <option value="asc" selected>A to Z</option>
+                <option value="desc">Z to A</option>
+              </select>
+            </div>
+          </div>
 
-      <div class="library-columns-head">
-        <div class="library-head-cell">
-          <span>Artist (YouTube channel)</span>
-          <select id="artistSortOrder" class="library-sort-select" aria-label="Sort artists alphabetically">
-            <option value="asc" selected>A to Z</option>
-            <option value="desc">Z to A</option>
-          </select>
-        </div>
-        <div class="library-head-cell">
-          <span>Album (from tags)</span>
-          <select id="albumSortOrder" class="library-sort-select" aria-label="Sort albums alphabetically">
-            <option value="asc" selected>A to Z</option>
-            <option value="desc">Z to A</option>
-          </select>
-        </div>
-        <div class="library-head-cell">
-          <span>Category</span>
-          <select id="categorySortOrder" class="library-sort-select" aria-label="Sort categories alphabetically">
-            <option value="asc" selected>A to Z</option>
-            <option value="desc">Z to A</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="library-columns-body">
-        <section class="library-col">
-          <div id="artistList" class="library-scroll"></div>
-        </section>
-        <section class="library-col">
-          <div id="albumList" class="library-scroll"></div>
-        </section>
-        <section class="library-col">
-          <div id="categoryList" class="library-scroll"></div>
-        </section>
-      </div>
-
-      <section class="library-controls" aria-label="Library controls">
-        <label class="library-search-wrap">
-          <span class="sr-only">Search videos</span>
-          <input type="search" id="libSearch" placeholder="Search title, creator, album, category, tag…" autocomplete="off" />
-        </label>
-        <div class="library-controls-grid">
-          <div class="lib-control">
-            <span class="lib-control-label">View</span>
-            <select id="libViewMode">
-              <option value="list">List</option>
-              <option value="details" selected>Details</option>
-              <option value="grid">Grid</option>
-            </select>
-          </div>
-          <div class="lib-control">
-            <span class="lib-control-label">Sort</span>
-            <select id="libQuickSort">
-              <option value="saved_desc">Recently saved</option>
-              <option value="title_asc">Title (A-Z)</option>
-              <option value="creator_asc">Creator (A-Z)</option>
-              <option value="duration_desc">Length (longest)</option>
-              <option value="duration_asc">Length (shortest)</option>
-              <option value="category_asc">Category (A-Z)</option>
-            </select>
-          </div>
-          <div class="lib-control">
-            <span class="lib-control-label">List</span>
-            <select id="libListFilter"></select>
-          </div>
-          <div class="lib-control lib-priority-control">
-            <span class="lib-control-label">Priority</span>
-            <div id="libPriorityBar" class="lib-priority-bar" role="group" aria-label="Filter by priority"></div>
+          <div class="library-columns-body">
+            <section class="library-col">
+              <div id="artistList" class="library-scroll"></div>
+            </section>
+            <section class="library-col">
+              <div id="albumList" class="library-scroll"></div>
+            </section>
+            <section class="library-col">
+              <div id="categoryList" class="library-scroll"></div>
+            </section>
           </div>
         </div>
       </section>
@@ -122,20 +98,69 @@
             <h2 id="videosTitle">Saved videos</h2>
           </div>
           <div id="libFacetVideoHead" class="lib-facet-video-head hidden">
-            <div class="lib-facet-video-row">
-              <div class="lib-facet-video-text">
-                <span id="libFacetName" class="lib-facet-name"></span>
-                <span id="libFacetInlineCount" class="lib-facet-inline-count"></span>
-              </div>
-              <button
-                type="button"
-                id="libFacetDeleteAll"
-                class="lib-facet-delete-all"
-                title="Remove every video in this list from your library"
-              >
-                Delete list
-              </button>
+            <div class="lib-facet-video-text">
+              <span id="libFacetName" class="lib-facet-name"></span>
+              <span id="libFacetInlineCount" class="lib-facet-inline-count"></span>
             </div>
+          </div>
+
+          <div
+            id="libVideosToolbar"
+            class="lib-videos-toolbar lib-videos-toolbar--collapsed"
+            role="toolbar"
+            aria-label="Sort, view, and list actions"
+          >
+            <button
+              type="button"
+              id="libSortViewToggle"
+              class="lib-sort-view-toggle"
+              aria-expanded="false"
+              aria-controls="libVideosToolbarBody"
+            >
+              <span class="lib-sort-view-caret" aria-hidden="true"></span>
+              Sort and View
+            </button>
+            <div id="libVideosToolbarBody" class="lib-videos-toolbar-body">
+              <div class="library-controls-grid">
+                <div class="lib-control">
+                  <span class="lib-control-label">View</span>
+                  <select id="libViewMode">
+                    <option value="list">List</option>
+                    <option value="details" selected>Details</option>
+                    <option value="grid">Grid</option>
+                  </select>
+                </div>
+                <div class="lib-control">
+                  <span class="lib-control-label">Sort</span>
+                  <select id="libQuickSort">
+                    <option value="saved_desc">Recently saved</option>
+                    <option value="title_asc">Title (A-Z)</option>
+                    <option value="creator_asc">Creator (A-Z)</option>
+                    <option value="duration_desc">Length (longest)</option>
+                    <option value="duration_asc">Length (shortest)</option>
+                    <option value="category_asc">Category (A-Z)</option>
+                  </select>
+                </div>
+                <div class="lib-control">
+                  <span class="lib-control-label">List</span>
+                  <select id="libListFilter" aria-label="Filter by watch list or saved session">
+                    <option value="">All lists</option>
+                  </select>
+                </div>
+                <div class="lib-control lib-priority-control">
+                  <span class="lib-control-label">Priority</span>
+                  <div id="libPriorityBar" class="lib-priority-bar" role="group" aria-label="Filter by priority"></div>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="libFacetDeleteAll"
+              class="lib-facet-delete-all lib-videos-toolbar-delete hidden"
+              title="Remove every video in this filtered list from your library"
+            >
+              Delete list
+            </button>
           </div>
           <div id="libBulkBar" class="lib-bulk-bar hidden" role="region" aria-label="Bulk actions for checked videos">
             <label class="lib-bulk-all"

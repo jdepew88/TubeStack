@@ -23,6 +23,8 @@ let localPlaylists = [];
 let libSettings = {};
 /** "recent" = browser-tab sessions & other non-YouTube-import saves; "imported" = back catalog from YouTube OAuth import */
 let libPlaylistOrigin = "recent";
+/** When set, library + browse columns only show videos in this local playlist snapshot. */
+let libActivePlaylistId = null;
 
 /** Which library video row shows inline category / album / delete (one at a time). */
 let libVideoActionsId = "";
@@ -30,24 +32,61 @@ let libVideoActionsId = "";
 /** Checked video ids for bulk delete / move / new playlist (scoped to current filtered list). */
 const libCheckedIds = new Set();
 
-const LIB_PLAYLIST_PANEL_COLLAPSED_KEY = "ts_library_playlists_collapsed";
+const LIB_SORT_VIEW_TOOLBAR_KEY = "ts_library_sort_view_toolbar_open";
+const LIB_FILTER_SESSION = "__import_session__";
+const LIB_FILTER_YT_IMPORT = "__import_youtube__";
 
-function getLibPlaylistPanelCollapsed() {
-  return localStorage.getItem(LIB_PLAYLIST_PANEL_COLLAPSED_KEY) === "1";
+/** expanded | compact | collapsed */
+const LIB_BROWSE_PANEL_STATE_KEY = "ts_library_browse_panel_state";
+
+function getLibBrowsePanelState() {
+  const v = localStorage.getItem(LIB_BROWSE_PANEL_STATE_KEY);
+  if (v === "compact" || v === "collapsed" || v === "expanded") return v;
+  return "compact";
 }
 
-function applyLibPlaylistPanelCollapsedUi() {
-  const panel = document.querySelector(".library-playlists-panel");
-  const btn = document.getElementById("libPlaylistPanelToggle");
-  const collapsed = getLibPlaylistPanelCollapsed();
-  panel?.classList.toggle("library-playlists-panel--collapsed", collapsed);
-  if (btn) btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+function setLibBrowsePanelState(state) {
+  const allowed = ["expanded", "compact", "collapsed"];
+  const next = allowed.includes(state) ? state : "expanded";
+  localStorage.setItem(LIB_BROWSE_PANEL_STATE_KEY, next);
+  applyLibBrowsePanelUi();
 }
 
-function toggleLibPlaylistPanelCollapsed() {
-  const next = !getLibPlaylistPanelCollapsed();
-  localStorage.setItem(LIB_PLAYLIST_PANEL_COLLAPSED_KEY, next ? "1" : "0");
-  applyLibPlaylistPanelCollapsedUi();
+function applyLibBrowsePanelUi() {
+  const panel = document.getElementById("libBrowsePanel");
+  const collapseBtn = document.getElementById("libBrowseCollapseToggle");
+  const sizeBtn = document.getElementById("libBrowseSizeBtn");
+  const showMoreBtn = document.getElementById("libBrowseShowMoreBtn");
+  if (!panel) return;
+  const state = getLibBrowsePanelState();
+  panel.classList.toggle("library-browse-panel--collapsed", state === "collapsed");
+  panel.classList.toggle("library-browse-panel--compact", state === "compact");
+  collapseBtn?.setAttribute("aria-expanded", state === "collapsed" ? "false" : "true");
+  if (sizeBtn) {
+    sizeBtn.textContent = state === "compact" ? "Show more" : "Show less";
+    sizeBtn.hidden = state === "collapsed";
+  }
+  if (showMoreBtn) showMoreBtn.hidden = state !== "collapsed";
+}
+
+function toggleLibBrowsePanelCollapsed() {
+  const cur = getLibBrowsePanelState();
+  if (cur === "collapsed") {
+    const prev = localStorage.getItem(`${LIB_BROWSE_PANEL_STATE_KEY}_prev`);
+    setLibBrowsePanelState(prev === "compact" ? "compact" : "expanded");
+    return;
+  }
+  localStorage.setItem(`${LIB_BROWSE_PANEL_STATE_KEY}_prev`, cur);
+  setLibBrowsePanelState("collapsed");
+}
+
+function toggleLibBrowsePanelSize() {
+  const cur = getLibBrowsePanelState();
+  if (cur === "collapsed") {
+    setLibBrowsePanelState("expanded");
+    return;
+  }
+  setLibBrowsePanelState(cur === "compact" ? "expanded" : "compact");
 }
 
 function send(type, payload = {}) {
@@ -181,7 +220,13 @@ function computeDisplayedVideoList() {
   if (selectedArtist) list = list.filter((it) => (it.channel || "Unknown creator") === selectedArtist);
   if (selectedAlbum) list = list.filter((it) => deriveAlbum(it) === selectedAlbum);
   if (selectedCategory) list = list.filter((it) => (LIST_LABELS[it.category] || "Unassigned") === selectedCategory);
-  if (libListFilter) list = list.filter((it) => (it.category || "") === libListFilter);
+  if (libListFilter === LIB_FILTER_SESSION) {
+    list = list.filter((it) => it.libraryImportSource !== "youtube_playlist");
+  } else if (libListFilter === LIB_FILTER_YT_IMPORT) {
+    list = list.filter((it) => it.libraryImportSource === "youtube_playlist");
+  } else if (libListFilter) {
+    list = list.filter((it) => (it.category || "") === libListFilter);
+  }
   if (libPriorityFilter) list = list.filter((it) => (it.priority || "") === libPriorityFilter);
   if (libSearchQuery) list = list.filter((it) => matchesLibrarySearch(it, libSearchQuery));
   if (libQuickSort === "title_asc") {
@@ -244,21 +289,48 @@ function syncLibBulkUi(list) {
   if (currentPl && [...plSel.options].some((o) => o.value === currentPl)) plSel.value = currentPl;
 }
 
+function applyLibSortViewToolbarUi() {
+  const toolbar = document.getElementById("libVideosToolbar");
+  const toggle = document.getElementById("libSortViewToggle");
+  if (!toolbar || !toggle) return;
+  const open = localStorage.getItem(LIB_SORT_VIEW_TOOLBAR_KEY) === "1";
+  toolbar.classList.toggle("lib-videos-toolbar--collapsed", !open);
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function toggleLibSortViewToolbar() {
+  const toolbar = document.getElementById("libVideosToolbar");
+  const toggle = document.getElementById("libSortViewToggle");
+  if (!toolbar || !toggle) return;
+  const open = toolbar.classList.contains("lib-videos-toolbar--collapsed");
+  toolbar.classList.toggle("lib-videos-toolbar--collapsed", !open);
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  localStorage.setItem(LIB_SORT_VIEW_TOOLBAR_KEY, open ? "1" : "0");
+}
+
 function updateVideosHeader(list) {
   const defaultHead = document.getElementById("libDefaultVideoTitle");
   const facetHead = document.getElementById("libFacetVideoHead");
   const videosTitle = document.getElementById("videosTitle");
   const facetName = document.getElementById("libFacetName");
   const facetCount = document.getElementById("libFacetInlineCount");
+  const facetDelete = document.getElementById("libFacetDeleteAll");
   const showFacet = libraryHasFacetFilter();
   if (defaultHead) defaultHead.classList.toggle("hidden", showFacet);
   if (facetHead) facetHead.classList.toggle("hidden", !showFacet);
+  if (facetDelete) facetDelete.classList.toggle("hidden", !showFacet);
   if (showFacet && facetName && facetCount) {
     facetName.textContent = facetTitleLine();
     facetCount.textContent = ` · ${list.length} video${list.length === 1 ? "" : "s"}`;
   }
   if (videosTitle) {
-    if (libPlaylistOrigin === "imported") {
+    if (libActivePlaylistId) {
+      const pl = localPlaylists.find((p) => p.id === libActivePlaylistId);
+      const base = pl?.name || "Playlist";
+      videosTitle.textContent = selectedArtist
+        ? `${base} · ${selectedArtist} (${list.length})`
+        : `${base} (${list.length})`;
+    } else if (libPlaylistOrigin === "imported") {
       videosTitle.textContent = selectedArtist
         ? `Imported — ${selectedArtist} (${list.length})`
         : `Imported from YouTube (${list.length})`;
@@ -281,7 +353,22 @@ async function reloadLibraryFullState() {
 }
 
 function getLibraryViewItems() {
-  return allItems.filter((it) => itemMatchesLibraryOrigin(it));
+  let items = allItems.filter((it) => itemMatchesLibraryOrigin(it));
+  if (libActivePlaylistId) {
+    const pl = localPlaylists.find((p) => p.id === libActivePlaylistId);
+    const videoIds = new Set(
+      (pl?.items || []).map((x) => String(x.videoId || "").trim()).filter((v) => /^[\w-]{11}$/.test(v))
+    );
+    if (videoIds.size) {
+      items = items.filter((it) => videoIds.has(String(it.videoId || "").trim()));
+    }
+  }
+  return items;
+}
+
+function currentSessionSelectValue() {
+  if (libActivePlaylistId) return `pl:${libActivePlaylistId}`;
+  return libPlaylistOrigin === "imported" ? "imported" : "recent";
 }
 
 function playlistsForLibraryOrigin() {
@@ -293,55 +380,83 @@ function playlistsForLibraryOrigin() {
   return localPlaylists.filter((p) => p.playlistSource !== "youtube_import");
 }
 
-function renderPlaylistChips() {
-  const host = document.getElementById("libraryPlaylistChips");
-  const hint = document.getElementById("libOriginHint");
-  if (!host) return;
-  host.innerHTML = "";
-  if (libPlaylistOrigin === "imported" && libSettings.libraryShowYoutubeImported === false) {
-    if (hint) {
-      hint.textContent =
-        "Imported playlists are hidden. Turn on “Show imported back catalog” in the dashboard Settings window.";
-      hint.classList.remove("hidden");
-    }
-    return;
-  }
-  if (hint) hint.classList.add("hidden");
-  const list = [...playlistsForLibraryOrigin()].sort(
-    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
-  );
-  if (!list.length) {
-    const p = document.createElement("p");
-    p.className = "library-playlists-empty";
-    p.textContent =
-      libPlaylistOrigin === "imported"
-        ? "No YouTube-imported playlists yet. Use Settings → Import my YouTube playlists now."
-        : "No recent session playlists yet. Save YouTube tabs from the TubeStack toolbar.";
-    host.appendChild(p);
-    return;
-  }
-  for (const pl of list) {
-    const a = document.createElement("a");
-    a.className = "library-playlist-chip";
+function renderSessionSelect() {
+  const sel = document.getElementById("libSessionSelect");
+  const hint = document.getElementById("libBrowseOriginHint");
+  if (!sel) return;
+  const cur = currentSessionSelectValue();
+  sel.innerHTML = "";
+
+  const ogRecent = document.createElement("optgroup");
+  ogRecent.label = "Sessions";
+  const allRecent = document.createElement("option");
+  allRecent.value = "recent";
+  allRecent.textContent = "All recent saves";
+  ogRecent.appendChild(allRecent);
+  for (const pl of localPlaylists
+    .filter((p) => p.playlistSource !== "youtube_import")
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))) {
+    const o = document.createElement("option");
+    o.value = `pl:${pl.id}`;
     const n = (pl.items || []).length;
-    a.href = chrome.runtime.getURL(`dashboard/dashboard.html?playlist=${encodeURIComponent(pl.id)}`);
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.textContent = `${pl.name || "Untitled"} · ${n}`;
-    a.title =
-      pl.playlistSource === "youtube_import" ? "Historical playlist imported from YouTube" : "Recent session playlist";
-    host.appendChild(a);
+    const label = (pl.name || "Untitled").trim();
+    o.textContent = `${label.length > 26 ? `${label.slice(0, 25)}…` : label} (${n})`;
+    ogRecent.appendChild(o);
+  }
+  sel.appendChild(ogRecent);
+
+  const showImp = libSettings.libraryShowYoutubeImported !== false;
+  if (showImp) {
+    const ogImp = document.createElement("optgroup");
+    ogImp.label = "Imported";
+    const allImp = document.createElement("option");
+    allImp.value = "imported";
+    allImp.textContent = "All imported";
+    ogImp.appendChild(allImp);
+    for (const pl of localPlaylists
+      .filter((p) => p.playlistSource === "youtube_import")
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))) {
+      const o = document.createElement("option");
+      o.value = `pl:${pl.id}`;
+      const n = (pl.items || []).length;
+      const label = (pl.name || "Untitled").trim();
+      o.textContent = `${label.length > 26 ? `${label.slice(0, 25)}…` : label} (${n})`;
+      ogImp.appendChild(o);
+    }
+    sel.appendChild(ogImp);
+    hint?.classList.add("hidden");
+  } else if (hint) {
+    hint.textContent =
+      "Imported playlists are hidden. Turn on “Show imported back catalog” in dashboard Settings.";
+    hint.classList.remove("hidden");
+  }
+
+  const allowed = new Set([...sel.options].map((o) => o.value));
+  if (allowed.has(cur)) {
+    sel.value = cur;
+  } else {
+    sel.value = "recent";
+    libActivePlaylistId = null;
+    libPlaylistOrigin = "recent";
   }
 }
 
-function setLibPlaylistOrigin(origin) {
-  libPlaylistOrigin = origin === "imported" ? "imported" : "recent";
-  document.getElementById("libOriginRecent")?.classList.toggle("active", libPlaylistOrigin === "recent");
-  document.getElementById("libOriginImported")?.classList.toggle("active", libPlaylistOrigin === "imported");
+function applySessionSelectValue(value) {
+  if (value === "recent") {
+    libActivePlaylistId = null;
+    libPlaylistOrigin = "recent";
+  } else if (value === "imported") {
+    libActivePlaylistId = null;
+    libPlaylistOrigin = "imported";
+  } else if (value.startsWith("pl:")) {
+    const id = value.slice(3);
+    const pl = localPlaylists.find((p) => p.id === id);
+    libActivePlaylistId = id;
+    libPlaylistOrigin = pl?.playlistSource === "youtube_import" ? "imported" : "recent";
+  }
   selectedArtist = "";
   selectedAlbum = "";
   selectedCategory = "";
-  renderPlaylistChips();
   renderAll();
 }
 
@@ -536,7 +651,6 @@ function renderVideos() {
     host.appendChild(row);
   }
   syncLibBulkUi(list);
-  applyLibraryColumnsCollapse();
 }
 
 function sortRowsAlpha(rows, order = "asc") {
@@ -576,14 +690,45 @@ function renderListFilterOptions() {
   const sel = document.getElementById("libListFilter");
   if (!sel) return;
   const current = libListFilter;
-  sel.innerHTML = `<option value="">All lists</option>`;
+  sel.innerHTML = "";
+
+  const allOpt = document.createElement("option");
+  allOpt.value = "";
+  allOpt.textContent = "All lists";
+  sel.appendChild(allOpt);
+
+  const ogSession = document.createElement("optgroup");
+  ogSession.label = "Saved sessions";
+  const sessOpt = document.createElement("option");
+  sessOpt.value = LIB_FILTER_SESSION;
+  sessOpt.textContent = "Recent tab saves";
+  ogSession.appendChild(sessOpt);
+  sel.appendChild(ogSession);
+
+  const ogWatch = document.createElement("optgroup");
+  ogWatch.label = "Watch list";
   for (const [key, label] of Object.entries(LIST_LABELS)) {
     const opt = document.createElement("option");
     opt.value = key;
     opt.textContent = label;
-    sel.appendChild(opt);
+    ogWatch.appendChild(opt);
   }
-  sel.value = current;
+  sel.appendChild(ogWatch);
+
+  const ogYt = document.createElement("optgroup");
+  ogYt.label = "YouTube import";
+  const ytOpt = document.createElement("option");
+  ytOpt.value = LIB_FILTER_YT_IMPORT;
+  ytOpt.textContent = "Imported from YouTube";
+  ogYt.appendChild(ytOpt);
+  sel.appendChild(ogYt);
+
+  if ([allOpt.value, sessOpt.value, ytOpt.value, ...Object.keys(LIST_LABELS)].includes(current)) {
+    sel.value = current;
+  } else {
+    sel.value = "";
+    libListFilter = "";
+  }
 }
 
 function renderLibraryPriorityBar() {
@@ -610,14 +755,6 @@ function renderLibraryPriorityBar() {
     });
     host.appendChild(b);
   }
-}
-
-function applyLibraryColumnsCollapse() {
-  const page = document.querySelector(".library-page");
-  const videos = document.getElementById("videosList");
-  if (!page || !videos) return;
-  const collapsed = videos.scrollTop > 2;
-  page.classList.toggle("columns-collapsed", collapsed);
 }
 
 function setupLibraryBulkAndFacet() {
@@ -668,7 +805,7 @@ function setupLibraryBulkAndFacet() {
     }
     localPlaylists = r.playlists || localPlaylists;
     libCheckedIds.clear();
-    renderPlaylistChips();
+    renderSessionSelect();
     renderVideos();
   });
 
@@ -689,7 +826,7 @@ function setupLibraryBulkAndFacet() {
     }
     localPlaylists = r.playlists || localPlaylists;
     libCheckedIds.clear();
-    renderPlaylistChips();
+    renderSessionSelect();
     renderVideos();
   });
 
@@ -717,8 +854,15 @@ function setupLibraryBulkAndFacet() {
 
 async function boot() {
   setupLibraryBulkAndFacet();
-  applyLibPlaylistPanelCollapsedUi();
-  document.getElementById("libPlaylistPanelToggle")?.addEventListener("click", () => toggleLibPlaylistPanelCollapsed());
+  applyLibBrowsePanelUi();
+  applyLibSortViewToolbarUi();
+  document.getElementById("libSortViewToggle")?.addEventListener("click", () => toggleLibSortViewToolbar());
+  document.getElementById("libBrowseCollapseToggle")?.addEventListener("click", () => toggleLibBrowsePanelCollapsed());
+  document.getElementById("libBrowseSizeBtn")?.addEventListener("click", () => toggleLibBrowsePanelSize());
+  document.getElementById("libBrowseShowMoreBtn")?.addEventListener("click", () => {
+    const prev = localStorage.getItem(`${LIB_BROWSE_PANEL_STATE_KEY}_prev`);
+    setLibBrowsePanelState(prev === "compact" ? "compact" : "expanded");
+  });
 
   const artistSort = document.getElementById("artistSortOrder");
   const albumSort = document.getElementById("albumSortOrder");
@@ -755,17 +899,21 @@ async function boot() {
     libListFilter = libList.value || "";
     renderVideos();
   });
-  document.getElementById("videosList")?.addEventListener("scroll", applyLibraryColumnsCollapse);
-  document.getElementById("libOriginRecent")?.addEventListener("click", () => setLibPlaylistOrigin("recent"));
-  document.getElementById("libOriginImported")?.addEventListener("click", () => setLibPlaylistOrigin("imported"));
+  document.getElementById("libSessionSelect")?.addEventListener("change", (e) => {
+    const el = e.target;
+    if (!(el instanceof HTMLSelectElement)) return;
+    applySessionSelectValue(el.value);
+  });
   const r = await send("TUBESTACK_GET_STATE");
   allItems = Array.isArray(r?.items) ? r.items : [];
   localPlaylists = Array.isArray(r?.localPlaylists) ? r.localPlaylists : [];
   libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
   renderListFilterOptions();
   renderLibraryPriorityBar();
-  setLibPlaylistOrigin("recent");
-  applyLibraryColumnsCollapse();
+  libPlaylistOrigin = "recent";
+  libActivePlaylistId = null;
+  renderSessionSelect();
+  renderAll();
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -778,7 +926,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
     renderListFilterOptions();
     renderLibraryPriorityBar();
-    renderPlaylistChips();
+    renderSessionSelect();
     renderAll();
   })();
 });

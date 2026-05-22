@@ -7,35 +7,44 @@
 
 # TubeStack
 
-### Chrome extension for saving YouTube tabs, organizing playlists, reducing browser RAM usage, and building a long-term AI-assisted video library.
-
-TubeStack is a Chrome Extension (Manifest V3) inspired by OneTab, built specifically for YouTube power users. Instead of leaving dozens of YouTube tabs open consuming RAM and cluttering your browser, TubeStack lets you instantly collapse those tabs into organized local playlists while preserving your place.
-
-TubeStack helps reduce browser resource usage, organize large video queues, build long-term video libraries, and optionally integrate with YouTube and AI services for advanced features.
+### Your YouTube library in Chrome—save tabs, organize like iTunes, resume where you left off.
 
    </td>
   </tr>
 </table>
 
----
+TubeStack is a **Chrome extension** (Manifest V3) for people who keep many **YouTube** tabs open. It helps you **save watch tabs into a local library**, **close them to free RAM**, and **come back later**—with optional hooks to **YouTube** and **OpenAI** only when you turn them on.
 
-## Privacy summary
-
-TubeStack is **local-first**: your saved videos, playlists, organization data, watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server. **YouTube API keys**, **OAuth client/session data used by the extension**, and **OpenAI API keys** you provide are also kept **locally on your device**. Google API calls go **directly** from the extension to Google; OpenAI calls go **directly** to OpenAI **only when you use optional AI features** (which may send selected video metadata needed for those features). TubeStack **does not sell your data** or collect **unrelated browsing history** as a product feature. You can **delete stored data** from the extension’s Settings. TubeStack is **not affiliated with YouTube, Google, or OpenAI**.
-
-**[Full privacy policy →](docs/PRIVACY.md)**
-
-Chrome Web Store submission docs: [docs/](docs/) ([listing](docs/STORE_LISTING.md) · [release checklist](docs/RELEASE_CHECKLIST.md))
+**Local-first:** your library, playlists, and settings stay **on your device** in Chrome extension storage—not on a TubeStack server. TubeStack does **not** request Chrome History permission or scan unrelated browsing history. **[Privacy ↓](#privacy)** · **[Full privacy policy →](docs/PRIVACY.md)**
 
 ---
 
-# Installing TubeStack (Developer Mode)
+## What TubeStack is and does
+
+Inspired by **OneTab**, built for **YouTube power users**. Instead of leaving dozens of watch tabs open, TubeStack collapses them into **organized local playlists** while preserving URLs and **locally tracked watch progress** (for videos you open while the extension is installed).
+
+**Core workflows**
+
+- **Save** open YouTube tabs from the toolbar or context menu; optionally close tabs after save to cut clutter and RAM use.
+- **Library** view with an iTunes-style **Artist · Album · Category** browser, compact session picker, and searchable video list.
+- **Restore** individual videos or whole saved sessions; **focus sessions** and queue tools for intentional watching.
+- **Organize** with lists, themes/categories, tags, notes, priority tiers, and local playlist snapshots.
+- **Optional YouTube Data API + OAuth** (your keys): imports, metadata, subscription helpers, create/sync playlists on your Google account.
+- **Optional OpenAI** (your API key): AI-assisted categorization and organization from titles/metadata in your saved library.
+
+TubeStack is **not affiliated with YouTube, Google, or OpenAI.**
+
+Chrome Web Store docs: [docs/](docs/) ([listing](docs/STORE_LISTING.md) · [release checklist](docs/RELEASE_CHECKLIST.md))
+
+---
+
+## Installing TubeStack (Developer Mode)
 
 TubeStack is currently installed as an unpacked Chrome Extension.
 
-## Installation steps
+### Installation steps
 
-1. Download the TubeStack ZIP or download the repository
+1. Download the TubeStack ZIP or clone this repository
 2. Extract/unzip the folder somewhere on your computer
 3. Open Google Chrome
 4. Navigate to:
@@ -57,9 +66,24 @@ TubeStack should now appear in your Extensions manager.
 Pin it to the right of the address bar by selecting the puzzle piece and pinning TubeStack.
 
 ---
+
+## Privacy
+
+TubeStack is **local-first**: saved videos, playlists, organization data, locally tracked watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server.
+
+- **Save currently open YouTube tabs** and **track progress** for videos you open while TubeStack is installed—TubeStack does **not** reconstruct past YouTube activity from Chrome browsing history.
+- **Does not request** the Chrome **History** permission or scan unrelated browsing history.
+- **YouTube API keys**, **OAuth client/session data**, and **OpenAI API keys** you provide are stored **locally on your device**.
+- **Google** and **OpenAI** are contacted **only when you enable and use** those optional features; requests go **directly** from the extension to those services (not through a TubeStack backend).
+- TubeStack **does not sell** your data. You can **delete stored data** from Settings in the extension or by removing the extension.
+
+**[Full privacy policy →](docs/PRIVACY.md)**
+
+---
+
 ## Features
 
-# OneTab-style YouTube tab saving
+### OneTab-style YouTube tab saving
 
 - Save all open YouTube tabs into TubeStack playlists
 - Close tabs after saving to reduce RAM and browser clutter
@@ -69,7 +93,7 @@ Pin it to the right of the address bar by selecting the puzzle piece and pinning
 
 ---
 
-# Focus and resource management tools
+### Focus and resource management tools
 
 TubeStack is designed to help reduce YouTube overload, browser clutter, and unnecessary RAM usage from large YouTube tab sessions.
 
@@ -81,7 +105,7 @@ Features include:
 - Focus sessions
 - Queue management
 - Prioritization systems
-- Watch tracking
+- Locally tracked watch progress (videos you open while TubeStack is installed)
 - Resume later workflows
 - Preserve watch progress when possible
 
@@ -95,7 +119,7 @@ Future versions may include:
 
 ---
 
-# Playlist features and long-term YouTube library
+### Playlist features and long-term YouTube library
 
 TubeStack is designed as more than temporary tab storage.
 
@@ -131,7 +155,7 @@ Album: Physics Concepts
 Category: Education
 ```
 
-# AI-assisted categorization (Optional OpenAI integration)
+### AI-assisted categorization (Optional OpenAI integration)
 
 TubeStack can optionally use the OpenAI API to intelligently organize videos.
 
@@ -146,15 +170,18 @@ AI features include:
 
 ---
 
-## AI categorization modes
+#### AI categorization modes
 
-### Let AI decide everything
+##### Let AI decide everything
+
 AI automatically creates and assigns categories.
 
-### Use my categories
+##### Use my categories
+
 AI sorts videos into categories you already created.
 
-### Choose category depth
+##### Choose category depth
+
 Generate approximately:
 
 - 10 broad categories
@@ -163,7 +190,7 @@ Generate approximately:
 
 ---
 
-## How videos are categorized
+#### How videos are categorized
 
 TubeStack attempts to categorize videos using:
 
@@ -177,11 +204,11 @@ Not all YouTube videos contain useful tags, so AI can supplement missing metadat
 
 ---
 
-# YouTube API + OAuth features (Optional)
+### YouTube API + OAuth features (Optional)
 
 TubeStack works locally without Google integration, but additional features unlock when connecting your own Google Cloud project and YouTube account.
 
-## YouTube Data API v3
+#### YouTube Data API v3
 
 Used for:
 
@@ -191,7 +218,7 @@ Used for:
 - channel scanning
 - playlist synchronization
 
-## Google OAuth
+#### Google OAuth
 
 Used to authenticate actions on your YouTube account.
 
@@ -209,7 +236,7 @@ TubeStack stores API keys locally on your device using Chrome extension storage.
 
 ---
 
-# OpenAI API integration (Optional)
+### OpenAI API integration (Optional)
 
 TubeStack can optionally connect to OpenAI for AI-assisted organization features.
 
@@ -225,13 +252,13 @@ Your OpenAI API key is stored locally on your device and only used when AI featu
 
 ---
 
-# TubeStack setup guide
+## TubeStack setup guide
 
 One-time Google Cloud configuration for the YouTube Data API v3 key and OAuth playlist tools, plus optional OpenAI setup for AI categorization.
 
 ---
 
-# Google Cloud — one project
+### Google Cloud — one project
 
 TubeStack uses a single Google Cloud project for both:
 
@@ -242,7 +269,7 @@ Everything can be configured inside Google Cloud Console.
 
 ---
 
-## 1. Create or select a Google Cloud project
+#### 1. Create or select a Google Cloud project
 
 Create a dedicated project such as:
 
@@ -252,7 +279,7 @@ TubeStack
 
 ---
 
-## 2. Enable YouTube Data API v3
+#### 2. Enable YouTube Data API v3
 
 Navigate to:
 
@@ -274,7 +301,7 @@ Enable
 
 ---
 
-## 3. Create a YouTube API key
+#### 3. Create a YouTube API key
 
 Navigate to:
 
@@ -300,7 +327,7 @@ TubeStack Settings → YouTube API Key
 
 ---
 
-## 4. Configure OAuth consent screen
+#### 4. Configure OAuth consent screen
 
 Navigate to:
 
@@ -328,7 +355,7 @@ https://www.googleapis.com/auth/youtube
 
 ---
 
-## Testing mode recommendation
+#### Testing mode recommendation
 
 Keep the OAuth app in:
 
@@ -348,7 +375,7 @@ add the Google email accounts allowed to authenticate with TubeStack.
 
 ---
 
-## 5. Create OAuth Client ID
+#### 5. Create OAuth Client ID
 
 Navigate to:
 
@@ -380,11 +407,11 @@ TubeStack Settings → YouTube OAuth
 
 ---
 
-# OpenAI setup (Optional)
+### OpenAI setup (Optional)
 
 TubeStack can optionally use OpenAI for AI-powered organization tools.
 
-## 1. Create an OpenAI API key
+#### 1. Create an OpenAI API key
 
 Visit:
 
@@ -400,11 +427,12 @@ TubeStack Settings → OpenAI API Key
 
 ---
 
-## Important billing note
+#### Important billing note
 
 ChatGPT subscriptions and OpenAI API billing are separate systems.
 
 Using the OpenAI API requires:
+
 - API billing
 - prepaid credits
 - or active API payment setup
@@ -413,7 +441,7 @@ inside the OpenAI Platform account.
 
 ---
 
-# Security
+## Security
 
 **If you develop or fork this repo:** do not commit real API keys, OAuth client secrets, or other credentials to GitHub, and do not paste them into public issues or screenshots.
 
@@ -425,7 +453,7 @@ For more detail, see **[PRIVACY.md](docs/PRIVACY.md)**.
 
 ---
 
-# Disclaimer
+## Disclaimer
 
 TubeStack is not affiliated with YouTube or Google.
 
@@ -433,6 +461,6 @@ Use YouTube API, OAuth, downloads, and AI integrations responsibly and in accord
 
 ---
 
-# License
+## License
 
 MIT — see `LICENSE`

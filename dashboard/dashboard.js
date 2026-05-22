@@ -53,9 +53,6 @@ let playlistViewVideoIds = null;
 /** @type {{ id: string; name: string } | null} */
 let playlistViewMeta = null;
 let watchRangeMode = "day";
-/** null = Chrome history chart not loaded for the current range yet. */
-let historyOpensByDay = null;
-let historyOpensMeta = null;
 /** Genres hidden from the “latest import” triage list (labels). */
 const latestImportHiddenGenres = new Set();
 let latestKnownBatchId = null;
@@ -94,29 +91,15 @@ function applyObStep4Layout() {
   const leadF = document.getElementById("obStep4LeadFull");
   const leadM = document.getElementById("obStep4LeadMinimal");
   const fullX = document.getElementById("obStep4FullExtras");
-  const minHist = document.getElementById("obStep4MinimalHistory");
-  const pick = document.getElementById("obMinimalHistPick");
-  if (!leadF || !leadM || !fullX || !minHist) return;
+  if (!leadF || !leadM || !fullX) return;
   if (staple) {
     leadF.classList.add("hidden");
     leadM.classList.remove("hidden");
     fullX.classList.add("hidden");
-    minHist.classList.remove("hidden");
-    if (pick) {
-      if (settings.historyForThemesOptIn === true) {
-        pick.textContent =
-          "Preference: use local watch history for sharper categories. Grant history in Chrome if you haven’t yet, then use “Categories from history…” on the dashboard.";
-      } else if (settings.historyForThemesOptIn === false) {
-        pick.textContent = "Preference: staple keywords only (no history-based category scan). You can still connect YouTube later.";
-      } else {
-        pick.textContent = "";
-      }
-    }
   } else {
     leadF.classList.remove("hidden");
     leadM.classList.add("hidden");
     fullX.classList.remove("hidden");
-    minHist.classList.add("hidden");
   }
 }
 
@@ -297,18 +280,6 @@ function setWatchRange(mode) {
   });
   updateWatchPickerVisibility();
   renderWatchAnalytics();
-  invalidateHistoryOpensCache();
-}
-
-function invalidateHistoryOpensCache() {
-  historyOpensByDay = null;
-  historyOpensMeta = null;
-  const metaEl = document.getElementById("watchHistoryMeta");
-  if (metaEl) {
-    metaEl.textContent = "";
-    metaEl.classList.add("hidden");
-  }
-  renderHistoryOpensChart();
 }
 
 function initWatchDateDefaults() {
@@ -373,126 +344,6 @@ function renderWatchAnalytics() {
     col.appendChild(lab);
     col.appendChild(val);
     bars.appendChild(col);
-  }
-}
-
-function renderHistoryOpensChart() {
-  const series = buildWatchSeries();
-  const totalEl = document.getElementById("watchHistoryTotalLine");
-  const bars = document.getElementById("watchHistoryBars");
-  const empty = document.getElementById("watchHistoryChartEmpty");
-  const metaEl = document.getElementById("watchHistoryMeta");
-  if (!bars || !empty || !totalEl) return;
-  bars.innerHTML = "";
-  if (historyOpensByDay == null) {
-    empty.textContent =
-      "Click “Load page-open counts” to analyze Chrome history for this range (optional history permission).";
-    empty.classList.remove("hidden");
-    bars.classList.add("hidden");
-    totalEl.textContent = "—";
-    if (metaEl) {
-      metaEl.textContent = "";
-      metaEl.classList.add("hidden");
-    }
-    return;
-  }
-  if (!series.length) {
-    empty.textContent = "Choose a valid custom date range (from ≤ to, max 90 days).";
-    empty.classList.remove("hidden");
-    bars.classList.add("hidden");
-    totalEl.textContent = "—";
-    if (metaEl) {
-      metaEl.textContent = "";
-      metaEl.classList.add("hidden");
-    }
-    return;
-  }
-  const counts = series.map((pt) => historyOpensByDay[pt.key] || 0);
-  const total = counts.reduce((a, x) => a + x, 0);
-  if (metaEl && historyOpensMeta && (historyOpensMeta.capped || historyOpensMeta.urlCapHit)) {
-    metaEl.textContent = `Based on up to ${historyOpensMeta.urlsScanned || 0} distinct watch URLs in Chrome history (sample cap may omit some activity).`;
-    metaEl.classList.remove("hidden");
-  } else if (metaEl) {
-    metaEl.textContent = "";
-    metaEl.classList.add("hidden");
-  }
-  const plural = series.length === 1 ? "day" : "days";
-  totalEl.textContent = `Total opens: ${total.toLocaleString()} · ${series.length} ${plural} in view`;
-  empty.classList.add("hidden");
-  bars.classList.remove("hidden");
-  const max = Math.max(1, ...counts);
-  for (let i = 0; i < series.length; i++) {
-    const pt = series[i];
-    const n = counts[i];
-    const pct = (n / max) * 100;
-    const col = document.createElement("div");
-    col.className = "watch-col";
-    const track = document.createElement("div");
-    track.className = "watch-bar-track";
-    const fill = document.createElement("div");
-    fill.className = "watch-bar-fill";
-    fill.style.height = `${pct}%`;
-    fill.title = `${pt.key}: ${n} opens`;
-    const lab = document.createElement("div");
-    lab.className = "watch-col-label";
-    lab.textContent = pt.label;
-    const val = document.createElement("div");
-    val.className = "watch-col-val";
-    val.textContent = String(n);
-    track.appendChild(fill);
-    col.appendChild(track);
-    col.appendChild(lab);
-    col.appendChild(val);
-    bars.appendChild(col);
-  }
-}
-
-async function refreshWatchHistoryOpens() {
-  const btn = document.getElementById("btnWatchHistoryOpensRefresh");
-  const empty = document.getElementById("watchHistoryChartEmpty");
-  if (btn) btn.disabled = true;
-  try {
-    let hasHist = await chrome.permissions.contains({ permissions: ["history"] });
-    if (!hasHist) {
-      try {
-        hasHist = await chrome.permissions.request({ permissions: ["history"] });
-      } catch {
-        hasHist = false;
-      }
-    }
-    if (!hasHist) {
-      if (empty) {
-        empty.textContent =
-          "Chrome history permission is required for page-open counts. Enable “History” for TubeStack under chrome://extensions → TubeStack → Details, then try again.";
-        empty.classList.remove("hidden");
-      }
-      document.getElementById("watchHistoryBars")?.classList.add("hidden");
-      return;
-    }
-    const { fromMs, toMs } = getWatchRangeBoundsMs();
-    const r = await send("TUBESTACK_USAGE_HISTORY_OPENS_BY_DAY", { fromMs, toMs });
-    if (!r?.ok) {
-      historyOpensByDay = {};
-      historyOpensMeta = null;
-      if (empty) {
-        empty.textContent =
-          r?.error === "history_not_granted"
-            ? "History permission unavailable. Enable it for TubeStack, then retry."
-            : "Could not read Chrome history for this range.";
-        empty.classList.remove("hidden");
-      }
-      document.getElementById("watchHistoryBars")?.classList.add("hidden");
-      return;
-    }
-    historyOpensByDay = r.byDay && typeof r.byDay === "object" ? r.byDay : {};
-    historyOpensMeta = {
-      capped: Boolean(r.capped),
-      urlCapHit: Boolean(r.urlCapHit),
-      urlsScanned: r.urlsScanned || 0,
-    };
-    renderHistoryOpensChart();
-  } finally {
-    if (btn) btn.disabled = false;
   }
 }
 
@@ -561,7 +412,6 @@ const PRIORITY_SORT_ORDER = { prio_high: 0, prio_med: 1, prio_low: 2, prio_drop:
 
 const SIDEBAR_SECTION_CONFIG = [
   { id: "focus", label: "Focus session" },
-  { id: "history", label: "Browser history tally" },
   { id: "import", label: "Latest saved tabs" },
   { id: "subscriptions", label: "Subbed Channels" },
   { id: "categories", label: "Categories (library)" },
@@ -1101,8 +951,6 @@ const btnDelete = document.getElementById("btnDelete");
 const btnDeleteLocalPlaylist = document.getElementById("btnDeleteLocalPlaylist");
 const btnAutoSort = document.getElementById("btnAutoSort");
 const btnOnboarding = document.getElementById("btnOnboarding");
-const btnHistoryScan = document.getElementById("btnHistoryScan");
-const historySummary = document.getElementById("historySummary");
 const focusBanner = document.getElementById("focusBanner");
 const focusMinutes = document.getElementById("focusMinutes");
 const btnFocusStart = document.getElementById("btnFocusStart");
@@ -1159,7 +1007,6 @@ const btnShowSidebarFloating = document.getElementById("btnShowSidebarFloating")
 
 const onboarding = document.getElementById("onboarding");
 const obSteps = [0, 1, 2, 3, 4, 5, 6].map((i) => document.getElementById(`obStep${i}`));
-const obHistStatus = document.getElementById("obHistStatus");
 const obTabPick = document.getElementById("obTabPick");
 const obPullStatus = document.getElementById("obPullStatus");
 const obGenreGrid = document.getElementById("obGenreGrid");
@@ -1513,22 +1360,6 @@ function restoreScanPreviewFromSettings() {
   nextBtn.disabled = false;
 }
 
-async function updateHistoryUi() {
-  const granted = await chrome.permissions.contains({ permissions: ["history"] });
-  obHistStatus.textContent = granted
-    ? "History access is enabled."
-    : "History access is not enabled — tallies stay unavailable until you allow.";
-  const s = settings.youtubeHistorySummary;
-  const g = settings.youtubeHistoryGenreScanSummary;
-  const genreLine =
-    g && g.scannedAt
-      ? ` Last niche scan: ${g.videoCount} videos → ${g.genreCount} genre buckets (${g.windowDays}d).`
-      : "";
-  historySummary.textContent = s
-    ? `${s.visitCount} watch-page visits · ${s.uniqueVideos} unique videos (${s.windowDays}d, local estimate).${genreLine}`
-    : `No tally scan yet — allow history and tap refresh.${genreLine ? ` ${genreLine}` : ""}`;
-}
-
 function updateFocusUi() {
   const fs = settings.focusSession;
   if (fs?.endsAt && Date.now() < fs.endsAt) {
@@ -1609,11 +1440,9 @@ async function loadState() {
   fillThemeFilter();
   renderPriorityFilterBar();
   renderThemeSidebars();
-  await updateHistoryUi();
   initWatchDateDefaults();
   updateWatchPickerVisibility();
   renderWatchAnalytics();
-  renderHistoryOpensChart();
   updateFocusUi();
   renderLocalPlaylists();
   renderSidebarRecentTablists();
@@ -1898,7 +1727,7 @@ function render() {
       const pill = document.createElement("span");
       pill.className = "granular-genre-pill";
       pill.textContent = it.granularGenre;
-      pill.title = "Inferred niche (history + title keywords)";
+      pill.title = "Inferred niche (title keywords from your library)";
       titleRow.appendChild(pill);
     }
 
@@ -2780,7 +2609,6 @@ function setActiveWindow(next) {
   }
   if (next === "usage") {
     renderWatchAnalytics();
-    renderHistoryOpensChart();
   }
   layoutRoot?.classList.toggle("layout--library-mode", false);
   layoutRoot?.classList.toggle("layout--sidebar-hidden", sidebarHidden);
@@ -2959,8 +2787,6 @@ function setupWindowLayout() {
   if (localSection) windowLocalPlaylistsMount?.appendChild(localSection);
   const subsSection = document.querySelector('[data-sidebar-section="subscriptions"]');
   if (subsSection) windowSubscriptionsMount?.appendChild(subsSection);
-  const usageHistory = document.querySelector('[data-sidebar-section="history"]');
-  if (usageHistory) windowUsageMount?.appendChild(usageHistory);
   const catSection = document.querySelector('[data-sidebar-section="categories"]');
   if (catSection) windowCategoriesMount?.appendChild(catSection);
   const aiCatSection = document.querySelector('[data-sidebar-section="aiCategorize"]');
@@ -3347,14 +3173,7 @@ document.querySelectorAll(".watch-pill").forEach((el) => {
   el.addEventListener("click", () => setWatchRange(el.dataset.watchRange || "day"));
 });
 ["watchDayPick", "watchWeekOf", "watchMonthPick", "watchFrom", "watchTo"].forEach((id) => {
-  document.getElementById(id)?.addEventListener("change", () => {
-    renderWatchAnalytics();
-    invalidateHistoryOpensCache();
-  });
-});
-
-document.getElementById("btnWatchHistoryOpensRefresh")?.addEventListener("click", () => {
-  void refreshWatchHistoryOpens();
+  document.getElementById(id)?.addEventListener("change", () => renderWatchAnalytics());
 });
 
 document.getElementById("btnSaveOAuth")?.addEventListener("click", async () => {
@@ -3486,7 +3305,7 @@ document.getElementById("btnClearYoutubeApiKey")?.addEventListener("click", asyn
 document.getElementById("btnEraseLocalLibrary")?.addEventListener("click", async () => {
   const st = document.getElementById("dataPrivacyStatus");
   const msg =
-    "Delete ALL saved TubeStack library data on this device? This removes every saved video, per-video watch progress, daily watch tallies, all local playlist snapshots, import triage metadata, YouTube history scan summaries stored in settings, and the last YouTube channel scan summary. It does NOT remove your YouTube Data API key, OAuth Client ID, OpenAI API key, themes/categories, or the Subbed Channels list.";
+    "Delete ALL saved TubeStack library data on this device? This removes every saved video, locally tracked watch progress, daily watch tallies, all local playlist snapshots, import triage metadata, and the last YouTube channel scan summary. It does NOT remove your YouTube Data API key, OAuth Client ID, OpenAI API key, themes/categories, or the Subbed Channels list.";
   if (!confirm(msg)) return;
   const r = await send("TUBESTACK_ERASE_LOCAL_LIBRARY_DATA");
   if (!r?.ok) {
@@ -3530,7 +3349,7 @@ document.getElementById("btnClearOpenaiClassifyCache")?.addEventListener("click"
   const st = document.getElementById("dataPrivacyStatus");
   if (
     !confirm(
-      "Clear TubeStack’s local AI categorization cache? This deletes cached OpenAI classification results (title dedup / history helpers) from storage. Your saved videos, themes, and API keys are not removed."
+      "Clear TubeStack’s local AI categorization cache? This deletes cached OpenAI classification results (title dedup helpers) from storage. Your saved videos, themes, and API keys are not removed."
     )
   )
     return;
@@ -3820,124 +3639,7 @@ btnOnboarding.addEventListener("click", () => {
   renderObGenreTiles();
 });
 
-btnHistoryScan.addEventListener("click", async () => {
-  const r = await send("TUBESTACK_HISTORY_SCAN", { windowDays: 7 });
-  if (!r?.ok) {
-    if (r?.error === "history_not_granted") {
-      alert("Allow history in onboarding (or enable the history permission for this extension).");
-    } else alert(r?.error || "Scan failed.");
-    return;
-  }
-  settings.youtubeHistorySummary = r.summary;
-  await updateHistoryUi();
-});
-
-const historyGenreModal = document.getElementById("historyGenreModal");
-const btnHistoryGenres = document.getElementById("btnHistoryGenres");
-const hgRunScan = document.getElementById("hgRunScan");
-const hgClose = document.getElementById("hgClose");
-const hgStatus = document.getElementById("hgStatus");
-const hgResults = document.getElementById("hgResults");
-const hgResultsLead = document.getElementById("hgResultsLead");
-const hgGenreList = document.getElementById("hgGenreList");
-const hgCheckAll = document.getElementById("hgCheckAll");
-const hgApplyThemes = document.getElementById("hgApplyThemes");
 const btnDismissImportPanel = document.getElementById("btnDismissImportPanel");
-
-function openHistoryGenreModal() {
-  historyGenreModal?.classList.remove("hidden");
-  if (hgStatus) {
-    hgStatus.textContent = "";
-    hgStatus.classList.remove("success");
-  }
-}
-
-function closeHistoryGenreModal() {
-  historyGenreModal?.classList.add("hidden");
-}
-
-btnHistoryGenres?.addEventListener("click", () => openHistoryGenreModal());
-hgClose?.addEventListener("click", () => closeHistoryGenreModal());
-historyGenreModal?.addEventListener("click", (e) => {
-  if (e.target === historyGenreModal) closeHistoryGenreModal();
-});
-
-hgRunScan?.addEventListener("click", async () => {
-  if (!hgStatus || !hgResults || !hgResultsLead || !hgGenreList) return;
-  hgStatus.classList.remove("success");
-  const hasPerm = await chrome.permissions.contains({ permissions: ["history"] });
-  if (!hasPerm) {
-    const pr = await send("TUBESTACK_REQUEST_HISTORY_PERMISSION");
-    if (!pr?.granted) {
-      hgStatus.textContent = "History permission is required. Allow it in the prompt or extension settings.";
-      return;
-    }
-  }
-  hgStatus.textContent = "Scanning Chrome history for YouTube watch URLs…";
-  const r = await send("TUBESTACK_HISTORY_GENRE_SCAN", { windowDays: 7 });
-  if (!r?.ok) {
-    hgStatus.textContent =
-      r?.error === "history_not_granted"
-        ? "History permission missing — enable it for TubeStack in Chrome → Extensions → Details."
-        : r?.error || "Scan failed.";
-    return;
-  }
-  if (r.genreScanSummary) settings.youtubeHistoryGenreScanSummary = r.genreScanSummary;
-  await updateHistoryUi();
-  hgResultsLead.textContent = `Found ${r.videoCount} unique videos. ${r.genres?.length || 0} inferred niches — check the ones you want as active categories (green).`;
-  hgGenreList.innerHTML = "";
-  for (const g of r.genres || []) {
-    const row = document.createElement("label");
-    row.className = "hg-genre-row";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.className = "hg-genre-cb";
-    cb.dataset.label = g.label;
-    cb.checked = true;
-    const span = document.createElement("span");
-    span.textContent = `${g.label} (${g.count})`;
-    row.appendChild(cb);
-    row.appendChild(span);
-    hgGenreList.appendChild(row);
-  }
-  if (hgCheckAll) hgCheckAll.checked = true;
-  hgResults.classList.remove("hidden");
-  hgStatus.classList.add("success");
-  hgStatus.textContent = "Scan complete — select niches below, then add as categories.";
-});
-
-hgCheckAll?.addEventListener("change", () => {
-  const on = hgCheckAll.checked;
-  hgGenreList?.querySelectorAll(".hg-genre-cb").forEach((cb) => {
-    cb.checked = on;
-  });
-});
-
-hgApplyThemes?.addEventListener("click", async () => {
-  if (!hgGenreList || !hgStatus) return;
-  const labels = [...hgGenreList.querySelectorAll(".hg-genre-cb:checked")]
-    .map((cb) => cb.dataset.label)
-    .filter(Boolean);
-  if (!labels.length) {
-    hgStatus.classList.remove("success");
-    hgStatus.textContent = "Select at least one niche.";
-    return;
-  }
-    hgStatus.textContent = "Adding categories…";
-  const r = await send("TUBESTACK_MERGE_GRANULAR_GENRE_THEMES", { labels });
-  if (!r?.ok) {
-    hgStatus.classList.remove("success");
-    hgStatus.textContent = r?.error || "Could not add categories.";
-    return;
-  }
-  themes = r.themes || themes;
-  renderThemeSidebars();
-  fillThemeFilter();
-  renderObGenreTiles();
-  hgStatus.classList.add("success");
-  hgStatus.textContent = `Added ${r.addedCount || 0} new theme(s). Existing labels were left unchanged.`;
-  render();
-});
 
 btnDismissImportPanel?.addEventListener("click", async () => {
   await send("TUBESTACK_DISMISS_IMPORT_BATCH");
@@ -4202,40 +3904,6 @@ document.getElementById("obNextScan").addEventListener("click", () => {
 
 document.getElementById("obNextGenres").addEventListener("click", () => {
   showObStep(6);
-  updateHistoryUi();
-});
-
-document.getElementById("obHistoryThemesYes")?.addEventListener("click", async () => {
-  const pr = await send("TUBESTACK_PATCH_SETTINGS", { patch: { historyForThemesOptIn: true } });
-  if (pr?.ok && pr.settings) settings = { ...settings, ...pr.settings };
-  const r = await send("TUBESTACK_REQUEST_HISTORY_PERMISSION");
-  const pick = document.getElementById("obMinimalHistPick");
-  if (pick) {
-    pick.textContent = r?.granted
-      ? "Saved: yes — history permission granted. After setup, use “Categories from history…” on the toolbar for a 7-day scan."
-      : "Saved: yes — we’ll use history for categories when Chrome allows it. Enable the history permission under this extension’s details if you change your mind.";
-  }
-});
-
-document.getElementById("obHistoryThemesNo")?.addEventListener("click", async () => {
-  const pr = await send("TUBESTACK_PATCH_SETTINGS", { patch: { historyForThemesOptIn: false } });
-  if (pr?.ok && pr.settings) settings = { ...settings, ...pr.settings };
-  const pick = document.getElementById("obMinimalHistPick");
-  if (pick) {
-    pick.textContent = "Saved: no — staple keyword categories only. You can still connect YouTube later.";
-  }
-});
-
-document.getElementById("obRequestHistory").addEventListener("click", async () => {
-  const r = await send("TUBESTACK_REQUEST_HISTORY_PERMISSION");
-  obHistStatus.textContent = r?.granted
-    ? "History access granted. You can run a scan below."
-    : "History access was not granted.";
-  await updateHistoryUi();
-});
-
-document.getElementById("obSkipHistory").addEventListener("click", () => {
-  obHistStatus.textContent = "Skipped — you can enable history later in Chrome → extension details → permissions.";
 });
 
 document.getElementById("obOpenChannels").addEventListener("click", () => {
@@ -4262,18 +3930,6 @@ document.getElementById("obPullChannels").addEventListener("click", async () => 
     renderThemeSidebars();
     fillThemeFilter();
   }
-});
-
-document.getElementById("obScanHistory").addEventListener("click", async () => {
-  const r = await send("TUBESTACK_HISTORY_SCAN", { windowDays: 7 });
-  if (!r?.ok) {
-    obScanResult.textContent =
-      r?.error === "history_not_granted"
-        ? "History permission missing — use “Allow history access” above or enable it in extension settings."
-        : "Scan failed.";
-    return;
-  }
-  obScanResult.textContent = `${r.summary.visitCount} visits · ${r.summary.uniqueVideos} unique videos in ${r.summary.windowDays} days (local counts).`;
 });
 
 document.getElementById("obFinish").addEventListener("click", async () => {
@@ -4581,7 +4237,6 @@ document.getElementById("grCancel")?.addEventListener("click", () => {
 
 document.getElementById("grRun")?.addEventListener("click", async () => {
   const st = document.getElementById("grStatus");
-  const days = Number(document.getElementById("grDays")?.value) || 30;
   const mode = document.getElementById("grMode")?.value || "heuristic";
   const replace = document.getElementById("grReplace")?.checked !== false;
   const saveKey = document.getElementById("grSaveKey")?.checked === true;
@@ -4594,27 +4249,17 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
   if (
     !confirm(
       openAiMode
-        ? "This replaces all category chips and re-tags your library. OpenAI mode sends batched video titles (and optional channel text from history) to api.openai.com only — no transcripts, Google keys, or OAuth tokens. Continue?"
-        : "This replaces all category chips and re-tags your library from the new list. Continue?"
+        ? "This replaces all category chips and re-tags your library. OpenAI mode sends batched video titles (and optional channel names from your saved library) to api.openai.com only — no transcripts, Google keys, or OAuth tokens. Continue?"
+        : "This replaces all category chips and re-tags your library from titles in your saved library. Continue?"
     )
   ) {
     return;
   }
-  const histOk = await chrome.permissions.contains({ permissions: ["history"] });
-  if (!histOk) {
-    const pr = await send("TUBESTACK_REQUEST_HISTORY_PERMISSION");
-    if (!pr?.granted) {
-      if (st) st.textContent = "Chrome history permission is required for this rebuild.";
-      return;
-    }
-    await updateHistoryUi();
-  }
   if (st) {
     st.classList.remove("success");
-    st.textContent = "Scanning history and rebuilding…";
+    st.textContent = "Rebuilding categories from your library…";
   }
   const r = await send("TUBESTACK_REBUILD_GENRES_FROM_HISTORY", {
-    windowDays: days,
     mode,
     replaceExisting: replace,
     openaiApiKey: pasted || undefined,
@@ -4623,8 +4268,8 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
   if (!r?.ok) {
     if (st) {
       st.textContent =
-        r?.error === "history_not_granted"
-          ? "Allow Chrome history for this extension (same as Categories from history)."
+        r?.error === "empty_library"
+          ? r?.message || "Save some videos to your library first."
           : r?.message || r?.error || "Rebuild failed.";
     }
     return;
@@ -4632,7 +4277,7 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
   themes = r.themes || themes;
   if (st) {
     st.classList.add("success");
-    st.textContent = `Done: ${r.historyVideos || 0} history videos · ${r.userNiches || 0} niche categories (${r.mode}).`;
+    st.textContent = `Done: ${r.libraryVideos || 0} library videos · ${r.userNiches || 0} niche categories (${r.mode}).`;
   }
   renderThemeSidebars();
   fillThemeFilter();

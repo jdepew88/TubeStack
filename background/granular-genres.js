@@ -1,5 +1,5 @@
 /**
- * Granular watch-history genre presets (title / URL text matching only).
+ * Granular genre presets (title / URL text matching only; no Chrome History API).
  * Order: more specific phrases should appear before broader buckets so ties favor specificity.
  * Loaded by service-worker via importScripts.
  */

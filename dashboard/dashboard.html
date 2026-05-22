@@ -150,30 +150,14 @@
         <div id="obStep6" class="ob-step hidden">
           <h2 class="oobe-step-title">Almost done</h2>
           <p class="oobe-lead hidden" id="obStep4LeadFull">
-            Optional: allow browser history for rough YouTube visit tallies, or import subscription channel names from
-            an open tab.
+            Optional: import subscription channel names from an open YouTube tab to seed categories.
           </p>
           <p class="oobe-lead hidden" id="obStep4LeadMinimal">
-            Staple setup is active — no YouTube Data API or OAuth here. You can still let TubeStack use
-            <strong>only this device’s Chrome history</strong> (last 7 days of YouTube watch URLs) to suggest sharper
-            category matching. Nothing is uploaded; it stays local.
+            Staple setup is active — no YouTube Data API or OAuth here. TubeStack uses your chosen categories and
+            locally saved videos only. Nothing is uploaded to a TubeStack server.
           </p>
 
-          <div id="obStep4MinimalHistory" class="ob-minimal-history hidden">
-            <p class="ob-muted ob-minimal-q">Use last 7 days of YouTube history to improve category matching?</p>
-            <div class="ob-actions">
-              <button type="button" class="btn primary" id="obHistoryThemesYes">Yes — allow local history for categories</button>
-              <button type="button" class="btn ghost" id="obHistoryThemesNo">No thanks — staple keywords only</button>
-            </div>
-            <p class="ob-muted" id="obMinimalHistPick" role="status"></p>
-          </div>
-
           <div id="obStep4FullExtras">
-            <p class="ob-muted" id="obHistStatus"></p>
-            <div class="ob-actions">
-              <button type="button" class="btn" id="obRequestHistory">Allow history access</button>
-              <button type="button" class="btn ghost" id="obSkipHistory">Skip</button>
-            </div>
             <label class="ob-label" for="obTabPick">Import channel names from tab</label>
             <select id="obTabPick"></select>
             <div class="ob-actions">
@@ -181,10 +165,6 @@
               <button type="button" class="btn" id="obPullChannels">Import</button>
             </div>
             <p class="ob-muted" id="obPullStatus"></p>
-            <div class="ob-actions">
-              <button type="button" class="btn ghost" id="obScanHistory">Scan last 7 days (history)</button>
-            </div>
-            <p class="ob-muted" id="obScanResult"></p>
           </div>
 
           <button type="button" class="btn oobe-cta primary" id="obFinish">Complete setup</button>
@@ -258,17 +238,9 @@
           <p id="focusLine" class="ob-muted"></p>
         </section>
 
-        <section class="panel-block" data-sidebar-section="history">
-          <span class="label">Browser history tally</span>
-          <p id="historySummary" class="stat-line small">—</p>
-          <button type="button" id="btnHistoryScan" class="btn small">Refresh history tally</button>
-          <p class="panel-hint">Niche labels from history use the same permission — run from the toolbar button <strong>Categories from history…</strong> (not shown here).</p>
-          <p class="panel-hint">Usage Graphs (toolbar) includes watch time plus optional Chrome history open counts.</p>
-        </section>
-
         <section class="panel-block" data-sidebar-section="watchAnalytics">
-          <span class="label">YouTube watch time</span>
-          <p class="panel-hint">Open <strong>Usage Graphs</strong> for in-player watch time and optional Chrome history open counts.</p>
+          <span class="label">Locally tracked watch time</span>
+          <p class="panel-hint">Open <strong>Usage Graphs</strong> for in-player time on videos you watch while TubeStack is installed.</p>
           <button type="button" id="btnWatchAnalytics" class="btn small">Open watch-time window</button>
         </section>
 
@@ -315,7 +287,7 @@
           <p class="panel-hint">
             Click: cycle <strong>off → green → off</strong> (skips gold). <strong>Double-click</strong>: toggle
             <strong>gold</strong> favorite (max 8). <strong>Ctrl+click</strong>: rename. Use
-            <strong>Rebuild categories…</strong> to replace chips from watch history (~25 broad + your top niches); OpenAI
+            <strong>Rebuild categories…</strong> to replace chips from your saved library (~25 broad + your top niches); OpenAI
             optional for smarter niche names when titles lack YouTube tags.
           </p>
           <div class="category-editor-controls">
@@ -616,7 +588,7 @@
               <p class="panel-hint ob-muted">
                 Stored only in this browser’s <code>chrome.storage.local</code>. The key is never sent to TubeStack — only
                 in the <code>Authorization</code> header to <strong>api.openai.com</strong> when you explicitly run Test,
-                AI categorize, or an OpenAI history rebuild.
+                AI categorize, or an OpenAI category rebuild.
               </p>
               <div class="settings-openai-actions">
                 <button type="button" id="btnSaveOpenaiKey" class="btn small">Save OpenAI key</button>
@@ -690,7 +662,7 @@
                 type="button"
                 id="btnClearOpenaiClassifyCache"
                 class="btn small danger ghost"
-                title="Deletes TubeStack’s local OpenAI title-classification cache (openAiHistoryClassifyV1). Does not remove your videos, themes, or API keys."
+                title="Deletes TubeStack’s local OpenAI title-classification cache. Does not remove your videos, themes, or API keys."
               >
                 Clear AI categorization cache…
               </button>
@@ -858,19 +830,17 @@
 
         <div id="genreRebuildModal" class="modal-overlay hidden" role="presentation">
           <div class="modal-card modal-card-wide" role="dialog" aria-labelledby="grTitle" aria-modal="true">
-            <h3 id="grTitle" class="modal-title">Rebuild categories from history</h3>
+            <h3 id="grTitle" class="modal-title">Rebuild categories from library</h3>
             <p class="modal-lead">
               Replaces your library category list with <strong>~25 broad buckets</strong> plus up to <strong>15 niches</strong> inferred
-              from your YouTube watch history (titles only; same history permission as “Categories from history”). Your
-              library is then <strong>re-tagged</strong> to the closest new category by keywords.
+              from videos already saved in your TubeStack library (titles and channels only). Your library is then
+              <strong>re-tagged</strong> to the closest new category by keywords.
             </p>
             <p class="modal-lead ob-muted">
-              If you choose <strong>OpenAI</strong>, TubeStack sends <strong>only</strong> video titles (and optional channel text from
-              history titles) to OpenAI in small batches — no transcripts, URLs, Google keys, or OAuth tokens. Results of
+              If you choose <strong>OpenAI</strong>, TubeStack sends <strong>only</strong> video titles (and optional channel names from
+              your library) to OpenAI in small batches — no transcripts, URLs, Google keys, or OAuth tokens. Results of
               recent runs may be reused locally for up to 7 days to skip duplicate API calls for unchanged titles.
             </p>
-            <label class="ob-label" for="grDays">History window (days)</label>
-            <input type="number" id="grDays" class="oobe-input" min="7" max="90" value="30" />
             <label class="ob-label" for="grMode">Niche detection</label>
             <select id="grMode" class="oobe-input">
               <option value="heuristic">Local — keyword + niche presets (no network)</option>
@@ -892,35 +862,12 @@
           </div>
         </div>
 
-        <div id="historyGenreModal" class="modal-overlay hidden" role="presentation">
-          <div class="modal-card modal-card-wide" role="dialog" aria-labelledby="hgTitle" aria-modal="true">
-            <h3 id="hgTitle" class="modal-title">Categories from watch history</h3>
-            <p class="modal-lead">
-              Scans the <strong>last 7 days</strong> of YouTube watch URLs in Chrome history (titles only on this device).
-              Pick niches to add as <strong>green (active) categories</strong> for auto-sorting. Run again anytime — this
-              dialog stays off the sidebar.
-            </p>
-            <div class="hg-actions">
-              <button type="button" class="btn primary" id="hgRunScan">Scan last 7 days</button>
-              <button type="button" class="btn ghost" id="hgClose">Close</button>
-            </div>
-            <p class="modal-status" id="hgStatus" role="status"></p>
-            <div id="hgResults" class="hg-results hidden">
-              <p class="hg-results-lead" id="hgResultsLead"></p>
-              <label class="hg-select-all"><input type="checkbox" id="hgCheckAll" checked /> Select all niches below</label>
-              <div id="hgGenreList" class="hg-genre-list"></div>
-              <button type="button" class="btn primary" id="hgApplyThemes">Add selected as categories</button>
-            </div>
-          </div>
-        </div>
-
         <section id="windowCurrent" class="window-panel active" data-window="current">
           <header class="toolbar toolbar-row">
             <p id="summary" class="summary"></p>
             <div class="toolbar-actions">
               <a class="btn small ghost toolbar-home-link" href="../home/home.html">Playlist home</a>
               <a class="toolbar-library-link" href="library.html">Library</a>
-              <button type="button" id="btnHistoryGenres" class="btn small primary">Categories from history…</button>
             </div>
           </header>
           <div id="windowCurrentControlsMount" class="window-controls-mount"></div>
@@ -937,9 +884,9 @@
               <h3 id="watchHeading" class="watch-heading">Watch time (this extension)</h3>
               <p class="watch-sub">
                 TubeStack records <strong>active in-tab playback time</strong> on YouTube watch/shorts pages while this
-                extension is installed (not a download of your entire Google watch history). YouTube’s public Data API
-                does not expose per-viewer “minutes watched in history” the way a studio analytics product would, so
-                this chart is the accurate on-device signal for time spent with the player playing.
+                extension is installed. Progress is saved only for videos you open while TubeStack is installed — not
+                reconstructed from past activity elsewhere. YouTube’s public Data API does not expose per-viewer watch
+                minutes for normal users, so this chart is the on-device signal for time spent with the player playing.
               </p>
             </div>
             <div class="watch-controls">
@@ -973,29 +920,6 @@
             <div id="watchChartHost" class="watch-chart-host">
               <div id="watchChartEmpty" class="watch-chart-empty hidden">No watch time logged for this range yet.</div>
               <div id="watchBars" class="watch-bars" aria-hidden="true"></div>
-            </div>
-          </section>
-
-          <section class="watch-analytics watch-history-opens" aria-labelledby="historyOpensHeading">
-            <div class="watch-analytics-head">
-              <h3 id="historyOpensHeading" class="watch-heading">YouTube page opens (Chrome history)</h3>
-              <p class="watch-sub">
-                For a second view, TubeStack can <strong>count how often</strong> you opened watch or Shorts URLs in
-                Chrome’s <strong>local browsing history</strong> (optional permission). That is <strong>not</strong> the
-                same as watch minutes—use the chart above for playback time tracked by TubeStack.
-              </p>
-            </div>
-            <p id="watchHistoryHint" class="watch-history-hint ob-muted">
-              Pick the same date range as above, then load. Large ranges may be summarized from a sample of URLs.
-            </p>
-            <div class="watch-history-actions">
-              <button type="button" id="btnWatchHistoryOpensRefresh" class="btn small">Load page-open counts</button>
-            </div>
-            <p id="watchHistoryTotalLine" class="watch-total">—</p>
-            <p id="watchHistoryMeta" class="stat-line small watch-history-meta ob-muted hidden"></p>
-            <div id="watchHistoryChartHost" class="watch-chart-host">
-              <div id="watchHistoryChartEmpty" class="watch-chart-empty hidden">—</div>
-              <div id="watchHistoryBars" class="watch-bars watch-bars-history hidden" aria-hidden="true"></div>
             </div>
           </section>
         </section>

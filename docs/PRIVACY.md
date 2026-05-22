@@ -16,7 +16,9 @@ This policy describes how the **TubeStack** Chrome Extension handles information
 
 ## Local-first design
 
-**TubeStack is local-first.** Most of what you see in TubeStack—saved queues, playlists, categories, tags, watch progress, and general settings—is stored **locally in your browser** using Chrome’s extension storage (for example `chrome.storage.local`), not on a TubeStack-owned server.
+**TubeStack is local-first.** Most of what you see in TubeStack—saved tabs, folders/playlists, categories, tags, notes, and locally tracked watch progress—is stored **locally in your browser** using Chrome’s extension storage (for example `chrome.storage.local`), not on a TubeStack-owned server.
+
+**TubeStack has no central backend server** that collects or stores your library, API keys, or OAuth tokens for TubeStack’s own purposes.
 
 ---
 
@@ -27,16 +29,14 @@ Depending on how you use TubeStack, the extension may store locally, among other
 - **Saved YouTube tabs and library items** (titles, channels, URLs, notes, and related fields you add in the app).
 - **Playlists and organization data** you create inside TubeStack (including local playlist snapshots).
 - **Categories, themes, tags, and similar labels** you use to organize your library.
-- **Watch progress and related tallies** the extension tracks to support “resume later” and similar features.
+- **Locally tracked watch progress** and related tallies for videos you open **while TubeStack is installed** (for example resume position and in-player watch-time charts). TubeStack does **not** reconstruct past YouTube activity from Chrome browsing history.
 - **Extension settings** (for example sidebar preferences, import options, and similar configuration).
 
 **Credentials stay on your device:**
 
-- **YouTube Data API keys** you enter are stored locally in extension storage.
-- **YouTube OAuth** configuration (such as your OAuth Web Client ID) and **OAuth access tokens** used for signed-in Google features are handled **on your device** (tokens used for API calls are not sent to a TubeStack backend—see below).
-- **OpenAI API keys** you enter are stored locally in extension storage.
-
-TubeStack **does not operate a backend server that collects or stores your API keys, OAuth tokens, or your TubeStack library** for TubeStack’s own purposes.
+- **YouTube Data API keys** you enter are stored locally in Chrome extension storage.
+- **YouTube OAuth** configuration (such as your OAuth Web Client ID) and **OAuth access tokens** used for signed-in Google features are handled **on your device**.
+- **OpenAI API keys** you enter are stored locally in Chrome extension storage.
 
 ---
 
@@ -44,28 +44,29 @@ TubeStack **does not operate a backend server that collects or stores your API k
 
 ### Google (YouTube)
 
-When you use features that need Google (for example API lookups, playlist operations, or OAuth sign-in), **requests go directly from the extension to Google’s services** (such as the YouTube Data API and Google OAuth), subject to your browser and Chrome’s permission prompts.
-
-TubeStack does not route those requests through a TubeStack-owned server.
+**YouTube and Google API calls only happen when you enable or use YouTube API / OAuth features** (for example API lookups, playlist operations, or OAuth sign-in). Requests go **directly from the extension to Google’s services**, subject to your browser and Chrome’s permission prompts. TubeStack does not route those requests through a TubeStack-owned server.
 
 ### OpenAI
 
-When you use **optional AI features** (for example AI-assisted categorization or similar tools), **requests go directly from the extension to OpenAI’s API** (`api.openai.com`), using your OpenAI API key only when you have provided one and only for those user-initiated actions.
+**OpenAI API calls only happen when you enable or use optional AI features** (for example AI-assisted categorization). Requests go **directly from the extension to OpenAI’s API** (`api.openai.com`), using your OpenAI API key only when you have provided one and only for those user-initiated actions.
 
-**AI categorization** may send **selected video metadata** that the feature needs to work—for example titles, channel names, and related fields the extension already has locally—not your full browsing history as a separate “tracking” feed.
+**AI categorization** may send **selected video metadata** the feature needs to work—for example titles, channel names, and related fields the extension already has in your **saved library**—not unrelated browsing history.
 
 ---
 
 ## What TubeStack does not do
 
+- **TubeStack does not request the Chrome History permission.**
+- **TubeStack does not scan unrelated browsing history.**
 - **TubeStack does not sell user data.**
-- **TubeStack does not collect unrelated browsing history** as a general analytics or profiling product. Features that touch history or Google data are tied to specific actions you take in the extension (and Chrome’s own permission model), not to selling a log of everywhere you browse.
 
 ---
 
 ## Your choices and deleting data
 
-You can **remove stored data from TubeStack’s Settings / dashboard**, including actions to clear your saved library, API keys, OAuth session cache, OpenAI key, AI-related local cache, and similar controls where provided.
+You can **delete local TubeStack data** from the extension’s **Settings / dashboard**, including actions to clear your saved library, API keys, OAuth session cache, OpenAI key, AI-related local cache, and similar controls where provided.
+
+You can also remove all extension data by **uninstalling TubeStack** from Chrome.
 
 Clearing data in TubeStack does not delete your Google or OpenAI accounts or change those companies’ records of API usage on their side; it removes what this extension keeps locally (and in-memory session data where applicable).
 

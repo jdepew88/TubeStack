@@ -38,49 +38,6 @@ Chrome Web Store docs: [docs/](docs/) ([listing](docs/STORE_LISTING.md) · [rele
 
 ---
 
-## Installing TubeStack (Developer Mode)
-
-TubeStack is currently installed as an unpacked Chrome Extension.
-
-### Installation steps
-
-1. Download the TubeStack ZIP or clone this repository
-2. Extract/unzip the folder somewhere on your computer
-3. Open Google Chrome
-4. Navigate to:
-
-```txt
-chrome://extensions
-```
-
-5. Enable **Developer mode** (top-right corner)
-6. Click **Load unpacked**
-7. Select the TubeStack folder containing:
-
-```txt
-manifest.json
-```
-
-TubeStack should now appear in your Extensions manager.
-
-Pin it to the right of the address bar by selecting the puzzle piece and pinning TubeStack.
-
----
-
-## Privacy
-
-TubeStack is **local-first**: saved videos, playlists, organization data, locally tracked watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server.
-
-- **Save currently open YouTube tabs** and **track progress** for videos you open while TubeStack is installed—TubeStack does **not** reconstruct past YouTube activity from Chrome browsing history.
-- **Does not request** the Chrome **History** permission or scan unrelated browsing history.
-- **YouTube API keys**, **OAuth client/session data**, and **OpenAI API keys** you provide are stored **locally on your device**.
-- **Google** and **OpenAI** are contacted **only when you enable and use** those optional features; requests go **directly** from the extension to those services (not through a TubeStack backend).
-- TubeStack **does not sell** your data. You can **delete stored data** from Settings in the extension or by removing the extension.
-
-**[Full privacy policy →](docs/PRIVACY.md)**
-
----
-
 ## Features
 
 ### OneTab-style YouTube tab saving
@@ -249,6 +206,49 @@ OpenAI features include:
 - future recommendation tools
 
 Your OpenAI API key is stored locally on your device and only used when AI features are run.
+
+---
+
+## Installing TubeStack (Developer Mode)
+
+TubeStack is currently installed as an unpacked Chrome Extension.
+
+### Installation steps
+
+1. Download the TubeStack ZIP or clone this repository
+2. Extract/unzip the folder somewhere on your computer
+3. Open Google Chrome
+4. Navigate to:
+
+```txt
+chrome://extensions
+```
+
+5. Enable **Developer mode** (top-right corner)
+6. Click **Load unpacked**
+7. Select the TubeStack folder containing:
+
+```txt
+manifest.json
+```
+
+TubeStack should now appear in your Extensions manager.
+
+Pin it to the right of the address bar by selecting the puzzle piece and pinning TubeStack.
+
+---
+
+## Privacy
+
+TubeStack is **local-first**: saved videos, playlists, organization data, locally tracked watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server.
+
+- **Save currently open YouTube tabs** and **track progress** for videos you open while TubeStack is installed—TubeStack does **not** reconstruct past YouTube activity from Chrome browsing history.
+- **Does not request** the Chrome **History** permission or scan unrelated browsing history.
+- **YouTube API keys**, **OAuth client/session data**, and **OpenAI API keys** you provide are stored **locally on your device**.
+- **Google** and **OpenAI** are contacted **only when you enable and use** those optional features; requests go **directly** from the extension to those services (not through a TubeStack backend).
+- TubeStack **does not sell** your data. You can **delete stored data** from Settings in the extension or by removing the extension.
+
+**[Full privacy policy →](docs/PRIVACY.md)**
 
 ---
 

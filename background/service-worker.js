@@ -8,6 +8,8 @@ const YT_HOSTS = new Set(["www.youtube.com", "m.youtube.com"]);
 
 importScripts("granular-genres.js");
 importScripts("genre-taxonomy.js");
+importScripts("../lib/watch-states.js");
+const TS_WATCH = globalThis.TUBESTACK_WATCH;
 const GRANULAR_GENRE_PRESETS = globalThis.GRANULAR_GENRE_PRESETS || [];
 delete globalThis.GRANULAR_GENRE_PRESETS;
 const BROAD_GENRE_TAXONOMY = globalThis.TUBESTACK_BROAD_GENRES || [];
@@ -231,7 +233,14 @@ function uuid() {
 
 async function loadItems() {
   const { items = [] } = await chrome.storage.local.get("items");
-  return Array.isArray(items) ? items : [];
+  const arr = Array.isArray(items) ? items : [];
+  const progressMap = await loadVideoProgress();
+  let changed = false;
+  for (const it of arr) {
+    if (TS_WATCH.normalizeLibraryItemFields(it, progressMap)) changed = true;
+  }
+  if (changed) await saveItems(arr);
+  return arr;
 }
 
 async function saveItems(items) {
@@ -245,7 +254,10 @@ async function saveItems(items) {
  */
 async function loadSettings() {
   const data = await chrome.storage.local.get("settings");
-  return data.settings && typeof data.settings === "object" ? data.settings : {};
+  const raw = data.settings && typeof data.settings === "object" ? data.settings : {};
+  const { next, changed } = migrateSettingsFieldNames(raw);
+  if (changed) await chrome.storage.local.set({ settings: next });
+  return next;
 }
 
 async function saveSettings(patch) {
@@ -662,28 +674,71 @@ function openAiHttpErrorMessage(status, json) {
   return `OpenAI request failed (${status}).`;
 }
 
-const OPENAI_HIST_CLASSIFY_CACHE_KEY = "openAiHistoryClassifyV1";
-const OPENAI_HIST_CLASSIFY_TTL_MS = 7 * 86400000;
-const OPENAI_HIST_CLASSIFY_MAX_KEYS = 2500;
+const OPENAI_LIBRARY_CLASSIFY_CACHE_KEY = "openAiLibraryClassifyV1";
+const OPENAI_LIBRARY_CLASSIFY_CACHE_KEY_LEGACY = "openAiHistoryClassifyV1";
+const OPENAI_LIBRARY_CLASSIFY_TTL_MS = 7 * 86400000;
+const OPENAI_LIBRARY_CLASSIFY_MAX_KEYS = 2500;
 
-async function loadOpenAiHistClassifyCache() {
-  const bag = await chrome.storage.local.get(OPENAI_HIST_CLASSIFY_CACHE_KEY);
-  const c = bag[OPENAI_HIST_CLASSIFY_CACHE_KEY];
+const SETTINGS_KEY_MIGRATIONS = [
+  ["youtubeHistorySummary", "localViewingSummary"],
+  ["youtubeHistoryGenreScanSummary", "localViewingGenreSummary"],
+];
+
+/** @type {Set<string>} */
+const PROGRESS_SOURCES = new Set([
+  "observed_youtube_page",
+  "captured_on_save",
+  "url_timestamp",
+  "manual",
+  "unknown",
+]);
+
+async function migrateOpenAiLibraryClassifyCache() {
+  const bag = await chrome.storage.local.get([
+    OPENAI_LIBRARY_CLASSIFY_CACHE_KEY,
+    OPENAI_LIBRARY_CLASSIFY_CACHE_KEY_LEGACY,
+  ]);
+  if (bag[OPENAI_LIBRARY_CLASSIFY_CACHE_KEY_LEGACY] && !bag[OPENAI_LIBRARY_CLASSIFY_CACHE_KEY]) {
+    await chrome.storage.local.set({
+      [OPENAI_LIBRARY_CLASSIFY_CACHE_KEY]: bag[OPENAI_LIBRARY_CLASSIFY_CACHE_KEY_LEGACY],
+    });
+    await chrome.storage.local.remove(OPENAI_LIBRARY_CLASSIFY_CACHE_KEY_LEGACY);
+  }
+}
+
+async function loadOpenAiLibraryClassifyCache() {
+  await migrateOpenAiLibraryClassifyCache();
+  const bag = await chrome.storage.local.get(OPENAI_LIBRARY_CLASSIFY_CACHE_KEY);
+  const c = bag[OPENAI_LIBRARY_CLASSIFY_CACHE_KEY];
   return c && typeof c === "object" ? c : {};
 }
 
-function pruneOpenAiHistClassifyCache(cache) {
+function pruneOpenAiLibraryClassifyCache(cache) {
   const entries = Object.entries(cache);
-  if (entries.length <= OPENAI_HIST_CLASSIFY_MAX_KEYS) return cache;
+  if (entries.length <= OPENAI_LIBRARY_CLASSIFY_MAX_KEYS) return cache;
   entries.sort((a, b) => (a[1]?.at || 0) - (b[1]?.at || 0));
-  const drop = entries.length - OPENAI_HIST_CLASSIFY_MAX_KEYS;
+  const drop = entries.length - OPENAI_LIBRARY_CLASSIFY_MAX_KEYS;
   const next = { ...cache };
   for (let i = 0; i < drop; i++) delete next[entries[i][0]];
   return next;
 }
 
-async function saveOpenAiHistClassifyCache(cache) {
-  await chrome.storage.local.set({ [OPENAI_HIST_CLASSIFY_CACHE_KEY]: pruneOpenAiHistClassifyCache(cache) });
+async function saveOpenAiLibraryClassifyCache(cache) {
+  await chrome.storage.local.set({
+    [OPENAI_LIBRARY_CLASSIFY_CACHE_KEY]: pruneOpenAiLibraryClassifyCache(cache),
+  });
+}
+
+function migrateSettingsFieldNames(settings) {
+  const next = { ...settings };
+  let changed = false;
+  for (const [oldKey, newKey] of SETTINGS_KEY_MIGRATIONS) {
+    if (!Object.prototype.hasOwnProperty.call(next, oldKey)) continue;
+    if (!Object.prototype.hasOwnProperty.call(next, newKey)) next[newKey] = next[oldKey];
+    delete next[oldKey];
+    changed = true;
+  }
+  return { next, changed };
 }
 
 /** Minimal library fields sent to OpenAI (no URLs, transcripts, or Google secrets). */
@@ -702,8 +757,14 @@ function buildLibraryItemPayloadForOpenAi(it, themeLabelById) {
   }
   if (tags.length) out.tags = tags;
   if (suggestedTags.length) out.suggestedTags = suggestedTags;
-  const notes = String(it.notes || "").trim();
-  if (notes) out.notes = notes.slice(0, 240);
+  const note = TS_WATCH.itemNoteText(it);
+  if (note) out.note = note.slice(0, 240);
+  const ws = TS_WATCH.normalizeWatchStateId(it.watchState);
+  out.watchState = ws;
+  out.watchStateLabel = TS_WATCH.watchStateLabel(ws);
+  if (Array.isArray(it.timestampNotes) && it.timestampNotes.length) {
+    out.timestampNoteCount = it.timestampNotes.length;
+  }
   const desc = it.description != null ? String(it.description).trim() : "";
   if (desc) out.descriptionSnippet = desc.slice(0, 320);
   return out;
@@ -871,9 +932,87 @@ async function saveThemes(themes) {
   await chrome.storage.local.set({ themes });
 }
 
+function normalizeVideoProgressRecord(rec) {
+  const prev = rec && typeof rec === "object" ? rec : {};
+  const playheadSec = Math.max(0, Math.floor(Number(prev.playheadSec) || 0));
+  const durationRaw = prev.durationSec;
+  const durationSec =
+    durationRaw != null && Number.isFinite(Number(durationRaw)) && Number(durationRaw) > 0
+      ? Math.floor(Number(durationRaw))
+      : null;
+  const totalWatchedSec = Math.max(0, Math.floor(Number(prev.totalWatchedSec) || 0));
+  const updatedAt =
+    typeof prev.updatedAt === "string" && prev.updatedAt ? prev.updatedAt : new Date().toISOString();
+  let progressSource = String(prev.progressSource || "").trim();
+  if (!PROGRESS_SOURCES.has(progressSource)) progressSource = "unknown";
+  const out = { playheadSec, durationSec, updatedAt, totalWatchedSec, progressSource };
+  if (prev.capturedAt != null) out.capturedAt = String(prev.capturedAt);
+  return out;
+}
+
+/** Progress captured when saving/closing tabs (youtube-metadata.js) — never guessed. */
+function progressPatchFromSaveMeta(videoId, meta) {
+  if (!videoId || !meta || typeof meta !== "object") return null;
+  const capture = String(meta.progressCapture || "");
+  const dur = Number(meta.durationSec);
+  const hasDur = Number.isFinite(dur) && dur > 0;
+  const ph = Number(meta.timestampSec);
+  const playheadSec = Number.isFinite(ph) && ph >= 0 ? Math.floor(ph) : 0;
+
+  if (capture === "page_player") {
+    if (playheadSec <= 0 && !hasDur) return null;
+    return {
+      playheadSec,
+      durationSec: hasDur ? Math.floor(dur) : null,
+      progressSource: "captured_on_save",
+      capturedAt: new Date().toISOString(),
+    };
+  }
+  if (capture === "url_only" && playheadSec > 0) {
+    return {
+      playheadSec,
+      durationSec: hasDur ? Math.floor(dur) : null,
+      progressSource: "url_timestamp",
+      capturedAt: new Date().toISOString(),
+    };
+  }
+  return null;
+}
+
+function mergeVideoProgressRecord(prev, patch) {
+  const base = normalizeVideoProgressRecord(prev);
+  const nextPlayhead = Math.max(base.playheadSec, Math.floor(Number(patch.playheadSec) || 0));
+  const patchDur = patch.durationSec;
+  const nextDur =
+    patchDur != null && Number.isFinite(Number(patchDur)) && Number(patchDur) > 0
+      ? Math.floor(Number(patchDur))
+      : base.durationSec;
+  const addWatch = Math.max(0, Math.min(Number(patch.deltaWatchSec) || 0, 120));
+  const source = PROGRESS_SOURCES.has(patch.progressSource) ? patch.progressSource : base.progressSource;
+  const out = {
+    playheadSec: nextPlayhead,
+    durationSec: nextDur,
+    updatedAt: patch.updatedAt || new Date().toISOString(),
+    totalWatchedSec: base.totalWatchedSec + addWatch,
+    progressSource: source,
+  };
+  if (patch.capturedAt != null) out.capturedAt = String(patch.capturedAt);
+  else if (base.capturedAt != null) out.capturedAt = base.capturedAt;
+  return out;
+}
+
 async function loadVideoProgress() {
   const { videoProgress = {} } = await chrome.storage.local.get("videoProgress");
-  return videoProgress && typeof videoProgress === "object" ? videoProgress : {};
+  const raw = videoProgress && typeof videoProgress === "object" ? videoProgress : {};
+  const map = {};
+  let changed = false;
+  for (const [vid, rec] of Object.entries(raw)) {
+    const norm = normalizeVideoProgressRecord(rec);
+    map[vid] = norm;
+    if (JSON.stringify(norm) !== JSON.stringify(rec)) changed = true;
+  }
+  if (changed) await saveVideoProgress(map);
+  return map;
 }
 
 async function saveVideoProgress(map) {
@@ -887,7 +1026,13 @@ async function loadWatchByDay() {
 
 async function loadLocalPlaylists() {
   const { localPlaylists = [] } = await chrome.storage.local.get("localPlaylists");
-  return Array.isArray(localPlaylists) ? localPlaylists : [];
+  const arr = Array.isArray(localPlaylists) ? localPlaylists : [];
+  let changed = false;
+  for (const pl of arr) {
+    if (TS_WATCH.normalizeLocalPlaylistFields(pl)) changed = true;
+  }
+  if (changed) await saveLocalPlaylists(arr);
+  return arr;
 }
 
 async function saveLocalPlaylists(lists) {
@@ -919,6 +1064,8 @@ async function eraseLocalLibraryData() {
   for (const k of [
     "latestImportBatchId",
     "latestImportAt",
+    "localViewingSummary",
+    "localViewingGenreSummary",
     "youtubeHistorySummary",
     "youtubeHistoryGenreScanSummary",
     "youtubeLastScanSummary",
@@ -1278,6 +1425,9 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
             suggestedTags: [],
             priority: "prio_med",
             notes: "",
+            note: "",
+            watchState: TS_WATCH.DEFAULT_WATCH_STATE,
+            timestampNotes: [],
             themeId: null,
             libraryAlbum: albumLabel,
             playlistName: albumLabel,
@@ -1321,6 +1471,9 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
             suggestedTags: [],
             priority: "prio_med",
             notes: "",
+            note: "",
+            watchState: TS_WATCH.DEFAULT_WATCH_STATE,
+            timestampNotes: [],
             themeId: null,
             libraryAlbum: albumLabel,
             playlistName: albumLabel,
@@ -1420,6 +1573,9 @@ async function saveLocalPlaylistEntry({ name, items, kind, groupBy, smartSummary
     kind: kind === "smart" ? "smart" : "static",
     groupBy: typeof groupBy === "string" && groupBy.length < 64 ? groupBy : null,
     smartSummary: typeof smartSummary === "string" ? smartSummary.slice(0, 500) : null,
+    stackNote: "",
+    researchSummary: "",
+    decisions: [],
     playlistSource: src,
   };
   if (src === "youtube_import" && youtubePlaylistId) {
@@ -1505,7 +1661,15 @@ function todayKey() {
 }
 
 function haystack(item) {
-  return [item.title, item.channel, ...(item.tags || []), item.notes]
+  const tsNotes = (item.timestampNotes || []).map((x) => `${x.label || ""} ${x.note || ""}`).join(" ");
+  return [
+    item.title,
+    item.channel,
+    TS_WATCH.watchStateLabel(item.watchState),
+    ...(item.tags || []),
+    TS_WATCH.itemNoteText(item),
+    tsNotes,
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -1585,6 +1749,10 @@ function getDuration(item, progressMap) {
   return item.durationSec ?? p?.durationSec ?? null;
 }
 
+function remainingSeconds(item, progressMap) {
+  return timeLeftSec(item, progressMap);
+}
+
 function timeLeftSec(item, progressMap) {
   const dur = getDuration(item, progressMap);
   if (dur == null) return null;
@@ -1599,6 +1767,7 @@ function completionRatio(item, progressMap) {
   return Math.min(1, pos / dur);
 }
 
+/** Focused Playlist ranking — local progress/themes only (no network). */
 function interestScore(item, progressMap, themes) {
   let score = 0;
   const theme = themes.find((t) => t.id === item.themeId);
@@ -1608,11 +1777,31 @@ function interestScore(item, progressMap, themes) {
   if (r != null) {
     if (r >= 0.15 && r <= 0.92) score += 20;
     if (r >= 0.85 && r < 0.97) score += 15;
+    if (r >= 0.97) score -= 25;
   }
   if (item.priority === "prio_high") score += 18;
-  const tl = timeLeftSec(item, progressMap);
+  else if (item.priority === "prio_low") score -= 4;
+  else if (item.priority === "prio_drop") score -= 30;
+  const tl = remainingSeconds(item, progressMap);
   if (tl != null && tl > 0 && tl < 420) score += 12;
+  if (TS_WATCH) {
+    const ws = TS_WATCH.normalizeWatchStateId(item.watchState);
+    if (ws === "queue" || ws === "watching") score += 22;
+    if (ws === "important") score += 16;
+    if (ws === "saved") score += 8;
+    if (ws === "finished" || ws === "skip") score -= 32;
+    if (ws === "reference") score += 6;
+  }
   return score;
+}
+
+function enrichItemForFocusedPlaylist(it, progressMap) {
+  return {
+    ...it,
+    durationSec: getDuration(it, progressMap),
+    playheadSec: getPlayheadFromStorage(it, progressMap),
+    remainingSeconds: remainingSeconds(it, progressMap),
+  };
 }
 
 function sortItemsList(list, mode, progressMap, themes) {
@@ -1688,13 +1877,14 @@ function bestPackThemeId(item, themeIds, themes) {
 }
 
 function estimateSlotSeconds(item, progressMap) {
-  const tl = timeLeftSec(item, progressMap);
-  if (tl != null) return tl;
+  const tl = remainingSeconds(item, progressMap);
+  if (tl != null && tl > 0) return tl;
   const dur = getDuration(item, progressMap);
-  if (dur != null) return dur;
+  if (dur != null && dur > 0) return dur;
   return 300;
 }
 
+/** Build a Focused Playlist queue from local library + videoProgress only (no network). */
 async function buildPlaylist({ themeIds, budgetMinutes, sortMode }) {
   const ids = (themeIds || []).filter(Boolean).slice(0, MAX_PLAYLIST_THEMES);
   if (!ids.length) return { ok: false, error: "Pick at least one category." };
@@ -1729,27 +1919,29 @@ async function buildPlaylist({ themeIds, budgetMinutes, sortMode }) {
 
   return {
     ok: true,
-    queue,
+    queue: queue.map((it) => {
+      const row = enrichItemForFocusedPlaylist(it, progressMap);
+      row.interestScore = interestScore(it, progressMap, themes);
+      return row;
+    }),
     estimatedSeconds: used,
     budgetSeconds: budgetSec,
     sortMode: sortMode || "time_left_asc",
   };
 }
 
+/** Observed playback on open YouTube watch tabs (content/youtube-progress.js → TUBESTACK_PROGRESS_TICK). */
 async function handleProgressTick(msg) {
   const { videoId, playheadSec, durationSec, deltaWatchSec } = msg;
   if (!videoId) return;
   const map = await loadVideoProgress();
-  const prev = map[videoId] || {};
-  const nextPlayhead = Math.max(prev.playheadSec || 0, playheadSec || 0);
-  const nextDur = durationSec || prev.durationSec || null;
-  const addWatch = Math.max(0, Math.min(deltaWatchSec || 0, 120));
-  map[videoId] = {
-    playheadSec: nextPlayhead,
-    durationSec: nextDur,
+  map[videoId] = mergeVideoProgressRecord(map[videoId], {
+    playheadSec: playheadSec || 0,
+    durationSec: durationSec ?? null,
+    deltaWatchSec: deltaWatchSec || 0,
+    progressSource: "observed_youtube_page",
     updatedAt: new Date().toISOString(),
-    totalWatchedSec: (prev.totalWatchedSec || 0) + addWatch,
-  };
+  });
   await saveVideoProgress(map);
 
   if (addWatch > 0) {
@@ -2565,7 +2757,7 @@ async function rebuildGenresFromLibraryOpenAI({
   const nicheWeight = new Map();
   const chunkSize = 28;
   const now = Date.now();
-  let cache = await loadOpenAiHistClassifyCache();
+  let cache = await loadOpenAiLibraryClassifyCache();
   try {
     for (let i = 0; i < videos.length; i += chunkSize) {
       const chunk = videos.slice(i, i + chunkSize);
@@ -2574,7 +2766,7 @@ async function rebuildGenresFromLibraryOpenAI({
       for (const v of chunk) {
         const th = hashStringDjb2(String(v.title || "").slice(0, 240));
         const ent = cache[v.videoId];
-        if (ent && ent.th === th && now - ent.at < OPENAI_HIST_CLASSIFY_TTL_MS) {
+        if (ent && ent.th === th && now - ent.at < OPENAI_LIBRARY_CLASSIFY_TTL_MS) {
           cachedRows.push({ videoId: v.videoId, broad: ent.broad, niche: ent.niche });
         } else {
           need.push(v);
@@ -2596,7 +2788,7 @@ async function rebuildGenresFromLibraryOpenAI({
           }
         }
         rows = rows.concat(fresh);
-        await saveOpenAiHistClassifyCache(cache);
+        await saveOpenAiLibraryClassifyCache(cache);
       }
       const byId = new Map(chunk.map((x) => [x.videoId, x]));
       for (const row of rows) {
@@ -2733,6 +2925,9 @@ function buildItemFromTab(tab, meta) {
     suggestedTags: [],
     priority: "prio_med",
     notes: "",
+    note: "",
+    watchState: TS_WATCH.DEFAULT_WATCH_STATE,
+    timestampNotes: [],
     themeId: null,
     libraryImportSource: "session",
   };
@@ -2757,6 +2952,8 @@ async function saveYouTubeTabsByMode(mode) {
   const themes = await loadThemes();
   const saved = [];
   const tabIdsToClose = [];
+  const progressMap = await loadVideoProgress();
+  let progressDirty = false;
 
   for (const tab of ordered) {
     if (!tab.id || !tab.url) continue;
@@ -2765,9 +2962,26 @@ async function saveYouTubeTabsByMode(mode) {
     item.importBatchId = importBatchId;
     const best = bestThemeForItem(item, themes);
     if (best) item.themeId = best.id;
+    if (item.videoId) {
+      const patch = progressPatchFromSaveMeta(item.videoId, meta);
+      if (patch) {
+        progressMap[item.videoId] = mergeVideoProgressRecord(progressMap[item.videoId], {
+          ...patch,
+          deltaWatchSec: 0,
+        });
+        progressDirty = true;
+        if (patch.progressSource === "captured_on_save" && patch.playheadSec > 0) {
+          item.timestampSec = patch.playheadSec;
+        } else if (patch.progressSource === "url_timestamp" && patch.playheadSec > 0) {
+          item.timestampSec = patch.playheadSec;
+        }
+      }
+    }
     saved.push(item);
     tabIdsToClose.push(tab.id);
   }
+
+  if (progressDirty) await saveVideoProgress(progressMap);
 
   if (saved.length) {
     const existing = await loadItems();
@@ -2789,15 +3003,178 @@ async function saveYouTubeTabsByMode(mode) {
   return { ok: true, savedCount: saved.length, saved, mode };
 }
 
+function sanitizeItemPatch(fields) {
+  const next = { ...fields };
+  if ("watchState" in next) {
+    next.watchState = TS_WATCH.normalizeWatchStateId(next.watchState);
+  }
+  if ("note" in next || "notes" in next) {
+    const note = TS_WATCH.itemNoteText({ note: next.note, notes: next.notes });
+    next.note = note;
+    next.notes = note;
+  }
+  if ("timestampNotes" in next) {
+    next.timestampNotes = TS_WATCH.normalizeTimestampNotes(next.timestampNotes);
+  }
+  return next;
+}
+
 async function updateItem(patch) {
   const { id, ...fields } = patch || {};
   if (!id) return { ok: false, error: "Missing id" };
   const items = await loadItems();
   const i = items.findIndex((x) => x.id === id);
   if (i < 0) return { ok: false, error: "Not found" };
-  items[i] = { ...items[i], ...fields };
+  items[i] = { ...items[i], ...sanitizeItemPatch(fields) };
+  TS_WATCH.normalizeLibraryItemFields(items[i], await loadVideoProgress());
   await saveItems(items);
   return { ok: true, item: items[i] };
+}
+
+async function bulkUpdateItems({ ids, patch }) {
+  const idSet = new Set((ids || []).map((x) => String(x || "").trim()).filter(Boolean));
+  if (!idSet.size) return { ok: false, error: "no_ids" };
+  const items = await loadItems();
+  const progressMap = await loadVideoProgress();
+  const sanitized = sanitizeItemPatch(patch || {});
+  let updated = 0;
+  for (const it of items) {
+    if (!idSet.has(it.id)) continue;
+    Object.assign(it, sanitized);
+    TS_WATCH.normalizeLibraryItemFields(it, progressMap);
+    updated++;
+  }
+  if (updated) await saveItems(items);
+  return { ok: true, updatedCount: updated, items };
+}
+
+async function updateLocalPlaylistStack({ playlistId, patch }) {
+  const id = String(playlistId || "").trim();
+  if (!id) return { ok: false, error: "missing_id" };
+  const lists = await loadLocalPlaylists();
+  const pl = lists.find((x) => x.id === id);
+  if (!pl) return { ok: false, error: "not_found" };
+  if (patch && typeof patch === "object") {
+    if ("stackNote" in patch) pl.stackNote = String(patch.stackNote || "").slice(0, 8000);
+    if ("researchSummary" in patch) pl.researchSummary = String(patch.researchSummary || "").slice(0, 12000);
+    if ("decisions" in patch) pl.decisions = TS_WATCH.normalizeDecisions(patch.decisions);
+    if ("name" in patch) {
+      const n = String(patch.name || "").trim();
+      if (n) pl.name = n.slice(0, 200);
+    }
+  }
+  TS_WATCH.normalizeLocalPlaylistFields(pl);
+  await saveLocalPlaylists(lists);
+  return { ok: true, playlist: pl, playlists: lists };
+}
+
+async function aiSuggestWatchStates(msg = {}) {
+  const settings = await loadSettings();
+  let apiKey = String(msg.openaiApiKey || "").trim() || String(settings.openaiApiKey || "").trim();
+  if (msg.saveOpenaiKey === true && String(msg.openaiApiKey || "").trim().length >= 20) {
+    await saveSettings({ openaiApiKey: String(msg.openaiApiKey).trim() });
+    apiKey = String(msg.openaiApiKey).trim();
+  }
+  if (apiKey.length < 20) {
+    return { ok: false, error: "openai_key_required", message: "Add an OpenAI API key in Settings (or paste below)." };
+  }
+
+  const rawIds = Array.isArray(msg.itemIds) ? msg.itemIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
+  const itemIds = [...new Set(rawIds)];
+  if (!itemIds.length) return { ok: false, error: "no_items", message: "No videos selected." };
+
+  const MAX = 60;
+  const cappedIds = itemIds.slice(0, MAX);
+  const allItems = await loadItems();
+  const order = new Map(cappedIds.map((id, i) => [id, i]));
+  let targets = allItems.filter((x) => cappedIds.includes(x.id));
+  targets.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  if (!targets.length) {
+    return { ok: false, error: "no_items", message: "None of those videos are in your library." };
+  }
+
+  const model = String(msg.openaiModel || "").trim() || "gpt-4o-mini";
+  const themeLabelById = new Map((await loadThemes()).map((t) => [t.id, String(t.label || "").trim()]));
+  const watchLabels = TS_WATCH.WATCH_STATE_LIST.map((x) => `${x.id} (${x.label})`).join(", ");
+  const rows = targets.map((it) => {
+    const row = buildLibraryItemPayloadForOpenAi(it, themeLabelById);
+    row.videoId = it.videoId || "";
+    row.currentWatchState = TS_WATCH.normalizeWatchStateId(it.watchState);
+    return row;
+  });
+
+  let stackContext = "";
+  const plId = String(msg.playlistId || "").trim();
+  if (plId) {
+    const pl = (await loadLocalPlaylists()).find((x) => x.id === plId);
+    if (pl) {
+      stackContext = JSON.stringify({
+        name: pl.name,
+        stackNote: String(pl.stackNote || "").slice(0, 500),
+        researchSummary: String(pl.researchSummary || "").slice(0, 800),
+      });
+    }
+  }
+
+  const suggestions = [];
+  const chunkSize = 24;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const system = `You suggest Watch States for saved YouTube library videos. Watch States are separate from tags/categories.
+Allowed suggestedWatchState values only: ${TS_WATCH.WATCH_STATE_LIST.map((x) => x.id).join(", ")}.
+Tags are user-defined labels in suggestedTags[] (strings only). Do NOT put Watch State names into suggestedTags.
+Do not assume transcripts or data from unrelated sites. JSON only:
+{"videos":[{"videoId":"","suggestedWatchState":"","suggestedTags":[""],"reason":""}]}
+Include every video in the input exactly once.`;
+    const user = JSON.stringify({ watchStateOptions: watchLabels, stackContext: stackContext || null, videos: chunk });
+    const parsed = await openAiJsonCompletion({ apiKey, model, system, user });
+    const arr = parsed.videos || parsed.items || parsed.results;
+    if (!Array.isArray(arr)) throw new Error("JSON missing videos[]");
+    for (const row of arr) {
+      const videoId = String(row.videoId || "").trim();
+      if (!videoId) continue;
+      suggestions.push({
+        videoId,
+        itemId: targets.find((t) => t.videoId === videoId)?.id || null,
+        suggestedWatchState: TS_WATCH.normalizeWatchStateId(row.suggestedWatchState),
+        suggestedTags: Array.isArray(row.suggestedTags)
+          ? row.suggestedTags.map((t) => String(t || "").trim()).filter(Boolean).slice(0, 8)
+          : [],
+        reason: String(row.reason || "").slice(0, 400),
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    suggestions,
+    truncated: itemIds.length > MAX,
+    applyRequired: true,
+    message: "Review suggestions before applying. Watch States are not changed until you confirm.",
+  };
+}
+
+async function applyWatchStateSuggestions(msg = {}) {
+  const rows = Array.isArray(msg.suggestions) ? msg.suggestions : [];
+  if (!rows.length) return { ok: false, error: "no_suggestions" };
+  const items = await loadItems();
+  const byVid = new Map(items.filter((x) => x.videoId).map((x) => [x.videoId, x]));
+  const byId = new Map(items.map((x) => [x.id, x]));
+  let updated = 0;
+  for (const s of rows) {
+    const it = (s.itemId && byId.get(s.itemId)) || (s.videoId && byVid.get(s.videoId));
+    if (!it) continue;
+    if (msg.applyWatchState !== false && s.suggestedWatchState) {
+      it.watchState = TS_WATCH.normalizeWatchStateId(s.suggestedWatchState);
+      updated++;
+    }
+    if (msg.applyTags === true && Array.isArray(s.suggestedTags) && s.suggestedTags.length) {
+      const merged = new Set([...(it.tags || []), ...s.suggestedTags.map((t) => String(t).trim()).filter(Boolean)]);
+      it.tags = [...merged].slice(0, 12);
+    }
+  }
+  if (updated) await saveItems(items);
+  return { ok: true, updatedCount: updated, items };
 }
 
 async function deleteItems(ids) {
@@ -2999,7 +3376,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_CLEAR_OPENAI_LOCAL_CACHE": {
-        await chrome.storage.local.remove(OPENAI_HIST_CLASSIFY_CACHE_KEY);
+        await chrome.storage.local.remove([
+          OPENAI_LIBRARY_CLASSIFY_CACHE_KEY,
+          OPENAI_LIBRARY_CLASSIFY_CACHE_KEY_LEGACY,
+        ]);
         sendResponse({ ok: true });
         break;
       }
@@ -3042,6 +3422,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_UPDATE_ITEM": {
         sendResponse(await updateItem(msg.patch));
+        break;
+      }
+      case "TUBESTACK_BULK_UPDATE_ITEMS": {
+        sendResponse(await bulkUpdateItems({ ids: msg.ids, patch: msg.patch }));
+        break;
+      }
+      case "TUBESTACK_UPDATE_LOCAL_PLAYLIST_STACK": {
+        sendResponse(await updateLocalPlaylistStack({ playlistId: msg.playlistId, patch: msg.patch }));
+        break;
+      }
+      case "TUBESTACK_AI_SUGGEST_WATCH_STATES": {
+        sendResponse(await aiSuggestWatchStates(msg));
+        break;
+      }
+      case "TUBESTACK_APPLY_WATCH_STATE_SUGGESTIONS": {
+        sendResponse(await applyWatchStateSuggestions(msg));
         break;
       }
       case "TUBESTACK_DELETE_ITEMS": {
@@ -3109,6 +3505,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse(await mergeThemesFromGranularLabels(msg.labels || []));
         break;
       }
+      case "TUBESTACK_REBUILD_GENRES_FROM_LIBRARY":
       case "TUBESTACK_REBUILD_GENRES_FROM_HISTORY": {
         sendResponse(await rebuildGenresFromLibrary(msg));
         break;

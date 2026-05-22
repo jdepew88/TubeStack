@@ -100,11 +100,17 @@
     const url = new URL(window.location.href);
     const vParam = url.searchParams.get("v");
     const videoId = base.videoId || vParam || null;
-    let timestampSec = getCurrentTimeFromVideo();
+    const fromPlayer = getCurrentTimeFromVideo();
+    let timestampSec = fromPlayer;
+    /** "page_player" | "url_only" | null — tells the service worker whether progress is from the <video> element. */
+    let progressCapture = fromPlayer != null ? "page_player" : null;
     if (timestampSec == null) {
       const t = url.searchParams.get("t") || url.searchParams.get("start");
       if (t) {
-        if (/^\d+$/.test(t)) timestampSec = parseInt(t, 10);
+        if (/^\d+$/.test(t)) {
+          timestampSec = parseInt(t, 10);
+          progressCapture = "url_only";
+        }
       }
     }
     const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
@@ -126,6 +132,7 @@
       durationSec: base.durationSec ?? null,
       thumbnail: base.thumbnail || ogImage || null,
       timestampSec,
+      progressCapture,
     };
   }
 

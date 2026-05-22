@@ -108,7 +108,7 @@ OpenAI is **optional**. If you paste an **OpenAI API key** into TubeStack:
 
 - The key is stored **locally** in extension storage on your device.
 - Network calls go **directly** from the extension to **`https://api.openai.com`** when **you** run a feature that needs a model (for example **AI categorization** or a **connection test**).
-- **AI categorization** may send **selected fields** from videos already in your library (such as **title**, **channel**, and **tags/notes** you have)—enough for the model to suggest categories. TubeStack does **not** read Chrome browsing history for this.
+- **AI categorization** may send **selected fields** from videos already in your library (such as **title**, **channel**, and **tags/notes** you have)—enough for the model to suggest categories. It uses only metadata TubeStack already stored locally.
 
 You can **remove the key** and **clear local AI cache** from Settings. OpenAI’s retention and logging are governed by **OpenAI’s** policies and your account settings there.
 

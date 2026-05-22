@@ -109,6 +109,400 @@ function send(type, payload = {}) {
   });
 }
 
+const TS_WATCH = globalThis.TUBESTACK_WATCH;
+let filterWatchStateValue = "";
+/** @type {Array<{ videoId: string; itemId: string|null; suggestedWatchState: string; suggestedTags: string[]; reason: string }>} */
+let pendingAiWatchSuggestions = [];
+
+function itemWatchState(it) {
+  return TS_WATCH ? TS_WATCH.normalizeWatchStateId(it?.watchState) : "queue";
+}
+
+function itemNote(it) {
+  return TS_WATCH ? TS_WATCH.itemNoteText(it) : String(it?.notes || "").trim();
+}
+
+function makeWatchStateBadge(it) {
+  const ws = itemWatchState(it);
+  const el = document.createElement("span");
+  el.className = `watch-state-badge watch-state-badge--${ws}`;
+  el.textContent = TS_WATCH ? TS_WATCH.watchStateLabel(ws) : ws;
+  el.title = "Watch State";
+  return el;
+}
+
+function fillWatchStateFilterOptions() {
+  const targets = [
+    document.getElementById("filterWatchState"),
+    document.getElementById("bulkWatchState"),
+    document.getElementById("libWatchStateFilter"),
+    document.getElementById("libBulkWatchState"),
+  ].filter(Boolean);
+  if (!TS_WATCH || !targets.length) return;
+  const opts =
+    '<option value="">All Watch States</option>' +
+    TS_WATCH.WATCH_STATE_LIST.map((x) => `<option value="${x.id}">${escapeHtml(x.label)}</option>`).join("");
+  const bulkOpts =
+    '<option value="">Set Watch State…</option>' +
+    TS_WATCH.WATCH_STATE_LIST.map((x) => `<option value="${x.id}">${escapeHtml(x.label)}</option>`).join("");
+  for (const sel of targets) {
+    const isBulk = sel.id === "bulkWatchState" || sel.id === "libBulkWatchState";
+    const cur = sel.value;
+    sel.innerHTML = isBulk ? bulkOpts : opts;
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  }
+}
+
+async function persistLocalPlaylistStackPatch(playlistId, patch) {
+  const r = await send("TUBESTACK_UPDATE_LOCAL_PLAYLIST_STACK", { playlistId, patch });
+  if (r?.ok) {
+    localPlaylists = r.playlists || localPlaylists;
+    return r.playlist;
+  }
+  return null;
+}
+
+function buildWatchStateRow(it, onApplied) {
+  const row = document.createElement("div");
+  row.className = "row row-watch-state";
+  const lab = document.createElement("label");
+  lab.textContent = "Watch State";
+  const sel = document.createElement("select");
+  sel.className = "watch-state-select";
+  sel.setAttribute("aria-label", "Watch State");
+  for (const s of TS_WATCH.WATCH_STATE_LIST) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.label;
+    if (itemWatchState(it) === s.id) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener("change", async () => {
+    const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, watchState: sel.value } });
+    if (r?.ok) {
+      it.watchState = sel.value;
+      onApplied?.(sel.value);
+    }
+  });
+  row.appendChild(lab);
+  row.appendChild(sel);
+  return row;
+}
+
+function buildCollapsibleVideoNote(parent, it) {
+  const note = itemNote(it);
+  const wrap = document.createElement("div");
+  wrap.className = "video-note-block";
+  let expanded = false;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "btn small ghost video-note-toggle";
+  const panel = document.createElement("div");
+  panel.className = "video-note-panel";
+  const preview = document.createElement("p");
+  preview.className = "video-note-preview ob-muted";
+  const ta = document.createElement("textarea");
+  ta.className = "notes oobe-input";
+  ta.placeholder = "Video note (local-only)…";
+  ta.rows = 3;
+  ta.value = note;
+  let timer;
+  const syncUi = () => {
+    const v = ta.value.trim();
+    toggle.textContent = expanded ? "Hide note" : v ? "Edit note" : "Add note";
+    preview.textContent = v && !expanded ? (v.length > 140 ? `${v.slice(0, 140)}…` : v) : "";
+    preview.classList.toggle("hidden", !v || expanded);
+    panel.classList.toggle("hidden", !expanded && !v);
+    wrap.classList.toggle("video-note-block--has-note", Boolean(v));
+  };
+  ta.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, note: ta.value } });
+      it.note = ta.value;
+      it.notes = ta.value;
+      syncUi();
+    }, 400);
+  });
+  toggle.addEventListener("click", () => {
+    expanded = !expanded;
+    syncUi();
+  });
+  syncUi();
+  panel.appendChild(preview);
+  panel.appendChild(ta);
+  wrap.appendChild(toggle);
+  wrap.appendChild(panel);
+  parent.appendChild(wrap);
+}
+
+function buildTimestampNotesSection(parent, it) {
+  if (!TS_WATCH) return;
+  const details = document.createElement("details");
+  details.className = "timestamp-notes-details";
+  const sum = document.createElement("summary");
+  const renderSummary = () => {
+    const n = (it.timestampNotes || []).length;
+    sum.textContent = n ? `Timestamp notes (${n})` : "Timestamp notes";
+  };
+  renderSummary();
+  details.appendChild(sum);
+  const list = document.createElement("ul");
+  list.className = "timestamp-notes-list";
+  const renderList = () => {
+    list.innerHTML = "";
+    const notes = [...(it.timestampNotes || [])].sort((a, b) => a.timeSeconds - b.timeSeconds);
+    for (const row of notes) {
+      const li = document.createElement("li");
+      li.className = "timestamp-note-row";
+      const link = document.createElement("a");
+      link.href = TS_WATCH.buildYoutubeTimestampUrl(it, row.timeSeconds);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.className = "timestamp-note-time";
+      link.textContent = TS_WATCH.formatTimeSeconds(row.timeSeconds);
+      const txt = document.createElement("span");
+      txt.className = "timestamp-note-text";
+      txt.textContent = row.label ? `${row.label} — ${row.note}` : row.note;
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "btn small ghost";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => {
+        const timeIn = prompt("Time (seconds, mm:ss, or hh:mm:ss)", TS_WATCH.formatTimeSeconds(row.timeSeconds));
+        if (timeIn == null) return;
+        const sec = TS_WATCH.parseTimeInputToSeconds(timeIn);
+        if (sec == null) {
+          alert("Could not parse time.");
+          return;
+        }
+        const noteIn = prompt("Note", row.note);
+        if (noteIn == null) return;
+        const labelIn = prompt("Short label (optional)", row.label || "");
+        if (labelIn == null) return;
+        const updated = (it.timestampNotes || []).map((x) =>
+          x.id === row.id
+            ? { ...x, timeSeconds: sec, note: noteIn.trim(), label: labelIn.trim(), updatedAt: new Date().toISOString() }
+            : x
+        );
+        void (async () => {
+          const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, timestampNotes: updated } });
+          if (r?.ok) {
+            it.timestampNotes = r.item?.timestampNotes || updated;
+            renderList();
+            renderSummary();
+          }
+        })();
+      });
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "btn small danger ghost";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => {
+        if (!confirm("Delete this timestamp note?")) return;
+        const updated = (it.timestampNotes || []).filter((x) => x.id !== row.id);
+        void (async () => {
+          const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, timestampNotes: updated } });
+          if (r?.ok) {
+            it.timestampNotes = r.item?.timestampNotes || updated;
+            renderList();
+            renderSummary();
+          }
+        })();
+      });
+      li.appendChild(link);
+      li.appendChild(txt);
+      li.appendChild(edit);
+      li.appendChild(del);
+      list.appendChild(li);
+    }
+  };
+  renderList();
+  details.appendChild(list);
+  const addRow = document.createElement("div");
+  addRow.className = "timestamp-note-add";
+  const timeInp = document.createElement("input");
+  timeInp.type = "text";
+  timeInp.className = "oobe-input";
+  timeInp.placeholder = "12:30 or seconds";
+  const noteInp = document.createElement("input");
+  noteInp.type = "text";
+  noteInp.className = "oobe-input";
+  noteInp.placeholder = "Note at this time";
+  const btnAdd = document.createElement("button");
+  btnAdd.type = "button";
+  btnAdd.className = "btn small";
+  btnAdd.textContent = "Add";
+  btnAdd.addEventListener("click", async () => {
+    const sec = TS_WATCH.parseTimeInputToSeconds(timeInp.value);
+    if (sec == null) {
+      alert("Enter time as seconds, mm:ss, or hh:mm:ss.");
+      return;
+    }
+    const note = noteInp.value.trim();
+    if (!note) {
+      alert("Enter note text.");
+      return;
+    }
+    const next = [
+      ...(it.timestampNotes || []),
+      { id: `tn_${Date.now()}`, timeSeconds: sec, note, label: "", createdAt: new Date().toISOString() },
+    ];
+    const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, timestampNotes: next } });
+    if (r?.ok) {
+      it.timestampNotes = r.item?.timestampNotes || next;
+      timeInp.value = "";
+      noteInp.value = "";
+      renderList();
+      renderSummary();
+    }
+  });
+  addRow.appendChild(timeInp);
+  addRow.appendChild(noteInp);
+  addRow.appendChild(btnAdd);
+  details.appendChild(addRow);
+  parent.appendChild(details);
+}
+
+function buildLocalPlaylistStackPanel(pl) {
+  const wrap = document.createElement("div");
+  wrap.className = "local-pl-stack-notes";
+
+  const noteLab = document.createElement("label");
+  noteLab.className = "ob-label";
+  noteLab.textContent = "Stack note";
+  const noteTa = document.createElement("textarea");
+  noteTa.className = "oobe-input local-pl-stack-field";
+  noteTa.rows = 2;
+  noteTa.placeholder = "What is this stack for?";
+  noteTa.value = pl.stackNote || "";
+  let noteTimer;
+  noteTa.addEventListener("input", () => {
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => {
+      pl.stackNote = noteTa.value;
+      void persistLocalPlaylistStackPatch(pl.id, { stackNote: noteTa.value });
+    }, 450);
+  });
+
+  const resLab = document.createElement("label");
+  resLab.className = "ob-label";
+  resLab.textContent = "Research Summary";
+  const resTa = document.createElement("textarea");
+  resTa.className = "oobe-input local-pl-stack-field";
+  resTa.rows = 3;
+  resTa.placeholder = "Summary after watching or organizing…";
+  resTa.value = pl.researchSummary || "";
+  let resTimer;
+  resTa.addEventListener("input", () => {
+    clearTimeout(resTimer);
+    resTimer = setTimeout(() => {
+      pl.researchSummary = resTa.value;
+      void persistLocalPlaylistStackPatch(pl.id, { researchSummary: resTa.value });
+    }, 450);
+  });
+
+  const decHead = document.createElement("div");
+  decHead.className = "local-pl-decisions-head";
+  const decTitle = document.createElement("span");
+  decTitle.className = "ob-label";
+  decTitle.textContent = "Decision log";
+  const btnAddDec = document.createElement("button");
+  btnAddDec.type = "button";
+  btnAddDec.className = "btn small ghost";
+  btnAddDec.textContent = "Add decision";
+  decHead.appendChild(decTitle);
+  decHead.appendChild(btnAddDec);
+
+  const decList = document.createElement("ul");
+  decList.className = "local-pl-decisions-list";
+
+  const renderDecisions = () => {
+    decList.innerHTML = "";
+    for (const d of pl.decisions || []) {
+      const li = document.createElement("li");
+      li.className = "local-pl-decision-row";
+      const t = document.createElement("strong");
+      t.textContent = d.title;
+      const r = document.createElement("p");
+      r.className = "ob-muted";
+      if (d.reason) r.textContent = d.reason;
+      const acts = document.createElement("div");
+      acts.className = "local-pl-decision-actions";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "btn small ghost";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => {
+        const title = prompt("Decision title", d.title);
+        if (title == null) return;
+        const reason = prompt("Reason (optional)", d.reason || "");
+        if (reason == null) return;
+        const next = (pl.decisions || []).map((x) =>
+          x.id === d.id
+            ? { ...x, title: title.trim(), reason: reason.trim(), updatedAt: new Date().toISOString() }
+            : x
+        );
+        void (async () => {
+          const updated = await persistLocalPlaylistStackPatch(pl.id, { decisions: next });
+          if (updated) {
+            pl.decisions = updated.decisions;
+            renderDecisions();
+          }
+        })();
+      });
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "btn small danger ghost";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => {
+        if (!confirm("Delete this decision?")) return;
+        const next = (pl.decisions || []).filter((x) => x.id !== d.id);
+        void (async () => {
+          const updated = await persistLocalPlaylistStackPatch(pl.id, { decisions: next });
+          if (updated) {
+            pl.decisions = updated.decisions;
+            renderDecisions();
+          }
+        })();
+      });
+      acts.appendChild(edit);
+      acts.appendChild(del);
+      li.appendChild(t);
+      if (d.reason) li.appendChild(r);
+      li.appendChild(acts);
+      decList.appendChild(li);
+    }
+  };
+  renderDecisions();
+
+  btnAddDec.addEventListener("click", () => {
+    const title = prompt("Decision title");
+    if (title == null || !title.trim()) return;
+    const reason = prompt("Reason (optional)", "");
+    if (reason == null) return;
+    const next = [
+      ...(pl.decisions || []),
+      { id: `dec_${Date.now()}`, title: title.trim(), reason: reason.trim(), createdAt: new Date().toISOString() },
+    ];
+    void (async () => {
+      const updated = await persistLocalPlaylistStackPatch(pl.id, { decisions: next });
+      if (updated) {
+        pl.decisions = updated.decisions;
+        renderDecisions();
+      }
+    })();
+  });
+
+  wrap.appendChild(noteLab);
+  wrap.appendChild(noteTa);
+  wrap.appendChild(resLab);
+  wrap.appendChild(resTa);
+  wrap.appendChild(decHead);
+  wrap.appendChild(decList);
+  return wrap;
+}
+
 function formatDuration(sec) {
   if (sec == null || Number.isNaN(sec)) return "—";
   const s = Math.floor(sec);
@@ -378,14 +772,17 @@ function completion(it) {
 }
 
 function haystack(it) {
+  const tsNotes = (it.timestampNotes || []).map((x) => `${x.label || ""} ${x.note || ""}`).join(" ");
   return [
     it.title,
     it.channel,
     it.granularGenre,
     it.libraryAlbum,
     it.playlistName,
+    TS_WATCH ? TS_WATCH.watchStateLabel(itemWatchState(it)) : "",
     ...(it.tags || []),
-    it.notes,
+    itemNote(it),
+    tsNotes,
   ]
     .filter(Boolean)
     .join(" ")
@@ -689,12 +1086,13 @@ function renderSubscriptionDirectory() {
   }
 }
 
-function filterItemsBySearchAndFilters(items, q, cat, pri, th) {
+function filterItemsBySearchAndFilters(items, q, cat, pri, th, ws) {
   return items.filter((it) => {
     if (!matchesSearch(it, q)) return false;
     if (cat && it.category !== cat) return false;
     if (pri && it.priority !== pri) return false;
     if (th && it.themeId !== th) return false;
+    if (ws && itemWatchState(it) !== ws) return false;
     return true;
   });
 }
@@ -782,7 +1180,8 @@ function getSmartPlaylistSourceItems(source) {
       searchEl.value,
       filterCategory.value,
       filterPriorityValue,
-      filterItemCategory.value
+      filterItemCategory.value,
+      filterWatchStateValue
     );
     items = sortCopy(items, quickSort.value);
   } else {
@@ -1017,6 +1416,7 @@ function fillCategoryFilter() {
   filterCategory.innerHTML =
     `<option value="">All lists</option>` +
     cats.map((c) => `<option value="${c}">${LIST_LABELS[c]}</option>`).join("");
+  fillWatchStateFilterOptions();
 }
 
 function fillThemeFilter() {
@@ -1557,11 +1957,13 @@ function visibleItems() {
   const cat = filterCategory.value;
   const pri = filterPriorityValue;
   const th = filterItemCategory.value;
+  const ws = filterWatchStateValue;
   let filtered = allItems.filter((it) => {
     if (!matchesSearch(it, q)) return false;
     if (cat && it.category !== cat) return false;
     if (pri && it.priority !== pri) return false;
     if (th && it.themeId !== th) return false;
+    if (ws && itemWatchState(it) !== ws) return false;
     return true;
   });
   if (playlistViewVideoIds && playlistViewVideoIds.size > 0) {
@@ -1593,6 +1995,12 @@ function render() {
           ` · Playlist “${playlistViewMeta.name}” (${list.length} in library / ${playlistViewVideoIds.size} in snapshot)`
         )
       );
+      const plCtx = localPlaylists.find((x) => x.id === playlistViewMeta.id);
+      if (plCtx) {
+        const stackPanel = buildLocalPlaylistStackPanel(plCtx);
+        stackPanel.classList.add("summary-stack-notes");
+        summary.appendChild(stackPanel);
+      }
       const clearBtn = document.createElement("button");
       clearBtn.type = "button";
       clearBtn.className = "btn small ghost";
@@ -1723,6 +2131,7 @@ function render() {
     a.rel = "noopener noreferrer";
     a.textContent = it.title || "Untitled";
     titleRow.appendChild(a);
+    titleRow.appendChild(makeWatchStateBadge(it));
     if (it.granularGenre) {
       const pill = document.createElement("span");
       pill.className = "granular-genre-pill";
@@ -1736,7 +2145,8 @@ function render() {
     if (compact || (isGridView && gridTileSize <= 104)) {
       const creator = it.channel || "Unknown creator";
       const len = getDuration(it);
-      meta.textContent = `${creator} · ${len != null ? formatDuration(len) : "—"}`;
+      const wsLab = TS_WATCH ? TS_WATCH.watchStateLabel(itemWatchState(it)) : "";
+      meta.textContent = `${creator} · ${len != null ? formatDuration(len) : "—"}${wsLab ? ` · ${wsLab}` : ""}`;
     } else {
       const tl = timeLeft(it);
       const comp = completion(it);
@@ -1858,25 +2268,26 @@ function render() {
       : "Suggested tags arrive in a later AI phase.";
     sug.innerHTML = `<span>Suggested:</span> ${escapeHtml(sugTags)}`;
 
-    const notes = document.createElement("textarea");
-    notes.className = "notes";
-    notes.placeholder = "Notes…";
-    notes.value = it.notes || "";
-    let notesTimer;
-    notes.addEventListener("input", () => {
-      clearTimeout(notesTimer);
-      notesTimer = setTimeout(async () => {
-        await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, notes: notes.value } });
-        it.notes = notes.value;
-      }, 400);
-    });
-
     body.appendChild(titleRow);
     body.appendChild(meta);
+    if (!compact) {
+      body.appendChild(
+        buildWatchStateRow(it, (ws) => {
+          const badge = titleRow.querySelector(".watch-state-badge");
+          if (badge && TS_WATCH) {
+            badge.textContent = TS_WATCH.watchStateLabel(ws);
+            badge.className = `watch-state-badge watch-state-badge--${ws}`;
+          }
+        })
+      );
+    }
     body.appendChild(rowTheme);
     body.appendChild(rowTags);
     body.appendChild(sug);
-    body.appendChild(notes);
+    if (!compact) {
+      buildCollapsibleVideoNote(body, it);
+      buildTimestampNotesSection(body, it);
+    }
 
     thumbCol.appendChild(rowAlbum);
 
@@ -2286,6 +2697,7 @@ function renderLocalPlaylists() {
       sum.textContent = pl.smartSummary;
       details.appendChild(sum);
     }
+    details.appendChild(buildLocalPlaylistStackPanel(pl));
 
     const actions = document.createElement("div");
     actions.className = "local-pl-actions";
@@ -2564,11 +2976,30 @@ function syncAiCategorizeStrategyUi() {
   if (criteria) criteria.classList.toggle("hidden", s !== "criteria");
 }
 
+function updateAiWatchStateScopeCount() {
+  const scope = document.querySelector('input[name="aiCatScope"]:checked')?.value || "library";
+  const ids = collectAiCategorizeItemIds(scope);
+  const el = document.getElementById("aiWsScopeCount");
+  if (!el) return;
+  const n = ids.length;
+  const cap = 60;
+  if (!n) {
+    el.textContent =
+      scope === "selected" ? "No rows checked — check videos or choose another scope." : "No videos to process.";
+    return;
+  }
+  el.textContent =
+    n > cap
+      ? `${n} videos match scope; AI will process the first ${cap}.`
+      : `${n} video(s) will be sent for Watch State suggestions.`;
+}
+
 function updateAiCatScopeCount() {
   const scope = document.querySelector('input[name="aiCatScope"]:checked')?.value || "library";
   const ids = collectAiCategorizeItemIds(scope);
   const el = document.getElementById("aiCatScopeCount");
   if (!el) return;
+  updateAiWatchStateScopeCount();
   const n = ids.length;
   const cap = 120;
   if (!n) {
@@ -3043,6 +3474,10 @@ searchEl.addEventListener("input", () => {
   searchTimer = setTimeout(() => render(), 120);
 });
 filterCategory.addEventListener("change", () => render());
+document.getElementById("filterWatchState")?.addEventListener("change", (e) => {
+  filterWatchStateValue = e.target.value || "";
+  render();
+});
 filterItemCategory?.addEventListener("change", () => render());
 quickSort.addEventListener("change", () => render());
 viewModeEl?.addEventListener("change", () => {
@@ -3600,6 +4035,26 @@ document.getElementById("btnRestorePlaylistSession")?.addEventListener("click", 
   const pid = playlistViewMeta?.id;
   if (!pid) return;
   await restoreLocalPlaylistSessionById(pid);
+});
+
+document.getElementById("btnBulkWatchState")?.addEventListener("click", async () => {
+  const ids = [...selected];
+  const ws = document.getElementById("bulkWatchState")?.value || "";
+  if (!ids.length) {
+    alert("Select at least one video.");
+    return;
+  }
+  if (!ws) {
+    alert("Choose a Watch State.");
+    return;
+  }
+  const r = await send("TUBESTACK_BULK_UPDATE_ITEMS", { ids, patch: { watchState: ws } });
+  if (!r?.ok) {
+    alert(r?.error || "Could not update Watch State.");
+    return;
+  }
+  await loadState();
+  render();
 });
 
 btnDelete.addEventListener("click", async () => {
@@ -4218,6 +4673,71 @@ document.getElementById("btnRunAiCategorize")?.addEventListener("click", async (
   if (oai && saveOpenaiKey) oai.value = "";
 });
 
+document.getElementById("btnRunAiWatchStates")?.addEventListener("click", async () => {
+  const status = document.getElementById("aiWsStatus");
+  const applyBtn = document.getElementById("btnApplyAiWatchStates");
+  const scope = document.querySelector('input[name="aiCatScope"]:checked')?.value || "library";
+  const itemIds = collectAiCategorizeItemIds(scope);
+  if (!itemIds.length) {
+    if (status) status.textContent = scope === "selected" ? "Check videos in the grid first." : "No videos to process.";
+    return;
+  }
+  if (
+    !confirm(
+      "Send stored metadata for these videos to OpenAI to suggest Watch States (not tags)? Suggestions are applied only if you click Apply afterward."
+    )
+  ) {
+    return;
+  }
+  const pasted = document.getElementById("aiCatOpenaiKey")?.value.trim() || "";
+  const saveOpenaiKey = document.getElementById("aiCatSaveKey")?.checked === true;
+  if (status) status.textContent = "Calling OpenAI…";
+  const r = await send("TUBESTACK_AI_SUGGEST_WATCH_STATES", {
+    itemIds,
+    playlistId: playlistViewMeta?.id || activeLocalPlaylistId || undefined,
+    openaiApiKey: pasted || undefined,
+    saveOpenaiKey: saveOpenaiKey && pasted.length >= 20,
+  });
+  if (!r?.ok) {
+    if (status) status.textContent = r?.message || r?.error || "Request failed.";
+    applyBtn?.classList.add("hidden");
+    return;
+  }
+  pendingAiWatchSuggestions = r.suggestions || [];
+  const lines = pendingAiWatchSuggestions.slice(0, 8).map((s) => {
+    const lab = TS_WATCH ? TS_WATCH.watchStateLabel(s.suggestedWatchState) : s.suggestedWatchState;
+    return `${s.videoId}: ${lab}${s.reason ? ` — ${s.reason}` : ""}`;
+  });
+  if (status) {
+    status.textContent =
+      (lines.length ? `${lines.join("\n")}${pendingAiWatchSuggestions.length > 8 ? "\n…" : ""}` : "No suggestions returned.") +
+      (r.truncated ? "\n(Input was capped.)" : "");
+  }
+  applyBtn?.classList.toggle("hidden", !pendingAiWatchSuggestions.length);
+});
+
+document.getElementById("btnApplyAiWatchStates")?.addEventListener("click", async () => {
+  const status = document.getElementById("aiWsStatus");
+  if (!pendingAiWatchSuggestions.length) return;
+  if (!confirm(`Apply ${pendingAiWatchSuggestions.length} suggested Watch State(s)? Tags are not changed unless you edit them separately.`)) {
+    return;
+  }
+  const r = await send("TUBESTACK_APPLY_WATCH_STATE_SUGGESTIONS", {
+    suggestions: pendingAiWatchSuggestions,
+    applyWatchState: true,
+    applyTags: false,
+  });
+  if (!r?.ok) {
+    if (status) status.textContent = r?.error || "Could not apply suggestions.";
+    return;
+  }
+  pendingAiWatchSuggestions = [];
+  document.getElementById("btnApplyAiWatchStates")?.classList.add("hidden");
+  await loadState();
+  if (status) status.textContent = `Applied Watch State to ${r.updatedCount ?? 0} video(s).`;
+  render();
+});
+
 document.getElementById("btnGenreRebuild")?.addEventListener("click", () => {
   const st = document.getElementById("grStatus");
   if (st) {
@@ -4259,7 +4779,7 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
     st.classList.remove("success");
     st.textContent = "Rebuilding categories from your library…";
   }
-  const r = await send("TUBESTACK_REBUILD_GENRES_FROM_HISTORY", {
+  const r = await send("TUBESTACK_REBUILD_GENRES_FROM_LIBRARY", {
     mode,
     replaceExisting: replace,
     openaiApiKey: pasted || undefined,

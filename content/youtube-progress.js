@@ -1,5 +1,13 @@
 /**
- * Watch-page progress heartbeats for TubeStack (time watched + playhead for sorting).
+ * Watch-page progress for TubeStack (local-only; no Chrome History API).
+ *
+ * While a YouTube watch tab is open, this script sends TUBESTACK_PROGRESS_TICK messages to the
+ * background service worker. The worker stores per-video records in chrome.storage.local → videoProgress:
+ *   videoId → { playheadSec, durationSec, updatedAt, totalWatchedSec, progressSource }
+ *
+ * Daily in-player watch time is aggregated in watchByDay (YYYY-MM-DD → seconds).
+ *
+ * See background/service-worker.js (handleProgressTick) and content/youtube-metadata.js (capture on save).
  */
 (function () {
   if (window.__TUBESTACK_PROGRESS__) return;

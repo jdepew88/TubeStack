@@ -316,8 +316,9 @@
           </p>
           <p class="panel-hint ob-muted">
             For each selected video, TubeStack sends <strong>only</strong> metadata it already holds locally (e.g.
-            title, channel, list category, tags, notes, optional description snippet, current category label). It does
-            <strong>not</strong> send transcripts, watch URLs, YouTube/Google API keys, or OAuth tokens to OpenAI.
+            title, channel, list category, tags, notes, Watch State, optional description snippet, current category label).
+            <strong>Tags</strong> and <strong>Watch States</strong> are separate. It does <strong>not</strong> send
+            transcripts, watch URLs, YouTube/Google API keys, or OAuth tokens to OpenAI.
           </p>
           <p class="panel-hint ob-muted">Large jobs are capped at <strong>120 videos</strong> per run.</p>
           <fieldset class="ai-cat-fieldset">
@@ -384,11 +385,24 @@
           <label class="modal-checkbox"><input type="checkbox" id="aiCatSaveKey" /> Save pasted key to Settings</label>
           <p id="aiCatStatus" class="modal-status" role="status"></p>
           <button type="button" id="btnRunAiCategorize" class="btn small primary">Run AI categorize</button>
+          <hr class="panel-divider" />
+          <span class="label">AI Watch State suggestions</span>
+          <p class="panel-hint ob-muted">
+            Suggests a <strong>Watch State</strong> per video (separate from tags and categories). Nothing is applied until
+            you confirm.
+          </p>
+          <p id="aiWsScopeCount" class="stat-line small" aria-live="polite">—</p>
+          <p id="aiWsStatus" class="modal-status" role="status"></p>
+          <button type="button" id="btnRunAiWatchStates" class="btn small">Suggest Watch States (AI)</button>
+          <button type="button" id="btnApplyAiWatchStates" class="btn small primary hidden">Apply suggested Watch States</button>
         </section>
 
         <section class="panel-block" data-sidebar-section="playlistPack">
           <span class="label">Focused Playlist</span>
-          <p class="panel-hint">Choose one or more categories, set how much time you want to watch, and TubeStack builds a focused custom playlist for that session.</p>
+          <p class="panel-hint">
+            Choose categories and a time budget. TubeStack builds a queue from your <strong>local library</strong> using
+            saved playhead, duration, Watch State, and priority — no network calls for watch time.
+          </p>
           <div id="playlistThemes" class="playlist-picks"></div>
           <label class="ob-label" for="playlistBudget">Minutes</label>
           <input type="number" id="playlistBudget" min="5" max="240" value="15" />
@@ -462,6 +476,10 @@
             <span class="label">List</span>
             <select id="filterCategory"></select>
           </div>
+          <div class="filter-field">
+            <span class="label">Watch State</span>
+            <select id="filterWatchState" aria-label="Filter by Watch State"></select>
+          </div>
           <div class="filter-field filter-field-priority">
             <span class="label">Priority</span>
             <div id="filterPriorityBar" class="filter-priority-bar" role="group" aria-label="Filter by priority"></div>
@@ -480,6 +498,10 @@
           >
             Restore playlist session
           </button>
+          <select id="bulkWatchState" class="bulk-watch-state-select" aria-label="Set Watch State for selected videos">
+            <option value="">Set Watch State…</option>
+          </select>
+          <button type="button" id="btnBulkWatchState" class="btn small">Apply Watch State</button>
           <button type="button" id="btnDelete" class="btn small danger">Remove selected</button>
           <button type="button" id="btnDeleteLocalPlaylist" class="btn small danger hidden">Delete playlist</button>
         </div>
@@ -957,6 +979,7 @@
       </main>
     </div>
     <button type="button" id="btnShowSidebarFloating" class="btn small sidebar-floating-toggle hidden" aria-label="Reopen sidebar" title="Reopen sidebar">◂</button>
+    <script src="../lib/watch-states.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>

@@ -28,11 +28,22 @@ Inspired by **OneTab**, built for **YouTube power users**. Instead of leaving do
 - **Save** open YouTube tabs from the toolbar or context menu; optionally close tabs after save to cut clutter and RAM use.
 - **Library** view with an iTunes-style **Artist · Album · Category** browser, compact session picker, and searchable video list.
 - **Restore** individual videos or whole saved sessions; **focus sessions** and queue tools for intentional watching.
-- **Organize** with lists, themes/categories, tags, notes, priority tiers, and local playlist snapshots.
+- **Organize** with **Watch States** (workflow status), user-defined **tags**, themes/categories, video and stack notes, timestamp notes, decision logs, priority tiers, and local playlist snapshots.
 - **Optional YouTube Data API + OAuth** (your keys): imports, metadata, subscription helpers, create/sync playlists on your Google account.
-- **Optional OpenAI** (your API key): AI-assisted categorization and organization from titles/metadata in your saved library.
+- **Optional OpenAI** (your API key): AI-assisted categorization and optional **Watch State** suggestions from titles/metadata in your saved library (only when you run it; suggestions are not applied until you confirm).
 
 TubeStack is **not affiliated with YouTube, Google, or OpenAI.**
+
+### Organization: Tags vs Watch States
+
+TubeStack uses two separate systems:
+
+| System | What it is |
+|--------|------------|
+| **Tags** | Freeform labels you create (e.g. `React`, `CCNA`, `research`). A video can have many tags. |
+| **Watch States** | A fixed workflow status per video: Queue, Watching, Saved, Finished, Important, Reference, Skip, Add to Playlist. Filter and bulk-update from the dashboard and library. |
+
+**Notes** (video notes, timestamp notes, stack notes, research summaries, and decision logs) are stored **locally** in Chrome extension storage. TubeStack does **not** request Chrome History permission or scan unrelated browsing history. Optional OpenAI organization sends **only** metadata for videos you select when you explicitly trigger an AI action.
 
 Chrome Web Store docs: [docs/](docs/) ([listing](docs/STORE_LISTING.md) · [release checklist](docs/RELEASE_CHECKLIST.md))
 
@@ -62,7 +73,7 @@ Features include:
 - Focus sessions
 - Queue management
 - Prioritization systems
-- Locally tracked watch progress (videos you open while TubeStack is installed)
+- Locally tracked watch progress on YouTube watch tabs (`videoProgress`, `watchByDay`) — no Chrome History API
 - Resume later workflows
 - Preserve watch progress when possible
 
@@ -242,8 +253,10 @@ Pin it to the right of the address bar by selecting the puzzle piece and pinning
 
 TubeStack is **local-first**: saved videos, playlists, organization data, locally tracked watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server.
 
-- **Save currently open YouTube tabs** and **track progress** for videos you open while TubeStack is installed—TubeStack does **not** reconstruct past YouTube activity from Chrome browsing history.
-- **Does not request** the Chrome **History** permission or scan unrelated browsing history.
+TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in YouTube tabs while the extension is installed, so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` per video and `watchByDay` for daily totals).
+
+- Progress is observed on **YouTube watch pages** via `content/youtube-progress.js` (heartbeats to the service worker) and optionally **captured when you save tabs** from the open player or URL timestamp.
+- **Does not request** the Chrome **History** permission.
 - **YouTube API keys**, **OAuth client/session data**, and **OpenAI API keys** you provide are stored **locally on your device**.
 - **Google** and **OpenAI** are contacted **only when you enable and use** those optional features; requests go **directly** from the extension to those services (not through a TubeStack backend).
 - TubeStack **does not sell** your data. You can **delete stored data** from Settings in the extension or by removing the extension.

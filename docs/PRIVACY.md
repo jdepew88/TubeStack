@@ -26,10 +26,10 @@ This policy describes how the **TubeStack** Chrome Extension handles information
 
 Depending on how you use TubeStack, the extension may store locally, among other things:
 
-- **Saved YouTube tabs and library items** (titles, channels, URLs, notes, and related fields you add in the app).
-- **Playlists and organization data** you create inside TubeStack (including local playlist snapshots).
-- **Categories, themes, tags, and similar labels** you use to organize your library.
-- **Locally tracked watch progress** and related tallies for videos you open **while TubeStack is installed** (for example resume position and in-player watch-time charts). TubeStack does **not** reconstruct past YouTube activity from Chrome browsing history.
+- **Saved YouTube tabs and library items** (titles, channels, URLs, **Watch States**, **tags**, video notes, timestamp notes, and related fields you add in the app).
+- **Playlists and organization data** you create inside TubeStack (including local playlist snapshots, **stack notes**, **research summaries**, and **decision logs**).
+- **Categories, themes, tags, Watch States, and similar labels** you use to organize your library.
+- **Locally tracked watch progress** for YouTube videos you watch in YouTube tabs **while TubeStack is installed** — for example `playheadSec`, `durationSec`, `totalWatchedSec`, `updatedAt`, and daily totals in `watchByDay`. TubeStack observes open YouTube watch pages via its content scripts; it does **not** use the Chrome History API.
 - **Extension settings** (for example sidebar preferences, import options, and similar configuration).
 
 **Credentials stay on your device:**
@@ -50,7 +50,21 @@ Depending on how you use TubeStack, the extension may store locally, among other
 
 **OpenAI API calls only happen when you enable or use optional AI features** (for example AI-assisted categorization). Requests go **directly from the extension to OpenAI’s API** (`api.openai.com`), using your OpenAI API key only when you have provided one and only for those user-initiated actions.
 
-**AI categorization** may send **selected video metadata** the feature needs to work—for example titles, channel names, and related fields the extension already has in your **saved library**—not unrelated browsing history.
+**AI categorization** and **AI Watch State suggestions** may send **selected video metadata** the feature needs to work—for example titles, channel names, tags, notes, current Watch State, and related fields the extension already has in your **saved library**. Watch States and tags are kept separate; AI does not overwrite your Watch States unless you confirm an apply step.
+
+---
+
+## Watch progress (local, YouTube pages only)
+
+TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in YouTube tabs while the extension is installed, so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` and `watchByDay`).
+
+Progress may come from:
+
+- **Observed playback** on open watch tabs (`content/youtube-progress.js` heartbeats)
+- **Capture on save** when you save/close tabs (playhead read from the page when available)
+- **URL timestamps** when a saved tab URL includes a `t=` start time
+
+TubeStack does **not** reconstruct what you watched before install or on sites other than YouTube watch pages.
 
 ---
 

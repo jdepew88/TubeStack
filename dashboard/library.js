@@ -19,10 +19,12 @@ let libViewMode = "details";
 let libQuickSort = "saved_desc";
 let libListFilter = "";
 let libPriorityFilter = "";
+let libWatchStateFilter = "";
+const TS_WATCH = globalThis.TUBESTACK_WATCH;
 let localPlaylists = [];
 let libSettings = {};
-/** "recent" = browser-tab sessions & other non-YouTube-import saves; "imported" = back catalog from YouTube OAuth import */
-let libPlaylistOrigin = "recent";
+/** "recent" = tab/session saves only; "complete" = entire saved library including YouTube imports */
+let libLibraryScope = "recent";
 /** When set, library + browse columns only show videos in this local playlist snapshot. */
 let libActivePlaylistId = null;
 
@@ -38,6 +40,7 @@ const LIB_FILTER_YT_IMPORT = "__import_youtube__";
 
 /** expanded | compact | collapsed */
 const LIB_BROWSE_PANEL_STATE_KEY = "ts_library_browse_panel_state";
+const LIB_LIBRARY_SCOPE_KEY = "ts_library_scope";
 
 function getLibBrowsePanelState() {
   const v = localStorage.getItem(LIB_BROWSE_PANEL_STATE_KEY);
@@ -120,32 +123,84 @@ function normalizeText(v) {
   return String(v || "").trim().toLowerCase();
 }
 
+function libItemWatchState(it) {
+  return TS_WATCH ? TS_WATCH.normalizeWatchStateId(it?.watchState) : "queue";
+}
+
+function libItemNote(it) {
+  return TS_WATCH ? TS_WATCH.itemNoteText(it) : String(it?.notes || "").trim();
+}
+
+function fillLibWatchStateFilterOptions() {
+  const targets = [document.getElementById("libWatchStateFilter"), document.getElementById("libBulkWatchState")].filter(
+    Boolean
+  );
+  if (!TS_WATCH || !targets.length) return;
+  const filterOpts =
+    '<option value="">All Watch States</option>' +
+    TS_WATCH.WATCH_STATE_LIST.map((x) => `<option value="${x.id}">${x.label}</option>`).join("");
+  const bulkOpts =
+    '<option value="">Set Watch State…</option>' +
+    TS_WATCH.WATCH_STATE_LIST.map((x) => `<option value="${x.id}">${x.label}</option>`).join("");
+  for (const sel of targets) {
+    const cur = sel.value;
+    sel.innerHTML = sel.id === "libBulkWatchState" ? bulkOpts : filterOpts;
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  }
+}
+
 function matchesLibrarySearch(item, q) {
   if (!q) return true;
   const tags = Array.isArray(item.tags) ? item.tags.join(" ") : "";
+  const tsNotes = (item.timestampNotes || []).map((x) => `${x.label || ""} ${x.note || ""}`).join(" ");
   const hay = [
     item.title,
     item.channel,
     deriveAlbum(item),
     LIST_LABELS[item.category] || "Unassigned",
+    TS_WATCH ? TS_WATCH.watchStateLabel(libItemWatchState(item)) : "",
     item.playlistTitle,
     item.playlistName,
     item.topic,
     tags,
+    libItemNote(item),
+    tsNotes,
   ]
     .map((x) => normalizeText(x))
     .join(" ");
   return hay.includes(q);
 }
 
-function itemMatchesLibraryOrigin(it) {
-  const isYt = it.libraryImportSource === "youtube_playlist";
-  if (libPlaylistOrigin === "recent") return !isYt;
-  if (libPlaylistOrigin === "imported") {
-    if (libSettings.libraryShowYoutubeImported === false) return false;
-    return isYt;
+function itemMatchesLibraryScope(it) {
+  if (libLibraryScope === "complete") return true;
+  return it.libraryImportSource !== "youtube_playlist";
+}
+
+function syncLibScopeButtons() {
+  const recentBtn = document.getElementById("libScopeRecent");
+  const completeBtn = document.getElementById("libScopeComplete");
+  const isComplete = libLibraryScope === "complete";
+  recentBtn?.classList.toggle("active", !isComplete);
+  completeBtn?.classList.toggle("active", isComplete);
+  recentBtn?.setAttribute("aria-pressed", isComplete ? "false" : "true");
+  completeBtn?.setAttribute("aria-pressed", isComplete ? "true" : "false");
+}
+
+function setLibLibraryScope(scope) {
+  const next = scope === "complete" ? "complete" : "recent";
+  if (libLibraryScope === next) return;
+  libLibraryScope = next;
+  localStorage.setItem(LIB_LIBRARY_SCOPE_KEY, libLibraryScope);
+  if (libLibraryScope === "recent" && libActivePlaylistId) {
+    const pl = localPlaylists.find((p) => p.id === libActivePlaylistId);
+    if (pl?.playlistSource === "youtube_import") libActivePlaylistId = null;
   }
-  return true;
+  selectedArtist = "";
+  selectedAlbum = "";
+  selectedCategory = "";
+  syncLibScopeButtons();
+  renderSessionSelect();
+  renderAll();
 }
 
 function watchUrlForItem(it) {
@@ -228,6 +283,7 @@ function computeDisplayedVideoList() {
     list = list.filter((it) => (it.category || "") === libListFilter);
   }
   if (libPriorityFilter) list = list.filter((it) => (it.priority || "") === libPriorityFilter);
+  if (libWatchStateFilter) list = list.filter((it) => libItemWatchState(it) === libWatchStateFilter);
   if (libSearchQuery) list = list.filter((it) => matchesLibrarySearch(it, libSearchQuery));
   if (libQuickSort === "title_asc") {
     list.sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
@@ -280,7 +336,7 @@ function syncLibBulkUi(list) {
   selAll.indeterminate = someOn;
   const currentPl = plSel.value;
   plSel.innerHTML = '<option value="">Move to…</option>';
-  for (const pl of playlistsForLibraryOrigin()) {
+  for (const pl of playlistsForLibraryScope()) {
     const o = document.createElement("option");
     o.value = pl.id;
     o.textContent = `${pl.name || "Untitled"} (${(pl.items || []).length})`;
@@ -330,10 +386,10 @@ function updateVideosHeader(list) {
       videosTitle.textContent = selectedArtist
         ? `${base} · ${selectedArtist} (${list.length})`
         : `${base} (${list.length})`;
-    } else if (libPlaylistOrigin === "imported") {
+    } else if (libLibraryScope === "complete") {
       videosTitle.textContent = selectedArtist
-        ? `Imported — ${selectedArtist} (${list.length})`
-        : `Imported from YouTube (${list.length})`;
+        ? `Complete library — ${selectedArtist} (${list.length})`
+        : `Complete library (${list.length})`;
     } else {
       videosTitle.textContent = selectedArtist
         ? `Recent sessions — ${selectedArtist} (${list.length})`
@@ -353,7 +409,7 @@ async function reloadLibraryFullState() {
 }
 
 function getLibraryViewItems() {
-  let items = allItems.filter((it) => itemMatchesLibraryOrigin(it));
+  let items = allItems.filter((it) => itemMatchesLibraryScope(it));
   if (libActivePlaylistId) {
     const pl = localPlaylists.find((p) => p.id === libActivePlaylistId);
     const videoIds = new Set(
@@ -368,16 +424,24 @@ function getLibraryViewItems() {
 
 function currentSessionSelectValue() {
   if (libActivePlaylistId) return `pl:${libActivePlaylistId}`;
-  return libPlaylistOrigin === "imported" ? "imported" : "recent";
+  return libLibraryScope === "complete" ? "all" : "recent";
 }
 
-function playlistsForLibraryOrigin() {
+function playlistsForLibraryScope() {
   const showImp = libSettings.libraryShowYoutubeImported !== false;
-  if (libPlaylistOrigin === "imported" && !showImp) return [];
-  if (libPlaylistOrigin === "imported") {
-    return localPlaylists.filter((p) => p.playlistSource === "youtube_import");
-  }
+  if (libLibraryScope === "complete" && showImp) return [...localPlaylists];
   return localPlaylists.filter((p) => p.playlistSource !== "youtube_import");
+}
+
+function appendSessionPlaylistOptions(host, playlists) {
+  for (const pl of playlists.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))) {
+    const o = document.createElement("option");
+    o.value = `pl:${pl.id}`;
+    const n = (pl.items || []).length;
+    const label = (pl.name || "Untitled").trim();
+    o.textContent = `${label.length > 26 ? `${label.slice(0, 25)}…` : label} (${n})`;
+    host.appendChild(o);
+  }
 }
 
 function renderSessionSelect() {
@@ -387,72 +451,70 @@ function renderSessionSelect() {
   const cur = currentSessionSelectValue();
   sel.innerHTML = "";
 
-  const ogRecent = document.createElement("optgroup");
-  ogRecent.label = "Sessions";
-  const allRecent = document.createElement("option");
-  allRecent.value = "recent";
-  allRecent.textContent = "All recent saves";
-  ogRecent.appendChild(allRecent);
-  for (const pl of localPlaylists
-    .filter((p) => p.playlistSource !== "youtube_import")
-    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))) {
-    const o = document.createElement("option");
-    o.value = `pl:${pl.id}`;
-    const n = (pl.items || []).length;
-    const label = (pl.name || "Untitled").trim();
-    o.textContent = `${label.length > 26 ? `${label.slice(0, 25)}…` : label} (${n})`;
-    ogRecent.appendChild(o);
-  }
-  sel.appendChild(ogRecent);
-
   const showImp = libSettings.libraryShowYoutubeImported !== false;
-  if (showImp) {
-    const ogImp = document.createElement("optgroup");
-    ogImp.label = "Imported";
-    const allImp = document.createElement("option");
-    allImp.value = "imported";
-    allImp.textContent = "All imported";
-    ogImp.appendChild(allImp);
-    for (const pl of localPlaylists
-      .filter((p) => p.playlistSource === "youtube_import")
-      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))) {
-      const o = document.createElement("option");
-      o.value = `pl:${pl.id}`;
-      const n = (pl.items || []).length;
-      const label = (pl.name || "Untitled").trim();
-      o.textContent = `${label.length > 26 ? `${label.slice(0, 25)}…` : label} (${n})`;
-      ogImp.appendChild(o);
+  const sessionPlaylists = localPlaylists.filter((p) => p.playlistSource !== "youtube_import");
+  const importedPlaylists = showImp
+    ? localPlaylists.filter((p) => p.playlistSource === "youtube_import")
+    : [];
+
+  if (libLibraryScope === "complete") {
+    const allOpt = document.createElement("option");
+    allOpt.value = "all";
+    allOpt.textContent = "All library videos";
+    sel.appendChild(allOpt);
+
+    const ogSessions = document.createElement("optgroup");
+    ogSessions.label = "Saved sessions";
+    appendSessionPlaylistOptions(ogSessions, sessionPlaylists);
+    if (ogSessions.children.length) sel.appendChild(ogSessions);
+
+    if (importedPlaylists.length) {
+      const ogImp = document.createElement("optgroup");
+      ogImp.label = "Imported playlists";
+      appendSessionPlaylistOptions(ogImp, importedPlaylists);
+      sel.appendChild(ogImp);
     }
-    sel.appendChild(ogImp);
     hint?.classList.add("hidden");
-  } else if (hint) {
-    hint.textContent =
-      "Imported playlists are hidden. Turn on “Show imported back catalog” in dashboard Settings.";
-    hint.classList.remove("hidden");
+  } else {
+    const allRecent = document.createElement("option");
+    allRecent.value = "recent";
+    allRecent.textContent = "All recent saves";
+    sel.appendChild(allRecent);
+
+    const ogSessions = document.createElement("optgroup");
+    ogSessions.label = "Saved sessions";
+    appendSessionPlaylistOptions(ogSessions, sessionPlaylists);
+    if (ogSessions.children.length) sel.appendChild(ogSessions);
+
+    if (!showImp && hint) {
+      hint.textContent =
+        "YouTube-imported videos appear in Complete library. Turn on “Show imported back catalog” in Settings to list imported playlists.";
+      hint.classList.remove("hidden");
+    } else {
+      hint?.classList.add("hidden");
+    }
   }
 
   const allowed = new Set([...sel.options].map((o) => o.value));
   if (allowed.has(cur)) {
     sel.value = cur;
   } else {
-    sel.value = "recent";
+    sel.value = libLibraryScope === "complete" ? "all" : "recent";
     libActivePlaylistId = null;
-    libPlaylistOrigin = "recent";
   }
 }
 
 function applySessionSelectValue(value) {
-  if (value === "recent") {
+  if (value === "recent" || value === "all") {
     libActivePlaylistId = null;
-    libPlaylistOrigin = "recent";
-  } else if (value === "imported") {
-    libActivePlaylistId = null;
-    libPlaylistOrigin = "imported";
   } else if (value.startsWith("pl:")) {
     const id = value.slice(3);
     const pl = localPlaylists.find((p) => p.id === id);
-    libActivePlaylistId = id;
-    libPlaylistOrigin = pl?.playlistSource === "youtube_import" ? "imported" : "recent";
+    if (pl?.playlistSource === "youtube_import" && libLibraryScope === "recent") {
+      libActivePlaylistId = null;
+    } else {
+      libActivePlaylistId = id;
+    }
   }
   selectedArtist = "";
   selectedAlbum = "";
@@ -554,7 +616,17 @@ function renderVideos() {
 
     const meta = document.createElement("div");
     meta.className = "video-meta";
-    meta.textContent = `${it.channel || "Unknown creator"} · ${formatDuration(getDuration(it))}`;
+    meta.appendChild(
+      document.createTextNode(`${it.channel || "Unknown creator"} · ${formatDuration(getDuration(it))}`)
+    );
+    if (TS_WATCH) {
+      const wsLab = TS_WATCH.watchStateLabel(libItemWatchState(it));
+      const badge = document.createElement("span");
+      badge.className = `watch-state-badge watch-state-badge--${libItemWatchState(it)}`;
+      badge.textContent = wsLab;
+      meta.appendChild(document.createTextNode(" · "));
+      meta.appendChild(badge);
+    }
 
     const actions = document.createElement("div");
     actions.className = "lib-video-actions";
@@ -586,6 +658,28 @@ function renderVideos() {
     catSel.addEventListener("change", () => void applyLibraryItemUpdate(it, { category: catSel.value }));
     catWrap.appendChild(catLab);
     catWrap.appendChild(catSel);
+
+    if (TS_WATCH) {
+      const wsWrap = document.createElement("label");
+      wsWrap.className = "lib-video-field";
+      const wsLab = document.createElement("span");
+      wsLab.className = "lib-video-field-label";
+      wsLab.textContent = "Watch State";
+      const wsSel = document.createElement("select");
+      wsSel.className = "lib-video-select";
+      wsSel.setAttribute("aria-label", "Watch State");
+      for (const s of TS_WATCH.WATCH_STATE_LIST) {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.label;
+        if (libItemWatchState(it) === s.id) opt.selected = true;
+        wsSel.appendChild(opt);
+      }
+      wsSel.addEventListener("change", () => void applyLibraryItemUpdate(it, { watchState: wsSel.value }));
+      wsWrap.appendChild(wsLab);
+      wsWrap.appendChild(wsSel);
+      actions.appendChild(wsWrap);
+    }
 
     const albWrap = document.createElement("label");
     albWrap.className = "lib-video-field";
@@ -899,19 +993,46 @@ async function boot() {
     libListFilter = libList.value || "";
     renderVideos();
   });
+  document.getElementById("libWatchStateFilter")?.addEventListener("change", (e) => {
+    libWatchStateFilter = e.target.value || "";
+    renderVideos();
+  });
+  document.getElementById("libBulkWatchStateBtn")?.addEventListener("click", async () => {
+    const ws = document.getElementById("libBulkWatchState")?.value || "";
+    const ids = [...libCheckedIds];
+    if (!ids.length) {
+      alert("Select at least one video.");
+      return;
+    }
+    if (!ws) {
+      alert("Choose a Watch State.");
+      return;
+    }
+    const r = await send("TUBESTACK_BULK_UPDATE_ITEMS", { ids, patch: { watchState: ws } });
+    if (!r?.ok) {
+      alert(r?.error || "Could not update Watch State.");
+      return;
+    }
+    await reloadLibraryFullState();
+  });
   document.getElementById("libSessionSelect")?.addEventListener("change", (e) => {
     const el = e.target;
     if (!(el instanceof HTMLSelectElement)) return;
     applySessionSelectValue(el.value);
   });
+  document.getElementById("libScopeRecent")?.addEventListener("click", () => setLibLibraryScope("recent"));
+  document.getElementById("libScopeComplete")?.addEventListener("click", () => setLibLibraryScope("complete"));
   const r = await send("TUBESTACK_GET_STATE");
   allItems = Array.isArray(r?.items) ? r.items : [];
   localPlaylists = Array.isArray(r?.localPlaylists) ? r.localPlaylists : [];
   libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
+  const savedScope = localStorage.getItem(LIB_LIBRARY_SCOPE_KEY);
+  libLibraryScope = savedScope === "complete" ? "complete" : "recent";
   renderListFilterOptions();
+  fillLibWatchStateFilterOptions();
   renderLibraryPriorityBar();
-  libPlaylistOrigin = "recent";
   libActivePlaylistId = null;
+  syncLibScopeButtons();
   renderSessionSelect();
   renderAll();
 }
@@ -925,7 +1046,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     localPlaylists = Array.isArray(r?.localPlaylists) ? r.localPlaylists : [];
     libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
     renderListFilterOptions();
+    fillLibWatchStateFilterOptions();
     renderLibraryPriorityBar();
+    syncLibScopeButtons();
     renderSessionSelect();
     renderAll();
   })();

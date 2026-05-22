@@ -3128,3 +3128,134 @@ a.toolbar-library-link:hover {
   background: rgba(125, 211, 196, 0.12);
   border-color: rgba(125, 211, 196, 0.55);
 }
+
+.watch-state-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--elevated);
+  color: var(--muted);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.watch-state-badge--queue { color: #9ca3af; }
+.watch-state-badge--watching { color: #60a5fa; border-color: rgba(96, 165, 250, 0.45); }
+.watch-state-badge--saved { color: #34d399; }
+.watch-state-badge--finished { color: #a78bfa; }
+.watch-state-badge--important { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
+.watch-state-badge--reference { color: #38bdf8; }
+.watch-state-badge--skip { color: #6b7280; opacity: 0.85; }
+.watch-state-badge--add_to_playlist { color: #f472b6; }
+
+.row-watch-state select.watch-state-select {
+  min-width: 10rem;
+}
+
+.bulk-watch-state-select {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--elevated);
+  color: var(--text);
+}
+
+.video-note-block {
+  margin-top: 6px;
+}
+
+.video-note-preview,
+.video-note-snippet {
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+.timestamp-notes-details {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.timestamp-notes-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.timestamp-note-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.timestamp-note-time {
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.timestamp-note-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.timestamp-note-add .oobe-input {
+  flex: 1 1 6rem;
+  min-width: 5rem;
+}
+
+.local-pl-stack-notes {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.local-pl-stack-field {
+  width: 100%;
+  min-height: 3rem;
+}
+
+.local-pl-decisions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.local-pl-decisions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.local-pl-decision-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.local-pl-decision-row p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.summary-stack-notes {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.panel-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}

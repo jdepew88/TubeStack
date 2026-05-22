@@ -30,21 +30,19 @@
             <h2 class="library-browse-title">Artist · Album · Category</h2>
           </div>
           <div class="library-browse-head-tools">
+            <div class="lib-library-scope" role="group" aria-label="Library scope">
+              <button type="button" id="libScopeRecent" class="lib-scope-btn active" aria-pressed="true">
+                Recent
+              </button>
+              <button type="button" id="libScopeComplete" class="lib-scope-btn" aria-pressed="false">
+                Complete library
+              </button>
+            </div>
             <label class="lib-browse-session-label">
-              <span class="sr-only">Session or playlist</span>
-              <select id="libSessionSelect" class="lib-browse-session-select" aria-label="Session or playlist">
+              <span class="sr-only">Saved session or playlist</span>
+              <select id="libSessionSelect" class="lib-browse-session-select" aria-label="Saved session or playlist">
                 <option value="recent">All recent saves</option>
               </select>
-            </label>
-            <label class="lib-browse-search-wrap">
-              <span class="sr-only">Search library</span>
-              <input
-                type="search"
-                id="libSearch"
-                class="lib-browse-search-input"
-                placeholder="Search…"
-                autocomplete="off"
-              />
             </label>
           </div>
           <div class="library-browse-actions">
@@ -52,6 +50,17 @@
             <button type="button" id="libBrowseShowMoreBtn" class="lib-browse-show-more-btn">Show more</button>
           </div>
         </div>
+        <label class="lib-browse-search-wrap lib-browse-search-wrap--prominent">
+          <span class="sr-only">Search library</span>
+          <input
+            type="search"
+            id="libSearch"
+            class="lib-browse-search-input"
+            placeholder="Search title, channel, album, tags, Watch State, or notes…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
         <p class="library-browse-hint hidden" id="libBrowseOriginHint"></p>
         <div id="libBrowsePanelBody" class="library-browse-body">
           <div class="library-columns-head">
@@ -147,6 +156,10 @@
                     <option value="">All lists</option>
                   </select>
                 </div>
+                <div class="lib-control">
+                  <span class="lib-control-label">Watch State</span>
+                  <select id="libWatchStateFilter" aria-label="Filter by Watch State"></select>
+                </div>
                 <div class="lib-control lib-priority-control">
                   <span class="lib-control-label">Priority</span>
                   <div id="libPriorityBar" class="lib-priority-bar" role="group" aria-label="Filter by priority"></div>
@@ -173,11 +186,16 @@
             </select>
             <button type="button" id="libBulkMoveBtn" class="lib-bulk-btn">Move</button>
             <button type="button" id="libBulkNewPlBtn" class="lib-bulk-btn lib-bulk-primary">New playlist</button>
+            <select id="libBulkWatchState" class="lib-bulk-select" aria-label="Set Watch State for selected videos">
+              <option value="">Set Watch State…</option>
+            </select>
+            <button type="button" id="libBulkWatchStateBtn" class="lib-bulk-btn">Apply Watch State</button>
           </div>
         </div>
         <div id="videosList" class="videos-scroll"></div>
       </section>
     </main>
+    <script src="../lib/watch-states.js"></script>
     <script src="library.js"></script>
   </body>
   </html>

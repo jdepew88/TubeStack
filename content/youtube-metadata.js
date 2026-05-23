@@ -94,16 +94,16 @@
   }
 
   function collect() {
-    const fromPlayer = getFromYtInitialData();
+    const playerMeta = getFromYtInitialData();
     const fromLd = getFromJsonLd();
-    const base = fromPlayer || fromLd || {};
+    const base = playerMeta || fromLd || {};
     const url = new URL(window.location.href);
     const vParam = url.searchParams.get("v");
     const videoId = base.videoId || vParam || null;
-    const fromPlayer = getCurrentTimeFromVideo();
-    let timestampSec = fromPlayer;
+    const currentTime = getCurrentTimeFromVideo();
+    let timestampSec = currentTime;
     /** "page_player" | "url_only" | null — tells the service worker whether progress is from the <video> element. */
-    let progressCapture = fromPlayer != null ? "page_player" : null;
+    let progressCapture = currentTime != null ? "page_player" : null;
     if (timestampSec == null) {
       const t = url.searchParams.get("t") || url.searchParams.get("start");
       if (t) {

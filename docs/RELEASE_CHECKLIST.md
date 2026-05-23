@@ -2,7 +2,7 @@
 
 Use this before uploading a build to the Chrome Web Store or tagging a release. Check boxes as you complete each item.
 
-**Related docs:** [PRIVACY.md](PRIVACY.md) · [STORE_LISTING.md](STORE_LISTING.md) · [README.md](../README.md)
+**Related docs:** [PRIVACY.md](PRIVACY.md) · [PERMISSIONS.md](PERMISSIONS.md) · [STORE_LISTING.md](STORE_LISTING.md) · [README.md](../README.md)
 
 ---
 
@@ -10,8 +10,8 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **No real secrets committed** — Repo has no production API keys, OAuth client secrets, or `.env` files with live credentials. `.gitignore` covers common secret paths; run a final search for `AIza`, `sk-`, client secrets, and private keys.
 - [ ] **Permissions reviewed** — `manifest.json` `permissions` and `optional_host_permissions` match what the shipped build uses; remove anything unused.
-- [ ] **No Chrome History permission** — `manifest.json` does **not** include `"history"` in `permissions` or `optional_permissions`.
-- [ ] **No `chrome.history` usage** — Repo-wide search for `chrome.history` returns **zero** results.
+- [ ] **No Chrome History permission** — `manifest.json` does **not** include `"history"` in `permissions` or `optional_permissions` (see [PERMISSIONS.md](PERMISSIONS.md)).
+- [ ] **No `chrome.history` usage** — Run `.\scripts\verify-privacy-permissions.ps1` from repo root (or search for `chrome.history` — **zero** matches in code).
 - [ ] **Store & privacy copy** — [STORE_LISTING.md](STORE_LISTING.md) and [PRIVACY.md](PRIVACY.md) do **not** imply unrelated browsing history collection; they state TubeStack does **not** request Chrome History permission.
 - [ ] **Host permissions minimized** — Required hosts limited to what the extension needs (e.g. YouTube); optional hosts (`www.googleapis.com`, `api.openai.com`) remain optional and justified in [STORE_LISTING.md](STORE_LISTING.md).
 - [ ] **No remote executable code** — No remotely loaded scripts executed as extension logic; MV3 packaging matches Chrome policy.

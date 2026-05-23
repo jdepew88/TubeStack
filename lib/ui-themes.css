@@ -1,0 +1,105 @@
+/**
+ * TubeStack UI color themes (TabStack presets — no custom backgrounds).
+ * Set on <html data-theme="…"> via lib/ui-themes.js
+ */
+
+:root,
+html[data-theme="zinc"] {
+  --bg: #09090b;
+  --surface: #111113;
+  --elevated: #18181b;
+  --border: #27272a;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --accent: #84cc16;
+  --accent-dim: #65a30d;
+  --green: #a3e635;
+  --green-dim: #4d7c0f;
+  --gold: #fde047;
+  --gold-dim: #a16207;
+  --card: #18181b;
+  --card-hover: #27272a;
+  --accent-soft: rgba(132, 204, 22, 0.14);
+  --focus-tint: rgba(163, 230, 53, 0.12);
+  --focus-border: rgba(163, 230, 53, 0.45);
+}
+
+html[data-theme="emerald"] {
+  --bg: #022c22;
+  --surface: #064e3b;
+  --elevated: #065f46;
+  --border: #047857;
+  --text: #ecfdf5;
+  --muted: #6ee7b7;
+  --accent: #34d399;
+  --accent-dim: #059669;
+  --green: #6ee7b7;
+  --green-dim: #047857;
+  --gold: #fcd34d;
+  --gold-dim: #b45309;
+  --card: #065f46;
+  --card-hover: #047857;
+  --accent-soft: rgba(52, 211, 153, 0.16);
+  --focus-tint: rgba(52, 211, 153, 0.14);
+  --focus-border: rgba(52, 211, 153, 0.5);
+}
+
+html[data-theme="ocean"] {
+  --bg: #0f172a;
+  --surface: #172554;
+  --elevated: #1e3a5f;
+  --border: #334155;
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-dim: #0284c7;
+  --green: #7dd3fc;
+  --green-dim: #0369a1;
+  --gold: #fde68a;
+  --gold-dim: #ca8a04;
+  --card: #1e3a5f;
+  --card-hover: #334155;
+  --accent-soft: rgba(56, 189, 248, 0.16);
+  --focus-tint: rgba(56, 189, 248, 0.14);
+  --focus-border: rgba(56, 189, 248, 0.48);
+}
+
+html[data-theme="sunset"] {
+  --bg: #1c0a0f;
+  --surface: #3b0a1a;
+  --elevated: #451a1a;
+  --border: #7f1d1d;
+  --text: #fff1f2;
+  --muted: #fda4af;
+  --accent: #fb923c;
+  --accent-dim: #ea580c;
+  --green: #fdba74;
+  --green-dim: #c2410c;
+  --gold: #fde68a;
+  --gold-dim: #d97706;
+  --card: #451a1a;
+  --card-hover: #7f1d1d;
+  --accent-soft: rgba(251, 146, 60, 0.16);
+  --focus-tint: rgba(251, 146, 60, 0.14);
+  --focus-border: rgba(251, 146, 60, 0.48);
+}
+
+html[data-theme="crimson"] {
+  --bg: #0a0505;
+  --surface: #1f0a0f;
+  --elevated: #2a0b12;
+  --border: #450a0a;
+  --text: #fef2f2;
+  --muted: #fca5a5;
+  --accent: #f87171;
+  --accent-dim: #dc2626;
+  --green: #fca5a5;
+  --green-dim: #991b1b;
+  --gold: #fcd34d;
+  --gold-dim: #b45309;
+  --card: #2a0b12;
+  --card-hover: #450a0a;
+  --accent-soft: rgba(248, 113, 113, 0.16);
+  --focus-tint: rgba(248, 113, 113, 0.14);
+  --focus-border: rgba(248, 113, 113, 0.48);
+}

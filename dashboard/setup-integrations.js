@@ -343,5 +343,12 @@ document.getElementById("siClearOpenai")?.addEventListener("click", async () => 
   await loadState();
 });
 
+async function initPageTheme() {
+  const r = await send("TUBESTACK_GET_STATE");
+  globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(r?.settings?.uiThemePreset);
+  globalThis.TUBESTACK_UI_THEMES?.bindUiThemeStorageSync();
+}
+
 wireNav();
+void initPageTheme();
 loadState();

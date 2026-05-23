@@ -110,4 +110,11 @@ btnLibrary?.addEventListener("click", async () => {
   await openExtensionInNewTabAndClose("dashboard/library.html");
 });
 
+async function initPopupTheme() {
+  const data = await chrome.storage.local.get("settings");
+  globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(data.settings?.uiThemePreset);
+  globalThis.TUBESTACK_UI_THEMES?.bindUiThemeStorageSync();
+}
+
+void initPopupTheme();
 refreshCount();

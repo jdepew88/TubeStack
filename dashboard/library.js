@@ -954,7 +954,14 @@ function setupLibraryBulkAndFacet() {
   });
 }
 
+async function applyLibraryUiThemeFromSettings() {
+  const r = await send("TUBESTACK_GET_STATE");
+  if (!r?.ok) return;
+  globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(r.settings?.uiThemePreset);
+}
+
 async function boot() {
+  globalThis.TUBESTACK_UI_THEMES?.bindUiThemeStorageSync();
   setupLibraryBulkAndFacet();
   applyLibBrowsePanelUi();
   applyLibSortViewToolbarUi();
@@ -1030,6 +1037,7 @@ async function boot() {
   });
   document.getElementById("libScopeRecent")?.addEventListener("click", () => setLibLibraryScope("recent"));
   document.getElementById("libScopeComplete")?.addEventListener("click", () => setLibLibraryScope("complete"));
+  await applyLibraryUiThemeFromSettings();
   const r = await send("TUBESTACK_GET_STATE");
   allItems = Array.isArray(r?.items) ? r.items : [];
   localPlaylists = Array.isArray(r?.localPlaylists) ? r.localPlaylists : [];

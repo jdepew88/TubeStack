@@ -1,13 +1,5 @@
 :root {
-  --bg: #0f0f12;
-  --card: #1a1a20;
-  --card-hover: #23232c;
-  --text: #ececf1;
-  --muted: #9b9ba8;
-  --accent: #ff4d4d;
-  --accent-soft: rgba(255, 77, 77, 0.14);
-  --border: #2a2a32;
-  --border-hover: #3e3e4a;
+  --border-hover: color-mix(in srgb, var(--border) 70%, var(--text));
 }
 
 * {

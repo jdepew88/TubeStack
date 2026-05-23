@@ -1,15 +1,4 @@
 :root {
-  --bg: #0c0c0f;
-  --surface: #141418;
-  --elevated: #1c1c22;
-  --border: #2e2e36;
-  --text: #f2f2f5;
-  --muted: #9898a4;
-  --accent: #ff3b3b;
-  --green: #2fd38a;
-  --green-dim: #1e8f5c;
-  --gold: #e8c547;
-  --gold-dim: #9a7a1a;
   --radius: 10px;
   /** Fixed “reopen sidebar” is `left: 12px`, width 36px — keep titles/toolbars clear of it when sidebar is hidden */
   --sidebar-floating-clearance: 60px;
@@ -338,14 +327,6 @@ body {
   margin: 10px 0 0;
   font-size: 12px;
   line-height: 1.45;
-}
-
-.ob-minimal-history {
-  margin-bottom: 16px;
-  padding: 14px 14px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(47, 211, 138, 0.25);
-  background: rgba(47, 211, 138, 0.06);
 }
 
 .ob-minimal-q {
@@ -1350,7 +1331,7 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
 }
 
 .btn.primary {
-  background: linear-gradient(165deg, var(--accent), #c42c2c);
+  background: linear-gradient(165deg, var(--accent), var(--accent-dim));
   border-color: transparent;
   color: #fff;
 }
@@ -1996,21 +1977,58 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
 }
 
 .settings-connect-youtube-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   margin-bottom: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  border: 1px dashed rgba(47, 211, 138, 0.35);
+  border-radius: 10px;
+  background: rgba(47, 211, 138, 0.06);
+}
+
+.settings-connect-youtube-cta .btn {
+  position: static;
+  flex-shrink: 0;
+}
+
+.settings-connect-youtube-lead {
+  margin: 0;
+}
+
+.settings-connect-youtube-cta .panel-hint.ob-muted {
+  margin: 0;
 }
 
 .settings-setup-integrations-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 16px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
 }
 
-.connect-youtube-hint {
-  border: 1px dashed rgba(47, 211, 138, 0.35);
-  border-radius: var(--radius);
-  padding: 12px;
+.settings-setup-integrations-cta .btn {
+  position: static;
+}
+
+#windowSettings .window-settings-mount {
+  overflow-y: auto;
+  max-height: calc(100vh - 72px);
+  padding-right: 4px;
+}
+
+#windowSettings #settingsPanelBlock.panel-block {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+body:has(.layout--sidebar-hidden) #windowSettings.active {
+  padding-top: 40px;
 }
 
 .settings-integration-health {
@@ -2061,26 +2079,6 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
 
 .settings-section-integrations .oauth-redirect {
   margin: 6px 0 10px;
-}
-
-.watch-history-opens {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
-.watch-history-hint {
-  margin: 6px 0 4px;
-  font-size: 12px;
-}
-
-.watch-history-meta {
-  margin: -6px 0 10px;
-  min-height: 1.2em;
-}
-
-.watch-bars-history .watch-bar-fill {
-  background: linear-gradient(180deg, #8ab8ff, #3d6cad);
 }
 
 .settings-youtube-api-actions,
@@ -3008,6 +3006,17 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
 
 .openai-test-status.success {
   color: #8fd4a0;
+}
+
+.ui-theme-preset-host {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.ui-theme-preset-host .oobe-input {
+  width: 100%;
+  max-width: 280px;
 }
 
 .sidebar-visibility-host {

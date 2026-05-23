@@ -929,6 +929,26 @@ function applySidebarSectionVisibility() {
   });
 }
 
+function renderUiThemeControl() {
+  const host = document.getElementById("uiThemePresetHost");
+  const T = globalThis.TUBESTACK_UI_THEMES;
+  if (!host || !T) return;
+  host.innerHTML = `
+    <label class="ob-label" for="uiThemePreset">Color theme</label>
+    <select id="uiThemePreset" class="oobe-input" aria-label="Color theme">${T.themePresetOptionsHtml(settings.uiThemePreset)}</select>
+    <p class="panel-hint ob-muted">Same presets as TabStack (no custom backgrounds). Applies to dashboard, library, playlist home, and popup.</p>
+  `;
+  const sel = document.getElementById("uiThemePreset");
+  if (!sel || sel.dataset.bound === "1") return;
+  sel.dataset.bound = "1";
+  sel.addEventListener("change", async () => {
+    const preset = T.normalizeUiThemePreset(sel.value);
+    T.applyUiTheme(preset);
+    const r = await send("TUBESTACK_PATCH_SETTINGS", { patch: { uiThemePreset: preset } });
+    if (r?.ok && r.settings) settings = { ...settings, ...r.settings };
+  });
+}
+
 function renderSidebarVisibilityControls() {
   const host = document.getElementById("sidebarVisibilityHost");
   if (!host) return;
@@ -1812,7 +1832,7 @@ function renderIntegrationHealth(health) {
 }
 
 function updateConnectYoutubeHint(stateResponse) {
-  const el = document.getElementById("connectYoutubeHint");
+  const el = document.getElementById("settingsConnectYoutubeCta");
   if (!el) return;
   const oauthHealth = stateResponse?.integrationHealth?.youtubeOAuth;
   const connected = oauthHealth?.lastTestOk === true;
@@ -1828,6 +1848,7 @@ async function loadState() {
   allItems = r.items || [];
   themes = r.themes || [];
   settings = r.settings || {};
+  globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(settings.uiThemePreset);
   videoProgress = r.videoProgress || {};
   watchByDay = r.watchByDay || {};
   localPlaylists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
@@ -1916,6 +1937,7 @@ async function loadState() {
   syncSidebarCurrentPlaylistUi();
   applySidebarSectionVisibility();
   renderSidebarVisibilityControls();
+  renderUiThemeControl();
   await refreshTabsSelect();
   render();
 }
@@ -2660,195 +2682,202 @@ function localPlaylistsVisibleInUi() {
   return localPlaylists.filter((p) => p.playlistSource !== "youtube_import");
 }
 
-function renderLocalPlaylists() {
-  if (!localPlaylistList) return;
-  localPlaylistList.innerHTML = "";
-  const visible = localPlaylistsVisibleInUi();
-  if (!visible.length) {
+function buildLocalPlaylistRow(pl) {
+  const row = document.createElement("div");
+  row.className = "local-pl-row";
+  row.dataset.id = pl.id;
+  if (pl.id === activeLocalPlaylistId) row.classList.add("local-pl-row--current");
+  const card = document.createElement("div");
+  card.className = "local-pl-card";
+
+  const head = document.createElement("div");
+  head.className = "local-pl-head";
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.className = "local-pl-name local-pl-title-input oobe-input";
+  inp.value = pl.name || "";
+  inp.maxLength = 200;
+  inp.setAttribute("aria-label", "Playlist name");
+  inp.placeholder = "Playlist name";
+  const badges = document.createElement("div");
+  badges.className = "local-pl-badges";
+  const kindBadge = document.createElement("span");
+  kindBadge.className =
+    pl.kind === "smart" ? "local-pl-badge local-pl-badge--smart" : "local-pl-badge local-pl-badge--static";
+  kindBadge.textContent = pl.kind === "smart" ? "Smart list" : "Snapshot";
+  badges.appendChild(kindBadge);
+  if (pl.playlistSource === "youtube_import") {
+    const imp = document.createElement("span");
+    imp.className = "local-pl-badge local-pl-badge--import";
+    imp.textContent = "YouTube import";
+    badges.appendChild(imp);
+  }
+  if (pl.id === activeLocalPlaylistId) {
+    const cur = document.createElement("span");
+    cur.className = "local-pl-badge local-pl-badge--current";
+    cur.textContent = "Current";
+    badges.appendChild(cur);
+  }
+  head.appendChild(inp);
+  head.appendChild(badges);
+
+  const details = document.createElement("div");
+  details.className = "local-pl-detail-grid";
+  const n = (pl.items || []).length;
+  const when = pl.createdAt ? new Date(pl.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
+
+  const addStat = (label, value) => {
+    const cell = document.createElement("div");
+    cell.className = "local-pl-stat";
+    const lab = document.createElement("span");
+    lab.className = "local-pl-stat-label";
+    lab.textContent = label;
+    const val = document.createElement("span");
+    val.className = "local-pl-stat-value";
+    val.textContent = value;
+    cell.appendChild(lab);
+    cell.appendChild(val);
+    details.appendChild(cell);
+  };
+  addStat("Videos", `${n} saved`);
+  addStat("Created", when);
+  const gb = pl.groupBy && LOCAL_PL_GROUP_LABELS[pl.groupBy] ? LOCAL_PL_GROUP_LABELS[pl.groupBy] : pl.groupBy;
+  if (gb) addStat("Grouped by", String(gb));
+
+  if (pl.smartSummary) {
+    const sum = document.createElement("div");
+    sum.className = "local-pl-summary";
+    sum.textContent = pl.smartSummary;
+    details.appendChild(sum);
+  }
+  details.appendChild(buildLocalPlaylistStackPanel(pl));
+
+  const actions = document.createElement("div");
+  actions.className = "local-pl-actions";
+  const btnSession = document.createElement("button");
+  btnSession.type = "button";
+  btnSession.className = "btn small primary";
+  btnSession.textContent = "Restore session";
+  btnSession.dataset.action = "restore-session";
+  btnSession.title = "Open every video in this playlist as YouTube tabs (background tabs)";
+  const btnView = document.createElement("button");
+  btnView.type = "button";
+  btnView.className = "btn small";
+  btnView.textContent = "View";
+  btnView.dataset.action = "view";
+  btnView.title = "Open this list in the library (playlist view)";
+  const btnRen = document.createElement("button");
+  btnRen.type = "button";
+  btnRen.className = "btn small ghost";
+  btnRen.textContent = "Save name";
+  btnRen.dataset.action = "rename";
+  const btnDel = document.createElement("button");
+  btnDel.type = "button";
+  btnDel.className = "btn small danger";
+  btnDel.textContent = "Erase";
+  btnDel.dataset.action = "delete";
+  actions.appendChild(btnSession);
+  actions.appendChild(btnView);
+  actions.appendChild(btnRen);
+  actions.appendChild(btnDel);
+
+  const ytRow = document.createElement("div");
+  ytRow.className = "local-pl-yt-row";
+  const ytToggle = document.createElement("button");
+  ytToggle.type = "button";
+  ytToggle.className = "btn small ghost local-pl-yt-toggle";
+  ytToggle.dataset.action = "toggle-yt";
+  ytToggle.setAttribute("aria-expanded", "false");
+  ytToggle.textContent = "Create YouTube playlist";
+  const ytPanel = document.createElement("div");
+  ytPanel.className = "local-pl-yt-panel hidden";
+  ytPanel.setAttribute("role", "region");
+  ytPanel.setAttribute("aria-label", "YouTube visibility");
+  const ytHint = document.createElement("p");
+  ytHint.className = "local-pl-yt-hint";
+  ytHint.textContent = "Pick visibility, then sign in with Google if prompted.";
+  const ytChoices = document.createElement("div");
+  ytChoices.className = "local-pl-yt-choices";
+  for (const [val, label] of [
+    ["public", "Public"],
+    ["private", "Private"],
+    ["unlisted", "Unlisted"],
+  ]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn small";
+    b.textContent = label;
+    b.dataset.action = "youtube";
+    b.dataset.privacy = val;
+    ytChoices.appendChild(b);
+  }
+  const ytStatus = document.createElement("p");
+  ytStatus.className = "local-pl-yt-status";
+  ytStatus.setAttribute("role", "status");
+  ytPanel.appendChild(ytHint);
+  ytPanel.appendChild(ytChoices);
+  ytPanel.appendChild(ytStatus);
+  ytRow.appendChild(ytToggle);
+  ytRow.appendChild(ytPanel);
+
+  const top = document.createElement("div");
+  top.className = "local-pl-top";
+  const thumbGrid = document.createElement("div");
+  thumbGrid.className = "local-pl-thumb-grid";
+  thumbGrid.setAttribute("aria-hidden", "true");
+  const randUrls = pickRandomPlaylistThumbUrls(pl.items, 4);
+  for (let i = 0; i < 4; i++) {
+    const cell = document.createElement("div");
+    cell.className = "local-pl-thumb-cell";
+    const u = randUrls[i];
+    if (u) {
+      const img = document.createElement("img");
+      img.src = u;
+      img.alt = "";
+      img.loading = "lazy";
+      img.decoding = "async";
+      cell.appendChild(img);
+    } else {
+      cell.classList.add("local-pl-thumb-cell--empty");
+    }
+    thumbGrid.appendChild(cell);
+  }
+  const body = document.createElement("div");
+  body.className = "local-pl-body";
+  top.appendChild(thumbGrid);
+  top.appendChild(body);
+  body.appendChild(head);
+  body.appendChild(details);
+  body.appendChild(actions);
+  body.appendChild(ytRow);
+  card.appendChild(top);
+  row.appendChild(card);
+  return row;
+}
+
+function renderPlaylistManagerList(container, playlists, emptyText) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!playlists.length) {
     const p = document.createElement("p");
     p.className = "panel-hint local-pl-empty";
-    if (localPlaylists.length && settings.libraryShowYoutubeImported === false) {
-      p.textContent =
-        "Imported playlists are hidden. Turn on “Show imported back catalog” in Settings, or use Save playlist from the toolbar for recent sessions.";
-    } else {
-      p.textContent = 'No local lists yet. Use “Save playlist…” → Save locally only.';
-    }
-    localPlaylistList.appendChild(p);
+    p.textContent = emptyText;
+    container.appendChild(p);
     return;
   }
-  for (const pl of visible) {
-    const row = document.createElement("div");
-    row.className = "local-pl-row";
-    row.dataset.id = pl.id;
-    if (pl.id === activeLocalPlaylistId) row.classList.add("local-pl-row--current");
+  playlists.forEach((pl) => {
+    container.appendChild(buildLocalPlaylistRow(pl));
+  });
+}
 
-    const card = document.createElement("div");
-    card.className = "local-pl-card";
-
-    const head = document.createElement("div");
-    head.className = "local-pl-head";
-    const inp = document.createElement("input");
-    inp.type = "text";
-    inp.className = "local-pl-name local-pl-title-input oobe-input";
-    inp.value = pl.name || "";
-    inp.maxLength = 200;
-    inp.setAttribute("aria-label", "Playlist name");
-    inp.placeholder = "Playlist name";
-    const badges = document.createElement("div");
-    badges.className = "local-pl-badges";
-    const kindBadge = document.createElement("span");
-    kindBadge.className =
-      pl.kind === "smart" ? "local-pl-badge local-pl-badge--smart" : "local-pl-badge local-pl-badge--static";
-    kindBadge.textContent = pl.kind === "smart" ? "Smart list" : "Snapshot";
-    badges.appendChild(kindBadge);
-    if (pl.playlistSource === "youtube_import") {
-      const imp = document.createElement("span");
-      imp.className = "local-pl-badge local-pl-badge--import";
-      imp.textContent = "YouTube import";
-      badges.appendChild(imp);
-    }
-    if (pl.id === activeLocalPlaylistId) {
-      const cur = document.createElement("span");
-      cur.className = "local-pl-badge local-pl-badge--current";
-      cur.textContent = "Current";
-      badges.appendChild(cur);
-    }
-    head.appendChild(inp);
-    head.appendChild(badges);
-
-    const details = document.createElement("div");
-    details.className = "local-pl-detail-grid";
-    const n = (pl.items || []).length;
-    const when = pl.createdAt ? new Date(pl.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
-
-    const addStat = (label, value) => {
-      const cell = document.createElement("div");
-      cell.className = "local-pl-stat";
-      const lab = document.createElement("span");
-      lab.className = "local-pl-stat-label";
-      lab.textContent = label;
-      const val = document.createElement("span");
-      val.className = "local-pl-stat-value";
-      val.textContent = value;
-      cell.appendChild(lab);
-      cell.appendChild(val);
-      details.appendChild(cell);
-    };
-    addStat("Videos", `${n} saved`);
-    addStat("Created", when);
-    const gb = pl.groupBy && LOCAL_PL_GROUP_LABELS[pl.groupBy] ? LOCAL_PL_GROUP_LABELS[pl.groupBy] : pl.groupBy;
-    if (gb) addStat("Grouped by", String(gb));
-
-    if (pl.smartSummary) {
-      const sum = document.createElement("div");
-      sum.className = "local-pl-summary";
-      sum.textContent = pl.smartSummary;
-      details.appendChild(sum);
-    }
-    details.appendChild(buildLocalPlaylistStackPanel(pl));
-
-    const actions = document.createElement("div");
-    actions.className = "local-pl-actions";
-    const btnSession = document.createElement("button");
-    btnSession.type = "button";
-    btnSession.className = "btn small primary";
-    btnSession.textContent = "Restore session";
-    btnSession.dataset.action = "restore-session";
-    btnSession.title = "Open every video in this playlist as YouTube tabs (background tabs)";
-    const btnView = document.createElement("button");
-    btnView.type = "button";
-    btnView.className = "btn small";
-    btnView.textContent = "View";
-    btnView.dataset.action = "view";
-    btnView.title = "Open this list in the library (playlist view)";
-    const btnRen = document.createElement("button");
-    btnRen.type = "button";
-    btnRen.className = "btn small ghost";
-    btnRen.textContent = "Save name";
-    btnRen.dataset.action = "rename";
-    const btnDel = document.createElement("button");
-    btnDel.type = "button";
-    btnDel.className = "btn small danger";
-    btnDel.textContent = "Erase";
-    btnDel.dataset.action = "delete";
-    actions.appendChild(btnSession);
-    actions.appendChild(btnView);
-    actions.appendChild(btnRen);
-    actions.appendChild(btnDel);
-
-    const ytRow = document.createElement("div");
-    ytRow.className = "local-pl-yt-row";
-    const ytToggle = document.createElement("button");
-    ytToggle.type = "button";
-    ytToggle.className = "btn small ghost local-pl-yt-toggle";
-    ytToggle.dataset.action = "toggle-yt";
-    ytToggle.setAttribute("aria-expanded", "false");
-    ytToggle.textContent = "Create YouTube playlist";
-    const ytPanel = document.createElement("div");
-    ytPanel.className = "local-pl-yt-panel hidden";
-    ytPanel.setAttribute("role", "region");
-    ytPanel.setAttribute("aria-label", "YouTube visibility");
-    const ytHint = document.createElement("p");
-    ytHint.className = "local-pl-yt-hint";
-    ytHint.textContent = "Pick visibility, then sign in with Google if prompted.";
-    const ytChoices = document.createElement("div");
-    ytChoices.className = "local-pl-yt-choices";
-    for (const [val, label] of [
-      ["public", "Public"],
-      ["private", "Private"],
-      ["unlisted", "Unlisted"],
-    ]) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "btn small";
-      b.textContent = label;
-      b.dataset.action = "youtube";
-      b.dataset.privacy = val;
-      ytChoices.appendChild(b);
-    }
-    const ytStatus = document.createElement("p");
-    ytStatus.className = "local-pl-yt-status";
-    ytStatus.setAttribute("role", "status");
-    ytPanel.appendChild(ytHint);
-    ytPanel.appendChild(ytChoices);
-    ytPanel.appendChild(ytStatus);
-    ytRow.appendChild(ytToggle);
-    ytRow.appendChild(ytPanel);
-
-    const top = document.createElement("div");
-    top.className = "local-pl-top";
-    const thumbGrid = document.createElement("div");
-    thumbGrid.className = "local-pl-thumb-grid";
-    thumbGrid.setAttribute("aria-hidden", "true");
-    const randUrls = pickRandomPlaylistThumbUrls(pl.items, 4);
-    for (let i = 0; i < 4; i++) {
-      const cell = document.createElement("div");
-      cell.className = "local-pl-thumb-cell";
-      const u = randUrls[i];
-      if (u) {
-        const img = document.createElement("img");
-        img.src = u;
-        img.alt = "";
-        img.loading = "lazy";
-        img.decoding = "async";
-        cell.appendChild(img);
-      } else {
-        cell.classList.add("local-pl-thumb-cell--empty");
-      }
-      thumbGrid.appendChild(cell);
-    }
-    const body = document.createElement("div");
-    body.className = "local-pl-body";
-    top.appendChild(thumbGrid);
-    top.appendChild(body);
-    body.appendChild(head);
-    body.appendChild(details);
-    body.appendChild(actions);
-    body.appendChild(ytRow);
-    card.appendChild(top);
-    row.appendChild(card);
-    localPlaylistList.appendChild(row);
+function renderLocalPlaylists() {
+  const visible = localPlaylistsVisibleInUi();
+  let emptyText = 'No local lists yet. Use “Save playlist…” → Save locally only.';
+  if (localPlaylists.length && settings.libraryShowYoutubeImported === false) {
+    emptyText =
+      "Imported playlists are hidden. Turn on “Show imported back catalog” in Settings, or use Save playlist from the toolbar for recent sessions.";
   }
+  renderPlaylistManagerList(localPlaylistList, visible, emptyText);
 }
 
 function renderSidebarRecentTablists() {
@@ -3270,7 +3299,7 @@ function setupWindowLayout() {
   if (catSection) windowCategoriesMount?.appendChild(catSection);
   const aiCatSection = document.querySelector('[data-sidebar-section="aiCategorize"]');
   if (aiCatSection) windowAiCategorizeMount?.appendChild(aiCatSection);
-  const settingsSection = document.querySelector('[data-sidebar-section="settings"]');
+  const settingsSection = document.getElementById("settingsPanelBlock");
   if (settingsSection) windowSettingsMount?.appendChild(settingsSection);
 }
 
@@ -3943,9 +3972,9 @@ document.getElementById("peSaveAs")?.addEventListener("click", async () => {
   await savePlaylistLocalWithName(name);
 });
 
-localPlaylistList?.addEventListener("click", async (e) => {
+async function handlePlaylistListClick(e, listRoot) {
   const actEl = e.target.closest("[data-action]");
-  if (!actEl || !localPlaylistList.contains(actEl)) return;
+  if (!actEl || !listRoot?.contains(actEl)) return;
   const row = actEl.closest(".local-pl-row");
   const id = row?.dataset.id;
   if (!id) return;
@@ -3983,9 +4012,9 @@ localPlaylistList?.addEventListener("click", async (e) => {
     const panel = row.querySelector(".local-pl-yt-panel");
     if (!panel) return;
     const willOpen = panel.classList.contains("hidden");
-    localPlaylistList.querySelectorAll(".local-pl-yt-panel").forEach((p) => p.classList.add("hidden"));
-    localPlaylistList.querySelectorAll(".local-pl-yt-toggle").forEach((b) => b.setAttribute("aria-expanded", "false"));
-    localPlaylistList.querySelectorAll(".local-pl-yt-status").forEach((s) => {
+    listRoot.querySelectorAll(".local-pl-yt-panel").forEach((p) => p.classList.add("hidden"));
+    listRoot.querySelectorAll(".local-pl-yt-toggle").forEach((b) => b.setAttribute("aria-expanded", "false"));
+    listRoot.querySelectorAll(".local-pl-yt-status").forEach((s) => {
       s.textContent = "";
       s.classList.remove("success");
     });
@@ -4027,7 +4056,9 @@ localPlaylistList?.addEventListener("click", async (e) => {
     row.querySelector(".local-pl-yt-panel")?.classList.add("hidden");
     actEl.closest(".local-pl-yt-row")?.querySelector(".local-pl-yt-toggle")?.setAttribute("aria-expanded", "false");
   }
-});
+}
+
+localPlaylistList?.addEventListener("click", (e) => void handlePlaylistListClick(e, localPlaylistList));
 
 document.getElementById("peCreate")?.addEventListener("click", async () => {
   const st = document.getElementById("peStatus");
@@ -4855,6 +4886,7 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
 });
 
 async function bootDashboard() {
+  globalThis.TUBESTACK_UI_THEMES?.bindUiThemeStorageSync();
   const params = new URLSearchParams(window.location.search);
   const runOobe = params.get("runOobe") === "1";
   const resumeOobe = params.get("resumeOobe") === "1";
@@ -4869,7 +4901,7 @@ async function bootDashboard() {
     showObStep(1);
   }
   if (location.hash === "#settings") {
-    document.querySelector('[data-sidebar-section="settings"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveWindow("settings");
   }
 }
 
@@ -4878,6 +4910,7 @@ async function syncDashboardFromExtensionStorage() {
   const r = await send("TUBESTACK_GET_STATE");
   if (!r?.ok) return;
   settings = r.settings || {};
+  globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(settings.uiThemePreset);
   localPlaylists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
   if (settings.currentPlaylistName) currentPlaylistName = settings.currentPlaylistName;
   const savedCtxId = String(settings.currentPlaylistId || "").trim();

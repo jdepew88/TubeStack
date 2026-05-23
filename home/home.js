@@ -225,6 +225,7 @@ async function refresh() {
   const status = document.getElementById("homeStatus");
   if (status) status.textContent = "Loading…";
   const r = await send("TUBESTACK_GET_STATE");
+  globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(r?.settings?.uiThemePreset);
   if (!r?.ok) {
     if (status) status.textContent = "Could not load playlists.";
     cachedRawPlaylists = [];
@@ -357,6 +358,7 @@ document.getElementById("homePlaylistSearch")?.addEventListener("input", () => {
 
 wireHomeToolbar();
 syncHomeToolbarUi();
+globalThis.TUBESTACK_UI_THEMES?.bindUiThemeStorageSync();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || (!changes.localPlaylists && !changes.settings)) return;

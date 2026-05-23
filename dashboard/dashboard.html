@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="zinc">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TubeStack — Library</title>
     <link rel="icon" type="image/png" href="../icons/logo.png" />
+    <link rel="stylesheet" href="../lib/ui-themes.css" />
     <link rel="stylesheet" href="dashboard.css" />
   </head>
   <body>
@@ -250,14 +251,6 @@
           <button type="button" class="sidebar-win-btn" data-window-target="localPlaylists">Playlist Manager</button>
           <button type="button" class="sidebar-win-btn" data-window-target="usage">Usage Graphs</button>
           <button type="button" class="sidebar-win-btn" data-window-target="settings">Settings</button>
-        </section>
-
-        <section id="connectYoutubeHint" class="panel-block connect-youtube-hint hidden" data-sidebar-section="settings">
-          <span class="label">Connect YouTube</span>
-          <p class="panel-hint">
-            Optional — import playlists and save queues to your channel. TubeStack works locally without signing in.
-          </p>
-          <a class="btn small primary" href="connect-youtube.html?from=dashboard">Connect YouTube</a>
         </section>
 
         <section class="panel-block" data-sidebar-section="focus">
@@ -539,7 +532,7 @@
           <button type="button" id="btnDeleteLocalPlaylist" class="btn small danger hidden">Delete playlist</button>
         </div>
 
-        <section class="panel-block" data-sidebar-section="settings">
+        <section id="settingsPanelBlock" class="panel-block" data-sidebar-section="settings">
           <span class="label">Settings</span>
           <p class="panel-hint">Tune the sidebar and external connections. “Library” is the aggregate 3-column browser page.</p>
 
@@ -547,6 +540,7 @@
             <h3 class="settings-section-title">Layout</h3>
             <p class="panel-hint">Show or hide sidebar blocks in the main dashboard.</p>
             <div id="sidebarVisibilityHost" class="sidebar-visibility-host"></div>
+            <div id="uiThemePresetHost" class="ui-theme-preset-host"></div>
           </div>
 
           <div class="settings-section-card settings-section-integrations">
@@ -557,11 +551,13 @@
               feature that needs them — not through a TubeStack backend.
             </p>
 
-            <div class="settings-connect-youtube-cta">
+            <div id="settingsConnectYoutubeCta" class="settings-connect-youtube-cta hidden">
+              <p class="panel-hint settings-connect-youtube-lead">
+                Optional — import playlists and save queues to your channel. TubeStack works locally without signing in.
+              </p>
               <a class="btn small primary" href="connect-youtube.html?from=settings">Connect YouTube</a>
               <p class="panel-hint ob-muted">
-                Easy step-by-step sign-in for playlist import and saving to your channel. Manual OAuth fields below stay
-                available.
+                Easy step-by-step sign-in. Manual OAuth fields below stay available.
               </p>
             </div>
             <div class="settings-setup-integrations-cta">
@@ -1025,12 +1021,13 @@
 
         <section id="windowSettings" class="window-panel hidden" data-window="settings">
           <h3 class="window-title">Settings</h3>
-          <div id="windowSettingsMount" class="window-sections-mount"></div>
+          <div id="windowSettingsMount" class="window-sections-mount window-settings-mount"></div>
         </section>
 
       </main>
     </div>
     <button type="button" id="btnShowSidebarFloating" class="btn small sidebar-floating-toggle hidden" aria-label="Reopen sidebar" title="Reopen sidebar">◂</button>
+    <script src="../lib/ui-themes.js"></script>
     <script src="../lib/watch-states.js"></script>
     <script src="dashboard.js"></script>
   </body>

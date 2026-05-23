@@ -1,13 +1,6 @@
 :root {
-  --bg: #0c0c0f;
-  --surface: #141418;
-  --elevated: #1c1c22;
-  --border: #2e2e36;
-  --text: #f2f2f5;
-  --muted: #9898a4;
-  --accent: #ff3b3b;
   --note: #e8c547;
-  --link: #7ab8ff;
+  --link: color-mix(in srgb, var(--accent) 55%, #7ab8ff);
 }
 
 * {

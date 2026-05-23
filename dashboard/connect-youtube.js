@@ -221,4 +221,11 @@ if (from === "settings") {
   document.getElementById("cyBackLink")?.setAttribute("href", "dashboard.html#settings");
 }
 
+async function initPageTheme() {
+  const r = await send("TUBESTACK_GET_STATE");
+  globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(r?.settings?.uiThemePreset);
+  globalThis.TUBESTACK_UI_THEMES?.bindUiThemeStorageSync();
+}
+
+void initPageTheme();
 loadState();

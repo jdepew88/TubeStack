@@ -1981,11 +1981,12 @@ async function buildPlaylist({ themeIds, budgetMinutes, sortMode }) {
 async function handleProgressTick(msg) {
   const { videoId, playheadSec, durationSec, deltaWatchSec } = msg;
   if (!videoId) return;
+  const addWatch = Math.max(0, Math.min(Number(deltaWatchSec) || 0, 120));
   const map = await loadVideoProgress();
   map[videoId] = mergeVideoProgressRecord(map[videoId], {
     playheadSec: playheadSec || 0,
     durationSec: durationSec ?? null,
-    deltaWatchSec: deltaWatchSec || 0,
+    deltaWatchSec: addWatch,
     progressSource: "observed_youtube_page",
     updatedAt: new Date().toISOString(),
   });
@@ -3344,7 +3345,8 @@ async function getFullState() {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
-    switch (msg?.type) {
+    try {
+      switch (msg?.type) {
       case "TUBESTACK_SAVE_LEFT": {
         sendResponse(await saveYouTubeTabsByMode("left"));
         break;
@@ -3631,6 +3633,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       default:
         sendResponse({ ok: false, error: "Unknown message" });
+      }
+    } catch (e) {
+      console.error("[TubeStack] onMessage error:", msg?.type, e);
+      try {
+        sendResponse({ ok: false, error: String(e?.message || e) });
+      } catch {
+        /* response port already closed */
+      }
     }
   })();
   return true;
@@ -3765,9 +3775,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     const tabId = tab?.id;
     if (!tabId) return;
     void (async () => {
-      const scrape = await scrapeYouTubeChannelsPage(tabId);
-      if (!scrape?.ok) return;
-      await mergeSubscriptionChannelLabels(scrape.channels || []);
+      try {
+        const scrape = await scrapeYouTubeChannelsPage(tabId);
+        if (!scrape?.ok) return;
+        await mergeSubscriptionChannelLabels(scrape.channels || []);
+      } catch (e) {
+        console.error("[TubeStack] channel import menu error:", e);
+      }
     })();
     return;
   }
@@ -3780,7 +3794,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   };
   const mode = modeById[id];
   if (!mode) return;
-  void saveYouTubeTabsByMode(mode);
+  void saveYouTubeTabsByMode(mode).catch((e) => {
+    console.error("[TubeStack] context menu save error:", e);
+  });
 });
 
 chrome.runtime.onInstalled.addListener(async (details) => {

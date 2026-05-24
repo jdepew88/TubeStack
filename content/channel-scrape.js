@@ -53,7 +53,13 @@
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
-    })();
+    })().catch((e) => {
+      try {
+        sendResponse({ ok: false, error: String(e?.message || e) });
+      } catch {
+        /* response port already closed */
+      }
+    });
     return true;
   });
 })();

@@ -9,11 +9,14 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 ## Security & policy compliance
 
 - [ ] **No real secrets committed** — Repo has no production API keys, OAuth client secrets, or `.env` files with live credentials. `.gitignore` covers common secret paths; run a final search for `AIza`, `sk-`, client secrets, and private keys.
-- [ ] **Permissions reviewed** — `manifest.json` `permissions` and `optional_host_permissions` match what the shipped build uses; remove anything unused.
-- [ ] **No Chrome History permission** — `manifest.json` does **not** include `"history"` in `permissions` or `optional_permissions` (see [PERMISSIONS.md](PERMISSIONS.md)).
-- [ ] **No `chrome.history` usage** — Run `.\scripts\verify-privacy-permissions.ps1` from repo root (or search for `chrome.history` — **zero** matches in code).
-- [ ] **Store & privacy copy** — [STORE_LISTING.md](STORE_LISTING.md) and [PRIVACY.md](PRIVACY.md) do **not** imply unrelated browsing history collection; they state TubeStack does **not** request Chrome History permission.
-- [ ] **Host permissions minimized** — Required hosts limited to what the extension needs (e.g. YouTube); optional hosts (`www.googleapis.com`, `api.openai.com`) remain optional and justified in [STORE_LISTING.md](STORE_LISTING.md).
+- [ ] **Privacy audit script passes** — From repo root: `.\scripts\verify-privacy-permissions.ps1` (see [PERMISSIONS.md](PERMISSIONS.md)).
+- [ ] **Permissions reviewed** — `manifest.json` matches [PERMISSIONS.md](PERMISSIONS.md): `contextMenus`, `identity`, `scripting`, `storage` only; **no** `history`, `tabs`, `windows`, or `<all_urls>`.
+- [ ] **Host permissions minimized** — Required hosts: `youtube.com`, `m.youtube.com` only. Optional: `www.googleapis.com`, `api.openai.com` (runtime grant).
+- [ ] **Context menus scoped** — Save menus on **YouTube URLs only**; “Open dashboard” on **extension icon** only (not all websites). Confirm in `background/service-worker.js` (`TUBESTACK_CTX_YT`).
+- [ ] **Content scripts scoped** — Watch/subscription YouTube paths only; no scripts on non-YouTube sites (see manifest `content_scripts`).
+- [ ] **No Chrome History permission** — `manifest.json` does **not** include `"history"` in `permissions` or `optional_permissions`.
+- [ ] **No `chrome.history` usage** — Grep returns **zero** matches in `*.js`.
+- [ ] **Store & privacy copy** — [STORE_LISTING.md](STORE_LISTING.md), [PERMISSIONS.md](PERMISSIONS.md), and [PRIVACY.md](PRIVACY.md) match the shipped build and state **no** History permission / **no** unrelated browsing history scan.
 - [ ] **No remote executable code** — No remotely loaded scripts executed as extension logic; MV3 packaging matches Chrome policy.
 - [ ] **No `eval` / `new Function`** — Grep the codebase and bundled assets; neither is used for extension behavior (or justify/document any unavoidable exception—prefer none).
 
@@ -39,8 +42,8 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 ## Documentation & listing
 
-- [ ] **README updated** — Version highlights, install notes, and **Privacy summary** link to [PRIVACY.md](PRIVACY.md); any breaking setup steps (OAuth redirect, optional APIs) are current.
-- [ ] **STORE_LISTING.md prepared** — Short/long descriptions, single-purpose text, and permission/host justifications are copied or adapted into the store dashboard; character limits verified.
+- [ ] **README updated** — Version highlights, install notes, and **Privacy summary** link to [PRIVACY.md](PRIVACY.md); permissions summary links to [PERMISSIONS.md](PERMISSIONS.md).
+- [ ] **STORE_LISTING.md prepared** — Short/long descriptions, single-purpose text, permission/host/content-script justifications copied into the store dashboard; character limits verified.
 - [ ] **Disclaimers present** — Listing and/or [PRIVACY.md](PRIVACY.md) state TubeStack is **not affiliated** with YouTube, Google, or OpenAI.
 
 ---
@@ -64,7 +67,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **Version bumped** — `manifest.json` `version` incremented appropriately.
 - [ ] **Zip matches repo** — Packaged folder is the same tree you tested (no stray dev files).
-- [ ] **Store “Justification” fields** — Paste trimmed text from [STORE_LISTING.md](STORE_LISTING.md) where the dashboard asks for permission / data justifications.
+- [ ] **Store “Justification” fields** — Paste text from [STORE_LISTING.md](STORE_LISTING.md) and [PERMISSIONS.md](PERMISSIONS.md) for each permission, host, and content-script question in the dashboard.
 
 ---
 

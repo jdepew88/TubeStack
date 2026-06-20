@@ -72,8 +72,25 @@ TubeStack does **not** reconstruct what you watched before install or on sites o
 ## What TubeStack does not do
 
 - **TubeStack does not request the Chrome History permission.**
+- **TubeStack does not request the broad `tabs` permission** (YouTube tab access is scoped via YouTube host permissions only).
 - **TubeStack does not scan unrelated browsing history.**
 - **TubeStack does not sell user data.**
+
+For a full permission-by-permission breakdown (manifest, content scripts, and Chrome Web Store justification text), see **[PERMISSIONS.md](PERMISSIONS.md)**.
+
+---
+
+## Extension permissions and page access
+
+TubeStack declares only **`contextMenus`**, **`identity`**, **`scripting`**, and **`storage`**, plus **YouTube host permissions** at install time. **Google APIs** and **OpenAI** are **optional host permissions** requested at runtime when you use those features.
+
+**Page access:**
+
+- **YouTube watch pages** — Content scripts read page-visible metadata when you save tabs and send **local-only** progress updates while a watch tab is open (see [Watch progress](#watch-progress-local-youtube-pages-only)).
+- **YouTube subscription / channels pages** — A content script reads **visible channel names** when **you** run subscription import or sync.
+- **Other websites** — No content scripts, no context-menu save actions, and no host permission at install time.
+
+TubeStack does **not** use the Chrome History API.
 
 ---
 

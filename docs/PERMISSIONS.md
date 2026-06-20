@@ -6,13 +6,12 @@ This document matches **`manifest.json`** in this repository. TubeStack does **n
 
 | Permission | Purpose |
 |------------|---------|
-| `contextMenus` | Right-click actions to save YouTube tabs / open TubeStack |
+| `contextMenus` | Right-click actions on **YouTube pages** and the extension icon (save tabs / open dashboard) |
 | `identity` | Google OAuth when the user enables YouTube account features |
-| `scripting` | Inject scripts on **YouTube** pages for metadata and progress |
+| `scripting` | Inject scripts on **YouTube** pages when a content script is not already loaded (metadata / channel scrape fallback) |
 | `storage` | Local library, playlists, settings, watch progress on device |
-| `windows` | Save YouTube tabs in the **current window** (left/right/all) |
 
-**Not declared:** `history`, `tabs`, `bookmarks`, `topSites`, `webNavigation`, or broad `<all_urls>` host access.
+**Not declared:** `history`, `tabs`, `windows`, `bookmarks`, `topSites`, `webNavigation`, or broad `<all_urls>` host access.
 
 ## Host permissions
 
@@ -25,8 +24,8 @@ This document matches **`manifest.json`** in this repository. TubeStack does **n
 
 ## What TubeStack uses instead of History
 
-- **Open tabs** (`chrome.tabs.query`) — only to save YouTube watch tabs the user chooses.
-- **YouTube page content scripts** — titles, progress on the active watch page, optional channel list scrape on YouTube subscription pages.
+- **Open tabs** (`chrome.tabs.query` / `chrome.tabs.create`) — scoped to YouTube URLs via **host permissions**; no `tabs` permission (avoids access to unrelated sites).
+- **YouTube page content scripts** — watch-page progress and metadata; optional channel list scrape on YouTube subscription pages only.
 - **Local storage** (`chrome.storage.local`) — `videoProgress`, `watchByDay`, library items.
 
 No `chrome.history.search`, `getVisits`, or similar APIs.
@@ -39,4 +38,4 @@ From the repo root:
 .\scripts\verify-privacy-permissions.ps1
 ```
 
-Or search manually: `chrome.history` should return **zero** matches; `manifest.json` should not list `"history"`.
+Or search manually: `chrome.history` should return **zero** matches; `manifest.json` should not list `"history"`, `"tabs"`, or `"windows"`.

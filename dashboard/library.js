@@ -288,7 +288,13 @@ function computeDisplayedVideoList() {
   } else if (libListFilter) {
     list = list.filter((it) => (it.category || "") === libListFilter);
   }
-  if (libPriorityFilter) list = list.filter((it) => (it.priority || "") === libPriorityFilter);
+  if (libPriorityFilter) {
+    list = list.filter((it) => {
+      const p = String(it.priority || "").trim();
+      const norm = p === "prio_drop" ? "prio_low" : p;
+      return norm === libPriorityFilter;
+    });
+  }
   if (libWatchStateFilter) list = list.filter((it) => libItemWatchState(it) === libWatchStateFilter);
   if (libSearchQuery) list = list.filter((it) => matchesLibrarySearch(it, libSearchQuery));
   if (libQuickSort === "title_asc") {
@@ -842,7 +848,6 @@ function renderLibraryPriorityBar() {
     ["prio_high", "H", "lib-pri-high"],
     ["prio_med", "M", "lib-pri-med"],
     ["prio_low", "L", "lib-pri-low"],
-    ["prio_drop", "D", "lib-pri-drop"],
   ];
   for (const [value, label, cls] of defs) {
     const b = document.createElement("button");

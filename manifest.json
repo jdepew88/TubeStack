@@ -9,7 +9,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["contextMenus", "identity", "scripting", "storage", "windows"],
+  "permissions": ["contextMenus", "identity", "scripting", "storage"],
   "host_permissions": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
   "optional_host_permissions": ["https://www.googleapis.com/*", "https://api.openai.com/*"],
   "content_security_policy": {
@@ -27,16 +27,6 @@
     "service_worker": "background/service-worker.js"
   },
   "content_scripts": [
-    {
-      "matches": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
-      "exclude_matches": [
-        "https://www.youtube.com/watch*",
-        "https://www.youtube.com/shorts*",
-        "https://m.youtube.com/watch*"
-      ],
-      "js": ["content/youtube-metadata.js"],
-      "run_at": "document_idle"
-    },
     {
       "matches": ["https://www.youtube.com/watch*", "https://m.youtube.com/watch*"],
       "js": ["content/youtube-metadata.js", "content/youtube-progress.js"],

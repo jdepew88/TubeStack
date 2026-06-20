@@ -8,13 +8,18 @@ const LIST_LABELS = {
   custom: "Custom",
 };
 
-/** Four priority tiers (green → red). Stored as prio_* on each item. */
+/** Three priority tiers (high → low). prio_drop is legacy and treated as low. */
 const PRIORITY_LEVELS = [
   { id: "prio_high", label: "High", short: "H", colorClass: "pri-high" },
   { id: "prio_med", label: "Medium", short: "M", colorClass: "pri-med" },
   { id: "prio_low", label: "Low", short: "L", colorClass: "pri-low" },
-  { id: "prio_drop", label: "Drop", short: "×", colorClass: "pri-drop" },
 ];
+
+function normalizeItemPriority(priority) {
+  const p = String(priority || "").trim();
+  if (p === "prio_drop") return "prio_low";
+  return PRIORITY_LEVELS.some((x) => x.id === p) ? p : "prio_med";
+}
 
 /** YouTube numeric category IDs for scan preview (Data API snippet.categoryId). */
 const YT_CAT_NAMES = {
@@ -59,8 +64,15 @@ let latestKnownBatchId = null;
 const selected = new Set();
 const playlistThemePick = new Set();
 let playlistPackCompact = true;
-let compactCardRows = false;
 let activeWindow = "current";
+const GRID_TILE_MIN = 112;
+const GRID_TILE_MAX = 240;
+const GRID_TILE_DEFAULT = 152;
+
+function clampGridTileSize(value) {
+  return Math.max(GRID_TILE_MIN, Math.min(GRID_TILE_MAX, Number(value) || GRID_TILE_DEFAULT));
+}
+
 let recentTablistsExpanded = false;
 let windowLayoutReady = false;
 let currentPlaylistName = "Untitled Playlist";
@@ -74,9 +86,1005 @@ let sidebarFavExpanded = false;
 const tagFetchInFlight = new Set();
 const tagFetchFailed = new Set();
 let viewMode = localStorage.getItem("ts_view_mode") || "details";
-let gridTileSize = Number(localStorage.getItem("ts_grid_tile_size") || 132);
+let gridTileSize = clampGridTileSize(localStorage.getItem("ts_grid_tile_size") || GRID_TILE_DEFAULT);
 let sidebarHidden = localStorage.getItem("ts_sidebar_hidden") === "1";
+function getEditingPlaylistId() {
+  return playlistViewMeta?.id || activeLocalPlaylistId || null;
+}
+
+function isPlaylistEditMode() {
+  return (
+    activeWindow === "current" &&
+    Boolean(getEditingPlaylistId()) &&
+    Boolean(playlistViewVideoIds?.size)
+  );
+}
+
+function normalizeVideoId(value) {
+  const vid = String(value || "").trim();
+  return /^[\w-]{11}$/.test(vid) ? vid : "";
+}
+
+function videoIdFromUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = u.pathname.slice(1).split("/")[0];
+      return /^[\w-]{11}$/.test(id) ? id : "";
+    }
+    if (host.includes("youtube.com") || host.includes("youtube-nocookie.com")) {
+      const fromQuery = u.searchParams.get("v");
+      if (fromQuery && /^[\w-]{11}$/.test(fromQuery)) return fromQuery;
+      const pathMatch = u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/);
+      if (pathMatch) return pathMatch[1];
+    }
+  } catch {
+    /* ignore malformed URLs */
+  }
+  return "";
+}
+
+function itemVideoId(it) {
+  return normalizeVideoId(it?.videoId) || videoIdFromUrl(it?.url);
+}
+
+function playlistItemDisplayKey(it) {
+  const vid = itemVideoId(it);
+  if (vid) return `v:${vid}`;
+  const url = String(it?.url || "").trim().toLowerCase();
+  if (url) return `u:${url}`;
+  return "";
+}
+
+function playlistVideoIdSet(pl) {
+  const ids = new Set();
+  for (const snap of pl?.items || []) {
+    const vid = itemVideoId(snap);
+    if (vid) ids.add(vid);
+  }
+  return ids;
+}
+
+function mergeLibraryWithSnapshot(lib, snap) {
+  const vid = itemVideoId(snap) || itemVideoId(lib);
+  const url =
+    String(lib?.url || "").trim() ||
+    String(snap?.url || "").trim() ||
+    (vid ? `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}` : "");
+  const title = String(lib?.title || snap?.title || "").trim() || "Untitled";
+  const channel = String(lib?.channel || snap?.channel || "").trim() || "Unknown creator";
+  const thumbnail =
+    String(lib?.thumbnail || snap?.thumbnail || "").trim() ||
+    (vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "");
+  if (lib) {
+    return {
+      ...lib,
+      videoId: vid || lib.videoId,
+      url,
+      title,
+      channel,
+      thumbnail,
+      durationSec: lib.durationSec ?? snap?.durationSec,
+    };
+  }
+  return {
+    id: `snap:${vid}`,
+    videoId: vid,
+    url,
+    title,
+    channel,
+    thumbnail,
+    durationSec: snap?.durationSec,
+    category: snap?.category || "watch_later",
+    themeId: snap?.themeId || null,
+    tags: Array.isArray(snap?.tags) ? snap.tags : [],
+    _snapshotOnly: true,
+  };
+}
+
+function itemMatchesVisibleFilters(it, q, cat, th, ws) {
+  if (!matchesSearch(it, q)) return false;
+  if (cat && it.category !== cat) return false;
+  if (th && it.themeId !== th) return false;
+  if (ws && itemWatchState(it) !== ws) return false;
+  return true;
+}
+
+function visibleItemsFromPlaylist(pl, q, cat, th, ws) {
+  const libByVid = new Map();
+  for (const it of allItems) {
+    const vid = itemVideoId(it);
+    if (vid) libByVid.set(vid, it);
+  }
+  const out = [];
+  const seen = new Set();
+  for (const snap of pl.items || []) {
+    const vid = itemVideoId(snap);
+    const displayKey = playlistItemDisplayKey(snap) || (vid ? `v:${vid}` : "");
+    if (!displayKey || seen.has(displayKey)) continue;
+    if (vid && playlistViewVideoIds && !playlistViewVideoIds.has(vid)) continue;
+    if (!vid && !String(snap?.url || "").trim()) continue;
+    seen.add(displayKey);
+    const merged = mergeLibraryWithSnapshot(vid ? libByVid.get(vid) : null, snap);
+    if (itemMatchesVisibleFilters(merged, q, cat, th, ws)) out.push(merged);
+  }
+  return out;
+}
+
+function sortItemsByPlaylistSnapshots(items, pl) {
+  if (!pl?.items?.length) return items;
+  const order = new Map();
+  (pl.items || []).forEach((snap, idx) => {
+    const vid = normalizeVideoId(snap?.videoId);
+    if (vid && !order.has(vid)) order.set(vid, idx);
+  });
+  return [...items].sort((a, b) => {
+    const ia = order.get(normalizeVideoId(a.videoId)) ?? 99999;
+    const ib = order.get(normalizeVideoId(b.videoId)) ?? 99999;
+    return ia - ib;
+  });
+}
+
+async function persistPlaylistOrderFromLibraryIds(orderedLibraryIds) {
+  const plId = getEditingPlaylistId();
+  if (!plId) return false;
+  const videoIds = orderedLibraryIds
+    .map((id) => {
+      const fromLib = allItems.find((x) => x.id === id);
+      if (fromLib) return normalizeVideoId(fromLib.videoId);
+      if (String(id).startsWith("snap:")) return normalizeVideoId(String(id).slice(5));
+      return "";
+    })
+    .filter(Boolean);
+  const r = await send("TUBESTACK_REORDER_LOCAL_PLAYLIST_ITEMS", { playlistId: plId, videoIds });
+  if (!r?.ok) {
+    alert(r?.error || "Could not reorder playlist.");
+    return false;
+  }
+  localPlaylists = r.playlists || localPlaylists;
+  const pl = localPlaylists.find((x) => x.id === plId);
+  if (pl) {
+    if (playlistViewMeta?.id === plId) {
+      playlistViewMeta = { id: pl.id, name: pl.name || playlistViewMeta.name };
+      playlistViewVideoIds = playlistVideoIdSet(pl);
+      if (!playlistViewVideoIds.size) playlistViewVideoIds = null;
+    }
+    if (activeLocalPlaylistId === plId && pl.name) currentPlaylistName = pl.name;
+    syncSidebarCurrentPlaylistUi();
+    renderLocalPlaylists();
+    renderSidebarRecentTablists();
+  }
+  return true;
+}
+
+async function applyPlaylistCardReorder(dragId, targetId) {
+  const list = visibleItems();
+  const ids = list.map((x) => x.id);
+  const from = ids.indexOf(dragId);
+  const to = ids.indexOf(targetId);
+  if (from < 0 || to < 0 || from === to) return;
+  ids.splice(from, 1);
+  ids.splice(to, 0, dragId);
+  await persistPlaylistOrderFromLibraryIds(ids);
+}
+
+async function commitCurrentPlaylistRename(renameInp, saveBtn) {
+  const plId = getEditingPlaylistId();
+  if (!plId || !renameInp) return false;
+  const v = renameInp.value.trim() || defaultLocalPlaylistName();
+  currentPlaylistName = v;
+  const rr = await send("TUBESTACK_LOCAL_PLAYLIST_RENAME", { id: plId, name: v });
+  if (!rr?.ok) {
+    alert(rr?.error || "Could not rename playlist.");
+    return false;
+  }
+  localPlaylists = rr.playlists || localPlaylists;
+  if (playlistViewMeta?.id === plId) playlistViewMeta = { ...playlistViewMeta, name: v };
+  renameInp.dataset.savedName = v;
+  renameInp.value = v;
+  if (saveBtn) saveBtn.disabled = true;
+  await persistCurrentPlaylistContext();
+  syncSidebarCurrentPlaylistUi();
+  renderLocalPlaylists();
+  renderSidebarRecentTablists();
+  render();
+  return true;
+}
+
+function syncPlaylistRenameSaveState(renameInp, saveBtn) {
+  if (!renameInp || !saveBtn) return;
+  const saved = renameInp.dataset.savedName || "";
+  const dirty = renameInp.value.trim() !== saved.trim();
+  saveBtn.disabled = !dirty;
+  saveBtn.classList.toggle("current-playlist-input-save--ready", dirty);
+}
+
+function buildPlaylistRenameRow() {
+  const plId = getEditingPlaylistId();
+  const pl = localPlaylists.find((x) => x.id === plId);
+  const savedName = pl?.name || playlistViewMeta?.name || currentPlaylistName || defaultLocalPlaylistName();
+
+  const row = document.createElement("div");
+  row.className = "current-playlist-rename-row";
+
+  const renameLab = document.createElement("label");
+  renameLab.className = "current-playlist-rename-label";
+  renameLab.textContent = "Playlist name";
+
+  const inputWrap = document.createElement("div");
+  inputWrap.className = "current-playlist-input-wrap";
+
+  const renameInp = document.createElement("input");
+  renameInp.type = "text";
+  renameInp.className = "oobe-input current-playlist-rename-input";
+  renameInp.maxLength = 200;
+  renameInp.value = savedName;
+  renameInp.dataset.savedName = savedName;
+  renameInp.placeholder = "Playlist name";
+  renameInp.setAttribute("aria-label", "Playlist name");
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "current-playlist-input-btn current-playlist-input-clear";
+  clearBtn.textContent = "×";
+  clearBtn.title = "Clear title";
+  clearBtn.setAttribute("aria-label", "Clear playlist title");
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "current-playlist-input-btn current-playlist-input-save";
+  saveBtn.textContent = "✓";
+  saveBtn.title = "Save title";
+  saveBtn.setAttribute("aria-label", "Save playlist title");
+  saveBtn.disabled = true;
+
+  clearBtn.addEventListener("click", () => {
+    renameInp.value = "";
+    renameInp.focus();
+    syncPlaylistRenameSaveState(renameInp, saveBtn);
+  });
+  saveBtn.addEventListener("click", () => void commitCurrentPlaylistRename(renameInp, saveBtn));
+  renameInp.addEventListener("input", () => syncPlaylistRenameSaveState(renameInp, saveBtn));
+  renameInp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!saveBtn.disabled) void commitCurrentPlaylistRename(renameInp, saveBtn);
+    }
+  });
+
+  inputWrap.appendChild(renameInp);
+  inputWrap.appendChild(clearBtn);
+  inputWrap.appendChild(saveBtn);
+  renameLab.appendChild(inputWrap);
+  row.appendChild(renameLab);
+  return row;
+}
+
+function renderCurrentPlaylistHead() {
+  const head = document.getElementById("currentPlaylistHead");
+  const main = document.getElementById("currentPlaylistHeadMain");
+  if (!head || !main) return;
+
+  const onPlaylist = Boolean(playlistViewMeta?.id);
+  head.classList.toggle("hidden", !onPlaylist);
+  if (!onPlaylist) {
+    main.replaceChildren();
+    return;
+  }
+
+  main.replaceChildren();
+  const pl = localPlaylists.find((x) => x.id === playlistViewMeta.id);
+
+  const top = document.createElement("div");
+  top.className = "current-playlist-top";
+
+  if (isPlaylistEditMode()) {
+    top.appendChild(buildPlaylistRenameRow());
+  } else {
+    const title = document.createElement("h2");
+    title.className = "current-playlist-title-readonly";
+    title.textContent = playlistViewMeta.name || "Playlist";
+    top.appendChild(title);
+  }
+
+  if (pl) {
+    const stackPanel = buildLocalPlaylistStackPanel(pl);
+    stackPanel.classList.add("current-playlist-stack-notes");
+    top.appendChild(stackPanel);
+  }
+
+  main.appendChild(top);
+}
+
+function updatePlaylistGridHint(list) {
+  const hint = document.getElementById("currentPlaylistGridHint");
+  if (!hint) return;
+  const onPlaylist = Boolean(playlistViewMeta?.id);
+  if (!onPlaylist || !list.length) {
+    hint.classList.add("hidden");
+    hint.textContent = "";
+    return;
+  }
+  const pl = localPlaylists.find((x) => x.id === playlistViewMeta.id);
+  const videoCount = playlistVideoIdSet(pl).size || list.length;
+  const parts = [`${videoCount} video${videoCount === 1 ? "" : "s"}`];
+  if (isPlaylistEditMode()) parts.push("drag cards to reorder");
+  hint.textContent = parts.join(" · ");
+  hint.classList.toggle("hidden", !isPlaylistEditMode());
+}
+
+function updateBulkCheckButtons() {
+  const checkBtn = document.getElementById("btnCheckAllVisible");
+  const uncheckBtn = document.getElementById("btnUncheckAllVisible");
+  const show = activeWindow === "current";
+  checkBtn?.classList.toggle("hidden", !show);
+  uncheckBtn?.classList.toggle("hidden", !show);
+}
+
+function checkAllVisibleItems() {
+  for (const it of visibleItems()) selected.add(it.id);
+  render();
+}
+
+function uncheckAllVisibleItems() {
+  for (const it of visibleItems()) selected.delete(it.id);
+  render();
+}
+
+function getSelectedIds() {
+  return [...selected];
+}
+
+function getSelectedItems() {
+  const ids = new Set(getSelectedIds());
+  return allItems.filter((it) => ids.has(it.id));
+}
+
+function updateBulkBarUi() {
+  const n = selected.size;
+  const sum = document.getElementById("bulkSelectionSummary");
+  if (sum) sum.textContent = n ? `${n} selected` : "0 selected";
+  const hasSel = n > 0;
+  document.getElementById("bulkBar")?.classList.toggle("bulk-bar--active", hasSel);
+  for (const id of [
+    "bulkWatchState",
+    "bulkMovePlaylist",
+    "btnBulkMove",
+    "btnBulkRemoveFromPlaylist",
+    "btnRestore",
+    "btnDelete",
+  ]) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !hasSel;
+  }
+  document.getElementById("btnBulkRemoveFromPlaylist")?.classList.toggle("hidden", !isPlaylistEditMode());
+  fillBulkMovePlaylistSelect();
+}
+
+function fillBulkMovePlaylistSelect() {
+  const sel = document.getElementById("bulkMovePlaylist");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = "";
+  const def = document.createElement("option");
+  def.value = "";
+  def.textContent = "Add to playlist…";
+  sel.appendChild(def);
+  const neu = document.createElement("option");
+  neu.value = "__new__";
+  neu.textContent = "+ New playlist";
+  sel.appendChild(neu);
+  for (const pl of localPlaylists) {
+    const o = document.createElement("option");
+    o.value = pl.id;
+    o.textContent = pl.name || "Playlist";
+    sel.appendChild(o);
+  }
+  if (cur) sel.value = cur;
+}
+
+async function bulkApplyFromSelect(selectEl, patch) {
+  const val = selectEl?.value;
+  if (!val) return;
+  const ids = getSelectedIds();
+  if (!ids.length) {
+    alert("Check at least one video.");
+    selectEl.value = "";
+    return;
+  }
+  const r = await send("TUBESTACK_BULK_UPDATE_ITEMS", { ids, patch });
+  if (!r?.ok) {
+    alert(r?.error || "Could not update.");
+    return;
+  }
+  for (const it of allItems) {
+    if (!ids.includes(it.id)) continue;
+    Object.assign(it, patch);
+  }
+  selectEl.value = "";
+  render();
+}
+
+function buildPriorityControl(it, { inline = false } = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = inline ? "card-priority-inline" : "card-priority-stack";
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", "Priority");
+  const active = normalizeItemPriority(it.priority);
+  for (const p of PRIORITY_LEVELS) {
+    const pb = document.createElement("button");
+    pb.type = "button";
+    pb.className = `pri-btn ${p.colorClass}${active === p.id ? " pri-btn--on" : ""}`;
+    pb.title = p.label;
+    pb.textContent = p.short;
+    pb.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (normalizeItemPriority(it.priority) === p.id) return;
+      const ok = await applyDashboardItemUpdate(it, { priority: p.id });
+      if (!ok) return;
+      render();
+    });
+    wrap.appendChild(pb);
+  }
+  return wrap;
+}
+
+let rowPopoverGlobalBound = false;
+
+function closeAllRowDropdowns() {
+  document.querySelectorAll(".row-popover-panel, .row-dropdown-panel").forEach((p) => p.classList.add("hidden"));
+  document.querySelectorAll(".row-popover-trigger, .row-dropdown-trigger").forEach((t) =>
+    t.setAttribute("aria-expanded", "false")
+  );
+}
+
+function ensureRowPopoverGlobalClose() {
+  if (rowPopoverGlobalBound) return;
+  rowPopoverGlobalBound = true;
+  document.addEventListener("click", () => closeAllRowDropdowns());
+}
+
+function buildListWatchStatePicker(it) {
+  ensureRowPopoverGlobalClose();
+  const wrap = document.createElement("div");
+  wrap.className = "row-popover row-popover--watch";
+
+  const ws = itemWatchState(it);
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = `watch-state-badge watch-state-badge--${ws} row-popover-trigger`;
+  trigger.textContent = TS_WATCH ? TS_WATCH.watchStateLabel(ws) : ws;
+  trigger.title = "Change watch state";
+  trigger.setAttribute("aria-expanded", "false");
+
+  const panel = document.createElement("div");
+  panel.className = "row-popover-panel hidden";
+  panel.addEventListener("click", (e) => e.stopPropagation());
+
+  if (TS_WATCH) {
+    for (const row of TS_WATCH.WATCH_STATE_LIST) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `row-popover-option watch-state-badge watch-state-badge--${row.id}`;
+      btn.textContent = row.label;
+      if (ws === row.id) btn.classList.add("row-popover-option--on");
+      btn.addEventListener("click", async () => {
+        const ok = await applyDashboardItemUpdate(it, { watchState: row.id });
+        if (ok) render();
+      });
+      panel.appendChild(btn);
+    }
+  }
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasOpen = !panel.classList.contains("hidden");
+    closeAllRowDropdowns();
+    if (!wasOpen) {
+      panel.classList.remove("hidden");
+      trigger.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  wrap.appendChild(trigger);
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+async function removeOneFromEditingPlaylist(it) {
+  if (!it.videoId) return;
+  const plId = getEditingPlaylistId();
+  if (!plId) return;
+  const r = await send("TUBESTACK_REMOVE_LOCAL_PLAYLIST_ITEMS", {
+    playlistId: plId,
+    videoIds: [it.videoId],
+  });
+  if (!r?.ok) {
+    alert(r?.error || "Could not remove from playlist.");
+    return;
+  }
+  localPlaylists = r.playlists || localPlaylists;
+  const pl = localPlaylists.find((x) => x.id === plId);
+  if (pl && playlistViewMeta?.id === plId) {
+    playlistViewVideoIds = playlistVideoIdSet(pl);
+    if (!playlistViewVideoIds.size) playlistViewVideoIds = null;
+  }
+  selected.delete(it.id);
+  render();
+}
+
+function rowDropdownItem(label, onClick, { danger = false } = {}) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "row-dropdown-item" + (danger ? " row-dropdown-item--danger" : "");
+  btn.textContent = label;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeAllRowDropdowns();
+    void onClick();
+  });
+  return btn;
+}
+
+function rowDropdownDivider() {
+  const d = document.createElement("div");
+  d.className = "row-dropdown-divider";
+  d.setAttribute("role", "separator");
+  return d;
+}
+
+function fillRowMovePlaylistSelect(sel) {
+  sel.innerHTML = "";
+  const def = document.createElement("option");
+  def.value = "";
+  def.textContent = "Choose playlist…";
+  sel.appendChild(def);
+  const neu = document.createElement("option");
+  neu.value = "__new__";
+  neu.textContent = "+ New playlist";
+  sel.appendChild(neu);
+  for (const pl of localPlaylists) {
+    const o = document.createElement("option");
+    o.value = pl.id;
+    o.textContent = pl.name || "Playlist";
+    sel.appendChild(o);
+  }
+}
+
+async function addOneItemToPlaylist(it, plId) {
+  const snap = snapshotPlaylistItem(it);
+  if (plId === "__new__") {
+    const name = prompt("New playlist name", currentPlaylistName || defaultLocalPlaylistName());
+    if (name === null) return;
+    const r = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", {
+      createNew: true,
+      name: name.trim() || defaultLocalPlaylistName(),
+      items: [snap],
+    });
+    if (!r?.ok) {
+      alert(r?.error || "Could not create playlist.");
+      return;
+    }
+    localPlaylists = r.playlists || localPlaylists;
+  } else if (!plId) {
+    alert("Choose a playlist first.");
+    return;
+  } else {
+    const r = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", { playlistId: plId, items: [snap] });
+    if (!r?.ok) {
+      alert(r?.error || "Could not add to playlist.");
+      return;
+    }
+    localPlaylists = r.playlists || localPlaylists;
+  }
+  renderLocalPlaylists();
+  renderSidebarRecentTablists();
+}
+
+async function deleteOneFromLibrary(it) {
+  if (!confirm(`Remove “${it.title || "this video"}” from your library?`)) return;
+  await send("TUBESTACK_DELETE_ITEMS", { ids: [it.id] });
+  allItems = allItems.filter((x) => x.id !== it.id);
+  selected.delete(it.id);
+  render();
+}
+
+function buildRowActionsDropdown(it, { align = "right" } = {}) {
+  ensureRowPopoverGlobalClose();
+  const wrap = document.createElement("div");
+  wrap.className = "row-actions-dropdown";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "btn small ghost row-dropdown-trigger row-actions-trigger";
+  toggle.textContent = "Actions";
+  toggle.title = "Open, move, delete…";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-haspopup", "true");
+
+  const panel = document.createElement("div");
+  panel.className = `row-dropdown-panel hidden row-dropdown-panel--${align}`;
+  panel.addEventListener("click", (e) => e.stopPropagation());
+
+  panel.appendChild(
+    rowDropdownItem("Open on YouTube", () => {
+      chrome.tabs.create({ url: buildOpenUrl(it), active: true });
+    })
+  );
+
+  const plBlock = document.createElement("div");
+  plBlock.className = "row-dropdown-pl-block";
+  const plLab = document.createElement("span");
+  plLab.className = "row-dropdown-pl-label";
+  plLab.textContent = "Add to playlist";
+  const plSel = document.createElement("select");
+  plSel.className = "row-dropdown-select";
+  fillRowMovePlaylistSelect(plSel);
+  const plAdd = document.createElement("button");
+  plAdd.type = "button";
+  plAdd.className = "btn small row-dropdown-pl-add";
+  plAdd.textContent = "Add";
+  plAdd.addEventListener("click", (e) => {
+    e.stopPropagation();
+    void addOneItemToPlaylist(it, plSel.value);
+  });
+  plBlock.appendChild(plLab);
+  plBlock.appendChild(plSel);
+  plBlock.appendChild(plAdd);
+  panel.appendChild(plBlock);
+
+  panel.appendChild(
+    rowDropdownItem("New playlist with this video", () => void addOneItemToPlaylist(it, "__new__"))
+  );
+
+  if (isPlaylistEditMode()) {
+    panel.appendChild(rowDropdownDivider());
+    panel.appendChild(
+      rowDropdownItem("Remove from this playlist", () => void removeOneFromEditingPlaylist(it))
+    );
+  }
+
+  panel.appendChild(rowDropdownDivider());
+  panel.appendChild(rowDropdownItem("Delete from library", () => void deleteOneFromLibrary(it), { danger: true }));
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasOpen = !panel.classList.contains("hidden");
+    closeAllRowDropdowns();
+    if (!wasOpen) {
+      fillRowMovePlaylistSelect(plSel);
+      panel.classList.remove("hidden");
+      toggle.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  wrap.appendChild(toggle);
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+function makePickCheckbox(it) {
+  const pick = document.createElement("div");
+  pick.className = "card-pick";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = selected.has(it.id);
+  cb.addEventListener("mousedown", (e) => e.stopPropagation());
+  cb.addEventListener("click", (e) => e.stopPropagation());
+  cb.addEventListener("change", (e) => {
+    e.stopPropagation();
+    if (cb.checked) selected.add(it.id);
+    else selected.delete(it.id);
+    updateBulkBarUi();
+  });
+  pick.addEventListener("mousedown", (e) => e.stopPropagation());
+  pick.appendChild(cb);
+  return pick;
+}
+
+function itemOpenUrl(it) {
+  const url = String(it?.url || "").trim();
+  if (url) return url;
+  const vid = itemVideoId(it);
+  return vid ? `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}` : "#";
+}
+
+function itemThumbnailUrl(it) {
+  const thumb = String(it?.thumbnail || "").trim();
+  if (thumb) return thumb;
+  const vid = itemVideoId(it);
+  return vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "";
+}
+
+function buildOpenUrl(it) {
+  const vid = itemVideoId(it);
+  const url = String(it?.url || "").trim();
+  if (!vid) return url || "#";
+  const pos = getPlayhead(it);
+  const base = `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
+  if (pos > 2) return `${base}&t=${Math.floor(pos)}s`;
+  return url || base;
+}
+
+function makeThumbWrap(it, { square = false, linked = true } = {}) {
+  const thumb = document.createElement("div");
+  thumb.className = "thumb-wrap" + (square ? " thumb-wrap--square" : "");
+  const img = document.createElement("img");
+  img.alt = "";
+  img.loading = "lazy";
+  const vid = itemVideoId(it);
+  img.src = itemThumbnailUrl(it);
+  if (vid) {
+    img.addEventListener("error", () => {
+      if (img.dataset.fallback === "1") return;
+      img.dataset.fallback = "1";
+      img.src = `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`;
+    });
+  }
+  thumb.appendChild(img);
+  const d = getDuration(it);
+  if (d != null) {
+    const badge = document.createElement("span");
+    badge.className = "dur-badge";
+    badge.textContent = formatDuration(d);
+    thumb.appendChild(badge);
+  }
+  if (!linked) return thumb;
+  const href = buildOpenUrl(it);
+  if (!href || href === "#") return thumb;
+  const link = document.createElement("a");
+  link.className = "thumb-link";
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.title = `Open: ${it.title || "video"}`;
+  link.appendChild(thumb);
+  return link;
+}
+
+function wireCardDrag(card, it, playlistReorder) {
+  const noDragSel =
+    ".card-pick, .grid-tile-pick, button, input, select, textarea, a, label, .row-popover, .row-actions-dropdown, .row-notes-dropdown, .card-note-toggle, .card-note-panel, .card-thumb-notes, .card-priority-stack, .card-priority-inline, .pri-btn, .thumb-link";
+
+  const setDraggable = (on) => {
+    card.draggable = Boolean(on);
+  };
+
+  setDraggable(false);
+
+  card.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target?.closest(noDragSel)) {
+      setDraggable(false);
+      return;
+    }
+    setDraggable(true);
+  });
+  card.addEventListener("mouseup", () => setDraggable(false));
+  card.addEventListener("mouseleave", () => setDraggable(false));
+
+  card.addEventListener("dragstart", (e) => {
+    if (e.target?.closest(noDragSel)) {
+      e.preventDefault();
+      setDraggable(false);
+      return;
+    }
+    if (playlistReorder) {
+      playlistReorderDragId = it.id;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "tubestack-playlist-reorder");
+      card.classList.add("card--dragging");
+      return;
+    }
+    draggingPlaylistItemIds = getDragPlaylistItemIds(it.id);
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("text/plain", "tubestack-playlist-items");
+    card.classList.add("card--dragging");
+  });
+  card.addEventListener("dragend", () => {
+    playlistReorderDragId = null;
+    draggingPlaylistItemIds = [];
+    card.classList.remove("card--dragging", "card--reorder-over");
+    document.querySelectorAll(".playlist-drop-target.drop-active").forEach((x) => x.classList.remove("drop-active"));
+    document.querySelectorAll(".card.card--reorder-over").forEach((x) => x.classList.remove("card--reorder-over"));
+  });
+  if (playlistReorder && !card.dataset.reorderBound) {
+    card.dataset.reorderBound = "1";
+    card.addEventListener("dragover", (e) => {
+      if (!playlistReorderDragId || playlistReorderDragId === it.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      card.classList.add("card--reorder-over");
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("card--reorder-over");
+    });
+    card.addEventListener("drop", (e) => {
+      if (!playlistReorderDragId || playlistReorderDragId === it.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      card.classList.remove("card--reorder-over");
+      const dragId = playlistReorderDragId;
+      playlistReorderDragId = null;
+      void (async () => {
+        await applyPlaylistCardReorder(dragId, it.id);
+        render();
+      })();
+    });
+  }
+}
+
+function renderListCard(it) {
+  const card = document.createElement("article");
+  card.className = "card card--list-row";
+  card.dataset.id = it.id;
+  wireCardDrag(card, it, isPlaylistEditMode());
+
+  const media = document.createElement("div");
+  media.className = "list-row-media";
+  media.appendChild(makeThumbWrap(it, { square: true }));
+
+  const content = document.createElement("div");
+  content.className = "list-row-content";
+  const title = document.createElement("a");
+  title.href = itemOpenUrl(it);
+  title.target = "_blank";
+  title.rel = "noopener noreferrer";
+  title.className = "list-row-title";
+  title.textContent = it.title || "Untitled";
+
+  const meta = document.createElement("div");
+  meta.className = "list-row-meta";
+  const creator = it.channel || "Unknown creator";
+  const len = getDuration(it);
+  meta.appendChild(document.createTextNode(`${creator} · ${len != null ? formatDuration(len) : "—"} · `));
+  meta.appendChild(buildListWatchStatePicker(it));
+  const listLab = LIST_LABELS[it.category] || "";
+  const themeLab = themes.find((t) => t.id === it.themeId)?.label || "";
+  if (listLab || themeLab) {
+    const tags = document.createElement("span");
+    tags.className = "list-row-labels";
+    tags.textContent = [listLab, themeLab].filter(Boolean).join(" · ");
+    tags.title = "List & category: Details view, filters, or bulk bar when checked";
+    meta.appendChild(document.createTextNode(" · "));
+    meta.appendChild(tags);
+  }
+
+  content.appendChild(title);
+  content.appendChild(meta);
+
+  const aside = document.createElement("div");
+  aside.className = "list-row-aside";
+  aside.appendChild(buildPriorityControl(it, { inline: true }));
+  aside.appendChild(buildRowActionsDropdown(it));
+  const notesBtn = buildPlaylistNotesButton(it);
+  if (notesBtn) aside.appendChild(notesBtn);
+
+  card.appendChild(makePickCheckbox(it));
+  card.appendChild(media);
+  card.appendChild(content);
+  card.appendChild(aside);
+  return card;
+}
+
+function renderGridCard(it) {
+  const card = document.createElement("article");
+  card.className = "card card--grid-tile";
+  card.dataset.id = it.id;
+  wireCardDrag(card, it, isPlaylistEditMode());
+
+  const mediaWrap = document.createElement("div");
+  mediaWrap.className = "grid-tile-media-wrap";
+
+  const link = document.createElement("a");
+  link.className = "grid-tile-media";
+  link.href = buildOpenUrl(it);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+
+  const thumb = makeThumbWrap(it, { square: true, linked: false });
+  thumb.classList.add("grid-tile-thumb");
+  link.appendChild(thumb);
+
+  const pickOverlay = document.createElement("div");
+  pickOverlay.className = "grid-tile-pick";
+  pickOverlay.appendChild(makePickCheckbox(it).firstElementChild);
+
+  mediaWrap.appendChild(link);
+  mediaWrap.appendChild(pickOverlay);
+  card.appendChild(mediaWrap);
+
+  const foot = document.createElement("div");
+  foot.className = "grid-tile-foot";
+  const textBlock = document.createElement("div");
+  textBlock.className = "grid-tile-text";
+  const title = document.createElement("div");
+  title.className = "grid-tile-title";
+  title.textContent = it.title || "Untitled";
+  title.title = title.textContent;
+  const channel = document.createElement("div");
+  channel.className = "grid-tile-channel";
+  channel.textContent = it.channel || "Unknown creator";
+  channel.title = channel.textContent;
+  textBlock.appendChild(title);
+  textBlock.appendChild(channel);
+  foot.appendChild(textBlock);
+  foot.appendChild(buildRowActionsDropdown(it, { align: "left" }));
+  card.appendChild(foot);
+  return card;
+}
+
+async function bulkMoveSelectedToPlaylist() {
+  const ids = getSelectedIds();
+  if (!ids.length) {
+    alert("Check at least one video.");
+    return;
+  }
+  const sel = document.getElementById("bulkMovePlaylist");
+  const plId = sel?.value || "";
+  if (!plId) {
+    alert("Choose a playlist under “Move to playlist…”.");
+    return;
+  }
+  const items = getSelectedItems().map(snapshotPlaylistItem);
+  if (plId === "__new__") {
+    const name = prompt("New playlist name", currentPlaylistName || defaultLocalPlaylistName());
+    if (name === null) return;
+    const r = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", {
+      createNew: true,
+      name: name.trim() || defaultLocalPlaylistName(),
+      items,
+    });
+    if (!r?.ok) {
+      alert(r?.error || "Could not create playlist.");
+      return;
+    }
+    localPlaylists = r.playlists || localPlaylists;
+  } else {
+    const r = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", { playlistId: plId, items });
+    if (!r?.ok) {
+      alert(r?.error || "Could not move.");
+      return;
+    }
+    localPlaylists = r.playlists || localPlaylists;
+  }
+  selected.clear();
+  renderLocalPlaylists();
+  renderSidebarRecentTablists();
+  render();
+}
+
+async function bulkRemoveSelectedFromPlaylist() {
+  const plId = getEditingPlaylistId();
+  if (!plId) return;
+  const videoIds = getSelectedItems().map((x) => x.videoId).filter(Boolean);
+  if (!videoIds.length) {
+    alert("Checked rows need a YouTube video id to remove from the playlist.");
+    return;
+  }
+  if (!confirm(`Remove ${videoIds.length} video(s) from this playlist snapshot? Library rows stay saved.`)) return;
+  const r = await send("TUBESTACK_REMOVE_LOCAL_PLAYLIST_ITEMS", { playlistId: plId, videoIds });
+  if (!r?.ok) {
+    alert(r?.error || "Could not remove from playlist.");
+    return;
+  }
+  localPlaylists = r.playlists || localPlaylists;
+  const pl = localPlaylists.find((x) => x.id === plId);
+  if (pl && playlistViewMeta?.id === plId) {
+    playlistViewVideoIds = playlistVideoIdSet(pl);
+    if (!playlistViewVideoIds.size) playlistViewVideoIds = null;
+  }
+  for (const it of getSelectedItems()) selected.delete(it.id);
+  render();
+}
+
+/** Library row ids dragged onto a playlist drop target. */
 let draggingPlaylistItemIds = [];
+/** Library row id being dragged to reorder within the active playlist grid. */
+let playlistReorderDragId = null;
 
 let obStep = 0;
 /** True when user chose local-only (staple) during this wizard session (skips API + OAuth + channel scan). */
@@ -109,6 +1117,46 @@ function send(type, payload = {}) {
   });
 }
 
+function findLibraryItemForUpdate(it) {
+  if (!it) return null;
+  const id = String(it.id || "").trim();
+  if (id && !id.startsWith("snap:")) {
+    const direct = allItems.find((x) => x.id === id);
+    if (direct) return direct;
+  }
+  const vid = itemVideoId(it);
+  if (vid) {
+    const byVid = allItems.find((x) => itemVideoId(x) === vid);
+    if (byVid) return byVid;
+  }
+  if (id && !id.startsWith("snap:")) return allItems.find((x) => x.id === id) || null;
+  return null;
+}
+
+function applyServerItemToLibrary(serverItem) {
+  if (!serverItem?.id) return;
+  const idx = allItems.findIndex((x) => x.id === serverItem.id);
+  if (idx >= 0) allItems[idx] = serverItem;
+  else allItems.push(serverItem);
+}
+
+async function applyDashboardItemUpdate(it, patch) {
+  const lib = findLibraryItemForUpdate(it);
+  const id = lib?.id || String(it?.id || "").trim();
+  if (!id || id.startsWith("snap:")) {
+    alert("This video is not in your library yet — add it to your library before editing it.");
+    return false;
+  }
+  const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id, ...patch } });
+  if (!r?.ok) {
+    alert(r?.error || "Could not save changes.");
+    return false;
+  }
+  if (r.item) applyServerItemToLibrary(r.item);
+  else if (lib) Object.assign(lib, patch);
+  return true;
+}
+
 const TS_WATCH = globalThis.TUBESTACK_WATCH;
 let filterWatchStateValue = "";
 /** @type {Array<{ videoId: string; itemId: string|null; suggestedWatchState: string; suggestedTags: string[]; reason: string }>} */
@@ -120,6 +1168,361 @@ function itemWatchState(it) {
 
 function itemNote(it) {
   return TS_WATCH ? TS_WATCH.itemNoteText(it) : String(it?.notes || "").trim();
+}
+
+function isPlaylistNotesContext() {
+  return Boolean(
+    activeWindow === "current" &&
+      (isPlaylistEditMode() || (playlistViewVideoIds?.size && playlistViewMeta))
+  );
+}
+
+function itemHasAnyNotes(it) {
+  if (itemNote(it)) return true;
+  return Array.isArray(it.timestampNotes) && it.timestampNotes.some((x) => String(x?.note || "").trim());
+}
+
+function noteLinesFromText(text) {
+  const raw = String(text ?? "");
+  if (!raw) return [""];
+  return raw.split("\n");
+}
+
+function createLineNoteEditor(initialText, onSave) {
+  const wrap = document.createElement("div");
+  wrap.className = "line-note-editor";
+  const linesHost = document.createElement("div");
+  linesHost.className = "line-note-lines";
+  let timer;
+
+  const scheduleSave = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const text = [...linesHost.querySelectorAll(".line-note-input")]
+        .map((ta) => ta.value)
+        .join("\n")
+        .replace(/\n+$/g, "");
+      onSave(text);
+    }, 400);
+  };
+
+  const autoGrow = (ta) => {
+    ta.style.height = "0";
+    ta.style.height = `${Math.max(28, ta.scrollHeight)}px`;
+  };
+
+  const addLine = (value = "", { focus = false } = {}) => {
+    const row = document.createElement("div");
+    row.className = "line-note-row";
+    const ta = document.createElement("textarea");
+    ta.className = "line-note-input";
+    ta.rows = 1;
+    ta.spellcheck = true;
+    ta.placeholder = "Write on this line…";
+    ta.value = value;
+    ta.addEventListener("input", () => {
+      autoGrow(ta);
+      scheduleSave();
+    });
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const next = addLine("", { focus: true });
+        next.focus();
+      }
+    });
+    row.appendChild(ta);
+    linesHost.appendChild(row);
+    autoGrow(ta);
+    if (focus) ta.focus();
+    return ta;
+  };
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "line-note-add-btn";
+  addBtn.title = "Add another line";
+  addBtn.setAttribute("aria-label", "Add line");
+  addBtn.textContent = "+";
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    addLine("", { focus: true });
+  });
+
+  for (const ln of noteLinesFromText(initialText)) addLine(ln);
+  wrap.appendChild(linesHost);
+  wrap.appendChild(addBtn);
+  return wrap;
+}
+
+async function persistVideoNote(it, text) {
+  const note = String(text ?? "");
+  const ok = await applyDashboardItemUpdate(it, { note });
+  return ok;
+}
+
+async function persistItemTimestampNotes(it, notes) {
+  const lib = findLibraryItemForUpdate(it);
+  const id = lib?.id || String(it?.id || "").trim();
+  if (!id || id.startsWith("snap:")) return false;
+  const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id, timestampNotes: notes } });
+  if (!r?.ok) return false;
+  if (r.item) applyServerItemToLibrary(r.item);
+  else if (lib) lib.timestampNotes = TS_WATCH ? TS_WATCH.normalizeTimestampNotes(notes) : notes;
+  return true;
+}
+
+function buildTimestampNotesEditor(it, onChanged) {
+  const wrap = document.createElement("div");
+  wrap.className = "ts-notes-editor";
+  const blocksHost = document.createElement("div");
+  blocksHost.className = "ts-notes-blocks";
+  /** @type {Map<string, object>} */
+  const drafts = new Map();
+
+  const allRows = () => {
+    const saved = [...(it.timestampNotes || [])];
+    for (const d of drafts.values()) {
+      if (!saved.some((x) => x.id === d.id)) saved.push(d);
+    }
+    return saved.sort((a, b) => a.timeSeconds - b.timeSeconds);
+  };
+
+  const commitDraft = async (rowId) => {
+    const draft = drafts.get(rowId);
+    if (!draft) return true;
+    if (!String(draft.note || "").trim()) return false;
+    drafts.delete(rowId);
+    const next = [...(it.timestampNotes || []).filter((x) => x.id !== rowId), draft];
+    return persistItemTimestampNotes(it, next);
+  };
+
+  const upsertRow = async (rowId, patch) => {
+    const draft = drafts.get(rowId);
+    const base = draft || (it.timestampNotes || []).find((x) => x.id === rowId);
+    if (!base) return;
+    const merged = { ...base, ...patch, updatedAt: new Date().toISOString() };
+    if (drafts.has(rowId)) {
+      drafts.set(rowId, merged);
+      if (String(merged.note || "").trim()) {
+        if (!(await commitDraft(rowId))) return;
+      }
+    } else {
+      const next = (it.timestampNotes || []).map((x) => (x.id === rowId ? merged : x));
+      if (!(await persistItemTimestampNotes(it, next))) return;
+    }
+    onChanged?.();
+    renderBlocks();
+  };
+
+  const removeRow = async (rowId) => {
+    drafts.delete(rowId);
+    const next = (it.timestampNotes || []).filter((x) => x.id !== rowId);
+    if (!(await persistItemTimestampNotes(it, next))) return;
+    onChanged?.();
+    renderBlocks();
+  };
+
+  const renderBlocks = () => {
+    blocksHost.replaceChildren();
+    const notes = allRows();
+    if (!notes.length) {
+      const empty = document.createElement("p");
+      empty.className = "notes-panel-empty";
+      empty.textContent = "No timestamp notes yet.";
+      blocksHost.appendChild(empty);
+      return;
+    }
+    for (const row of notes) {
+      const block = document.createElement("div");
+      block.className = "ts-note-block";
+
+      const head = document.createElement("div");
+      head.className = "ts-note-head";
+      const timeIn = document.createElement("input");
+      timeIn.type = "text";
+      timeIn.className = "ts-note-time-input";
+      timeIn.placeholder = "12:30";
+      timeIn.value = TS_WATCH ? TS_WATCH.formatTimeSeconds(row.timeSeconds) : String(row.timeSeconds);
+      timeIn.title = "Jump time (mm:ss or hh:mm:ss)";
+      timeIn.addEventListener("change", () => {
+        if (!TS_WATCH) return;
+        const sec = TS_WATCH.parseTimeInputToSeconds(timeIn.value);
+        if (sec == null) {
+          alert("Use seconds, mm:ss, or hh:mm:ss.");
+          timeIn.value = TS_WATCH.formatTimeSeconds(row.timeSeconds);
+          return;
+        }
+        void upsertRow(row.id, { timeSeconds: sec });
+      });
+
+      const openLink = document.createElement("a");
+      openLink.className = "ts-note-open";
+      openLink.href = TS_WATCH ? TS_WATCH.buildYoutubeTimestampUrl(it, row.timeSeconds) : it.url || "#";
+      openLink.target = "_blank";
+      openLink.rel = "noopener noreferrer";
+      openLink.textContent = "Open";
+      openLink.title = "Open at this time on YouTube";
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn small ghost ts-note-remove";
+      delBtn.textContent = "×";
+      delBtn.title = "Remove this timestamp note";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (drafts.has(row.id)) {
+          drafts.delete(row.id);
+          renderBlocks();
+          return;
+        }
+        void removeRow(row.id);
+      });
+
+      head.appendChild(timeIn);
+      head.appendChild(openLink);
+      head.appendChild(delBtn);
+      block.appendChild(head);
+      block.appendChild(
+        createLineNoteEditor(row.note || "", (text) => {
+          void upsertRow(row.id, { note: text });
+        })
+      );
+      blocksHost.appendChild(block);
+    }
+  };
+
+  const addTsBtn = document.createElement("button");
+  addTsBtn.type = "button";
+  addTsBtn.className = "btn small ghost ts-notes-add-btn";
+  addTsBtn.textContent = "+ Add timestamp";
+  addTsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const sec = Math.max(0, Math.floor(getPlayhead(it) || 0));
+    const id = `tn_${Date.now()}`;
+    drafts.set(id, {
+      id,
+      timeSeconds: sec,
+      note: "",
+      label: "",
+      createdAt: new Date().toISOString(),
+    });
+    renderBlocks();
+    const firstInput = blocksHost.querySelector(".ts-note-block:last-child .line-note-input");
+    firstInput?.focus();
+  });
+
+  renderBlocks();
+  wrap.appendChild(blocksHost);
+  wrap.appendChild(addTsBtn);
+  return wrap;
+}
+
+function buildNotesPanelContent(it, onChanged) {
+  const panel = document.createElement("div");
+  panel.className = "notes-panel-content";
+
+  const tabs = document.createElement("div");
+  tabs.className = "notes-panel-tabs";
+  tabs.setAttribute("role", "tablist");
+
+  const wholePane = document.createElement("div");
+  wholePane.className = "notes-panel-pane";
+  wholePane.appendChild(
+    createLineNoteEditor(itemNote(it), (text) => {
+      void persistVideoNote(it, text).then((ok) => ok && onChanged?.());
+    })
+  );
+
+  const tsPane = document.createElement("div");
+  tsPane.className = "notes-panel-pane hidden";
+  tsPane.appendChild(buildTimestampNotesEditor(it, onChanged));
+
+  const tabWhole = document.createElement("button");
+  tabWhole.type = "button";
+  tabWhole.className = "notes-tab notes-tab--active";
+  tabWhole.textContent = "Whole video";
+  tabWhole.setAttribute("role", "tab");
+  tabWhole.setAttribute("aria-selected", "true");
+
+  const tabTs = document.createElement("button");
+  tabTs.type = "button";
+  tabTs.className = "notes-tab";
+  tabTs.textContent = "Timestamps";
+  tabTs.setAttribute("role", "tab");
+  tabTs.setAttribute("aria-selected", "false");
+
+  const showWhole = () => {
+    tabWhole.classList.add("notes-tab--active");
+    tabTs.classList.remove("notes-tab--active");
+    tabWhole.setAttribute("aria-selected", "true");
+    tabTs.setAttribute("aria-selected", "false");
+    wholePane.classList.remove("hidden");
+    tsPane.classList.add("hidden");
+  };
+  const showTs = () => {
+    tabTs.classList.add("notes-tab--active");
+    tabWhole.classList.remove("notes-tab--active");
+    tabTs.setAttribute("aria-selected", "true");
+    tabWhole.setAttribute("aria-selected", "false");
+    tsPane.classList.remove("hidden");
+    wholePane.classList.add("hidden");
+  };
+  tabWhole.addEventListener("click", (e) => {
+    e.stopPropagation();
+    showWhole();
+  });
+  tabTs.addEventListener("click", (e) => {
+    e.stopPropagation();
+    showTs();
+  });
+
+  tabs.appendChild(tabWhole);
+  tabs.appendChild(tabTs);
+  panel.appendChild(tabs);
+  panel.appendChild(wholePane);
+  panel.appendChild(tsPane);
+  return panel;
+}
+
+function buildPlaylistNotesButton(it) {
+  if (!isPlaylistNotesContext()) return null;
+  ensureRowPopoverGlobalClose();
+  const wrap = document.createElement("div");
+  wrap.className = "row-notes-dropdown";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "notes-trigger notes-trigger--muted row-dropdown-trigger";
+  toggle.textContent = "Note";
+  toggle.title = "Add or edit notes for this video";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-haspopup", "true");
+
+  const syncToggle = () => {
+    toggle.classList.toggle("notes-trigger--filled", itemHasAnyNotes(it));
+    toggle.setAttribute("aria-label", itemHasAnyNotes(it) ? "Edit video notes" : "Add video notes");
+  };
+  syncToggle();
+
+  const panel = document.createElement("div");
+  panel.className = "row-dropdown-panel row-dropdown-panel--notes hidden";
+  panel.addEventListener("click", (e) => e.stopPropagation());
+  panel.appendChild(buildNotesPanelContent(it, syncToggle));
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasOpen = !panel.classList.contains("hidden");
+    closeAllRowDropdowns();
+    if (!wasOpen) {
+      panel.classList.remove("hidden");
+      toggle.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  wrap.appendChild(toggle);
+  wrap.appendChild(panel);
+  return wrap;
 }
 
 function makeWatchStateBadge(it) {
@@ -184,195 +1587,133 @@ function buildWatchStateRow(it, onApplied) {
     sel.appendChild(opt);
   }
   sel.addEventListener("change", async () => {
-    const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, watchState: sel.value } });
-    if (r?.ok) {
-      it.watchState = sel.value;
-      onApplied?.(sel.value);
-    }
+    const ok = await applyDashboardItemUpdate(it, { watchState: sel.value });
+    if (ok) onApplied?.(sel.value);
   });
   row.appendChild(lab);
   row.appendChild(sel);
   return row;
 }
 
-function buildCollapsibleVideoNote(parent, it) {
-  const note = itemNote(it);
+function buildCardThumbNotesBlock(it) {
   const wrap = document.createElement("div");
-  wrap.className = "video-note-block";
-  let expanded = false;
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "btn small ghost video-note-toggle";
-  const panel = document.createElement("div");
-  panel.className = "video-note-panel";
-  const preview = document.createElement("p");
-  preview.className = "video-note-preview ob-muted";
-  const ta = document.createElement("textarea");
-  ta.className = "notes oobe-input";
-  ta.placeholder = "Video note (local-only)…";
-  ta.rows = 3;
-  ta.value = note;
-  let timer;
+  wrap.className = "card-thumb-notes";
+
+  const toggles = document.createElement("div");
+  toggles.className = "card-note-toggles";
+  toggles.setAttribute("role", "group");
+  toggles.setAttribute("aria-label", "Video and timestamp notes");
+
+  const videoBtn = document.createElement("button");
+  videoBtn.type = "button";
+  videoBtn.className = "card-note-toggle";
+  videoBtn.setAttribute("aria-expanded", "false");
+
+  const tsBtn = document.createElement("button");
+  tsBtn.type = "button";
+  tsBtn.className = "card-note-toggle";
+  tsBtn.setAttribute("aria-expanded", "false");
+
+  const videoPanel = document.createElement("div");
+  videoPanel.className = "card-note-panel hidden";
+  videoPanel.appendChild(
+    createLineNoteEditor(itemNote(it), (text) => {
+      void persistVideoNote(it, text).then(() => syncUi());
+    })
+  );
+
+  const tsPanel = document.createElement("div");
+  tsPanel.className = "card-note-panel card-note-panel--ts hidden";
+  if (TS_WATCH) {
+    tsPanel.appendChild(
+      buildTimestampNotesEditor(it, () => {
+        syncUi();
+      })
+    );
+  } else {
+    const muted = document.createElement("p");
+    muted.className = "notes-panel-empty";
+    muted.textContent = "Timestamp notes unavailable.";
+    tsPanel.appendChild(muted);
+    tsBtn.disabled = true;
+  }
+
+  let videoOpen = false;
+  let tsOpen = false;
+
   const syncUi = () => {
-    const v = ta.value.trim();
-    toggle.textContent = expanded ? "Hide note" : v ? "Edit note" : "Add note";
-    preview.textContent = v && !expanded ? (v.length > 140 ? `${v.slice(0, 140)}…` : v) : "";
-    preview.classList.toggle("hidden", !v || expanded);
-    panel.classList.toggle("hidden", !expanded && !v);
-    wrap.classList.toggle("video-note-block--has-note", Boolean(v));
+    const hasVideoNote = Boolean(String(itemNote(it) || "").trim());
+    const tsCount = (it.timestampNotes || []).filter((x) => String(x?.note || "").trim()).length;
+    videoBtn.textContent = "Video Notes";
+    tsBtn.textContent = tsCount ? `Timestamp Notes (${tsCount})` : "Timestamp Notes";
+    videoBtn.classList.toggle("card-note-toggle--active", videoOpen);
+    tsBtn.classList.toggle("card-note-toggle--active", tsOpen);
+    videoBtn.classList.toggle("card-note-toggle--filled", hasVideoNote);
+    tsBtn.classList.toggle("card-note-toggle--filled", tsCount > 0);
+    videoBtn.setAttribute("aria-expanded", videoOpen ? "true" : "false");
+    tsBtn.setAttribute("aria-expanded", tsOpen ? "true" : "false");
+    videoPanel.classList.toggle("hidden", !videoOpen);
+    tsPanel.classList.toggle("hidden", !tsOpen);
   };
-  ta.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, note: ta.value } });
-      it.note = ta.value;
-      it.notes = ta.value;
-      syncUi();
-    }, 400);
-  });
-  toggle.addEventListener("click", () => {
-    expanded = !expanded;
+
+  videoBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    videoOpen = !videoOpen;
+    if (videoOpen) tsOpen = false;
     syncUi();
   });
+  tsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (tsBtn.disabled) return;
+    tsOpen = !tsOpen;
+    if (tsOpen) videoOpen = false;
+    syncUi();
+  });
+
+  toggles.appendChild(videoBtn);
+  toggles.appendChild(tsBtn);
+  wrap.appendChild(toggles);
+  wrap.appendChild(videoPanel);
+  wrap.appendChild(tsPanel);
   syncUi();
-  panel.appendChild(preview);
-  panel.appendChild(ta);
-  wrap.appendChild(toggle);
-  wrap.appendChild(panel);
-  parent.appendChild(wrap);
+  return wrap;
 }
 
-function buildTimestampNotesSection(parent, it) {
-  if (!TS_WATCH) return;
-  const details = document.createElement("details");
-  details.className = "timestamp-notes-details";
-  const sum = document.createElement("summary");
-  const renderSummary = () => {
-    const n = (it.timestampNotes || []).length;
-    sum.textContent = n ? `Timestamp notes (${n})` : "Timestamp notes";
-  };
-  renderSummary();
-  details.appendChild(sum);
-  const list = document.createElement("ul");
-  list.className = "timestamp-notes-list";
-  const renderList = () => {
-    list.innerHTML = "";
-    const notes = [...(it.timestampNotes || [])].sort((a, b) => a.timeSeconds - b.timeSeconds);
-    for (const row of notes) {
-      const li = document.createElement("li");
-      li.className = "timestamp-note-row";
-      const link = document.createElement("a");
-      link.href = TS_WATCH.buildYoutubeTimestampUrl(it, row.timeSeconds);
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.className = "timestamp-note-time";
-      link.textContent = TS_WATCH.formatTimeSeconds(row.timeSeconds);
-      const txt = document.createElement("span");
-      txt.className = "timestamp-note-text";
-      txt.textContent = row.label ? `${row.label} — ${row.note}` : row.note;
-      const edit = document.createElement("button");
-      edit.type = "button";
-      edit.className = "btn small ghost";
-      edit.textContent = "Edit";
-      edit.addEventListener("click", () => {
-        const timeIn = prompt("Time (seconds, mm:ss, or hh:mm:ss)", TS_WATCH.formatTimeSeconds(row.timeSeconds));
-        if (timeIn == null) return;
-        const sec = TS_WATCH.parseTimeInputToSeconds(timeIn);
-        if (sec == null) {
-          alert("Could not parse time.");
-          return;
-        }
-        const noteIn = prompt("Note", row.note);
-        if (noteIn == null) return;
-        const labelIn = prompt("Short label (optional)", row.label || "");
-        if (labelIn == null) return;
-        const updated = (it.timestampNotes || []).map((x) =>
-          x.id === row.id
-            ? { ...x, timeSeconds: sec, note: noteIn.trim(), label: labelIn.trim(), updatedAt: new Date().toISOString() }
-            : x
-        );
-        void (async () => {
-          const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, timestampNotes: updated } });
-          if (r?.ok) {
-            it.timestampNotes = r.item?.timestampNotes || updated;
-            renderList();
-            renderSummary();
-          }
-        })();
-      });
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "btn small danger ghost";
-      del.textContent = "Delete";
-      del.addEventListener("click", () => {
-        if (!confirm("Delete this timestamp note?")) return;
-        const updated = (it.timestampNotes || []).filter((x) => x.id !== row.id);
-        void (async () => {
-          const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, timestampNotes: updated } });
-          if (r?.ok) {
-            it.timestampNotes = r.item?.timestampNotes || updated;
-            renderList();
-            renderSummary();
-          }
-        })();
-      });
-      li.appendChild(link);
-      li.appendChild(txt);
-      li.appendChild(edit);
-      li.appendChild(del);
-      list.appendChild(li);
-    }
-  };
-  renderList();
-  details.appendChild(list);
-  const addRow = document.createElement("div");
-  addRow.className = "timestamp-note-add";
-  const timeInp = document.createElement("input");
-  timeInp.type = "text";
-  timeInp.className = "oobe-input";
-  timeInp.placeholder = "12:30 or seconds";
-  const noteInp = document.createElement("input");
-  noteInp.type = "text";
-  noteInp.className = "oobe-input";
-  noteInp.placeholder = "Note at this time";
-  const btnAdd = document.createElement("button");
-  btnAdd.type = "button";
-  btnAdd.className = "btn small";
-  btnAdd.textContent = "Add";
-  btnAdd.addEventListener("click", async () => {
-    const sec = TS_WATCH.parseTimeInputToSeconds(timeInp.value);
-    if (sec == null) {
-      alert("Enter time as seconds, mm:ss, or hh:mm:ss.");
-      return;
-    }
-    const note = noteInp.value.trim();
-    if (!note) {
-      alert("Enter note text.");
-      return;
-    }
-    const next = [
-      ...(it.timestampNotes || []),
-      { id: `tn_${Date.now()}`, timeSeconds: sec, note, label: "", createdAt: new Date().toISOString() },
-    ];
-    const r = await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, timestampNotes: next } });
-    if (r?.ok) {
-      it.timestampNotes = r.item?.timestampNotes || next;
-      timeInp.value = "";
-      noteInp.value = "";
-      renderList();
-      renderSummary();
-    }
-  });
-  addRow.appendChild(timeInp);
-  addRow.appendChild(noteInp);
-  addRow.appendChild(btnAdd);
-  details.appendChild(addRow);
-  parent.appendChild(details);
+function playlistStackHasContent(pl) {
+  return Boolean(
+    String(pl?.stackNote || "").trim() ||
+      String(pl?.researchSummary || "").trim() ||
+      (pl?.decisions || []).length
+  );
 }
 
 function buildLocalPlaylistStackPanel(pl) {
   const wrap = document.createElement("div");
-  wrap.className = "local-pl-stack-notes";
+  wrap.className = "local-pl-stack-collapsible";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "local-pl-stack-toggle";
+  toggle.textContent = "Stack notes";
+  toggle.title = "Optional notes about this playlist as a whole";
+  toggle.setAttribute("aria-expanded", "false");
+
+  const panel = document.createElement("div");
+  panel.className = "local-pl-stack-panel hidden";
+
+  const syncToggle = () => {
+    toggle.classList.toggle("local-pl-stack-toggle--filled", playlistStackHasContent(pl));
+  };
+  syncToggle();
+
+  toggle.addEventListener("click", () => {
+    const opening = panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !opening);
+    toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+  });
+
+  const body = document.createElement("div");
+  body.className = "local-pl-stack-notes";
 
   const noteLab = document.createElement("label");
   noteLab.className = "ob-label";
@@ -387,6 +1728,7 @@ function buildLocalPlaylistStackPanel(pl) {
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => {
       pl.stackNote = noteTa.value;
+      syncToggle();
       void persistLocalPlaylistStackPatch(pl.id, { stackNote: noteTa.value });
     }, 450);
   });
@@ -404,6 +1746,7 @@ function buildLocalPlaylistStackPanel(pl) {
     clearTimeout(resTimer);
     resTimer = setTimeout(() => {
       pl.researchSummary = resTa.value;
+      syncToggle();
       void persistLocalPlaylistStackPatch(pl.id, { researchSummary: resTa.value });
     }, 450);
   });
@@ -453,6 +1796,7 @@ function buildLocalPlaylistStackPanel(pl) {
           const updated = await persistLocalPlaylistStackPatch(pl.id, { decisions: next });
           if (updated) {
             pl.decisions = updated.decisions;
+            syncToggle();
             renderDecisions();
           }
         })();
@@ -468,6 +1812,7 @@ function buildLocalPlaylistStackPanel(pl) {
           const updated = await persistLocalPlaylistStackPatch(pl.id, { decisions: next });
           if (updated) {
             pl.decisions = updated.decisions;
+            syncToggle();
             renderDecisions();
           }
         })();
@@ -495,17 +1840,22 @@ function buildLocalPlaylistStackPanel(pl) {
       const updated = await persistLocalPlaylistStackPatch(pl.id, { decisions: next });
       if (updated) {
         pl.decisions = updated.decisions;
+        syncToggle();
         renderDecisions();
       }
     })();
   });
 
-  wrap.appendChild(noteLab);
-  wrap.appendChild(noteTa);
-  wrap.appendChild(resLab);
-  wrap.appendChild(resTa);
-  wrap.appendChild(decHead);
-  wrap.appendChild(decList);
+  body.appendChild(noteLab);
+  body.appendChild(noteTa);
+  body.appendChild(resLab);
+  body.appendChild(resTa);
+  body.appendChild(decHead);
+  body.appendChild(decList);
+  panel.appendChild(body);
+  wrap.appendChild(toggle);
+  wrap.appendChild(panel);
+  syncToggle();
   return wrap;
 }
 
@@ -811,7 +2161,7 @@ function interestScore(it) {
   return score;
 }
 
-const PRIORITY_SORT_ORDER = { prio_high: 0, prio_med: 1, prio_low: 2, prio_drop: 3 };
+const PRIORITY_SORT_ORDER = { prio_high: 0, prio_med: 1, prio_low: 2, prio_drop: 2 };
 
 const SIDEBAR_SECTION_CONFIG = [
   { id: "focus", label: "Focus session" },
@@ -867,8 +2217,8 @@ function syncPlaylistViewFromUrl() {
   activeLocalPlaylistId = pl.id;
   currentPlaylistName = pl.name || currentPlaylistName;
   playlistViewMeta = { id: pl.id, name: pl.name || "Playlist" };
-  const ids = new Set((pl.items || []).map((x) => x.videoId).filter(Boolean));
-  if (ids.size) playlistViewVideoIds = ids;
+  playlistViewVideoIds = playlistVideoIdSet(pl);
+  if (!playlistViewVideoIds.size) playlistViewVideoIds = null;
 }
 
 function activatePlaylistView(playlistId, { replaceUrl = true } = {}) {
@@ -878,13 +2228,14 @@ function activatePlaylistView(playlistId, { replaceUrl = true } = {}) {
   activeLocalPlaylistId = pl.id;
   currentPlaylistName = pl.name || currentPlaylistName;
   playlistViewMeta = { id: pl.id, name: pl.name || "Playlist" };
-  const ids = new Set((pl.items || []).map((x) => x.videoId).filter(Boolean));
-  playlistViewVideoIds = ids.size ? ids : null;
+  playlistViewVideoIds = playlistVideoIdSet(pl);
+  if (!playlistViewVideoIds.size) playlistViewVideoIds = null;
   if (replaceUrl) {
     const qp = `?playlist=${encodeURIComponent(pl.id)}`;
     history.replaceState({}, "", `dashboard.html${qp}`);
   }
   syncSidebarCurrentPlaylistUi();
+  renderSidebarRecentTablists();
   setActiveWindow("current");
   render();
 }
@@ -1116,7 +2467,7 @@ function filterItemsBySearchAndFilters(items, q, cat, pri, th, ws) {
   return items.filter((it) => {
     if (!matchesSearch(it, q)) return false;
     if (cat && it.category !== cat) return false;
-    if (pri && it.priority !== pri) return false;
+    if (pri && normalizeItemPriority(it.priority) !== pri) return false;
     if (th && it.themeId !== th) return false;
     if (ws && itemWatchState(it) !== ws) return false;
     return true;
@@ -1138,7 +2489,7 @@ function lastOpenedMs(it) {
 function sortItemsForSmartGroupBy(items, groupBy) {
   const copy = [...items];
   const safe = (s) => String(s || "").toLowerCase();
-  const priRank = (p) => (PRIORITY_SORT_ORDER[p] != null ? PRIORITY_SORT_ORDER[p] : 99);
+  const priRank = (p) => (PRIORITY_SORT_ORDER[normalizeItemPriority(p)] != null ? PRIORITY_SORT_ORDER[normalizeItemPriority(p)] : 99);
   switch (groupBy) {
     case "channel":
       copy.sort(
@@ -1205,7 +2556,7 @@ function getSmartPlaylistSourceItems(source) {
       allItems,
       searchEl.value,
       filterCategory.value,
-      filterPriorityValue,
+      "",
       filterItemCategory.value,
       filterWatchStateValue
     );
@@ -1218,7 +2569,7 @@ function getSmartPlaylistSourceItems(source) {
   const fp = document.getElementById("spFilterPriority")?.value || "";
   return items.filter((it) => {
     if (ft && it.themeId !== ft) return false;
-    if (fp && it.priority !== fp) return false;
+    if (fp && normalizeItemPriority(it.priority) !== fp) return false;
     if (fc && !String(it.channel || "").toLowerCase().includes(fc)) return false;
     return true;
   });
@@ -1364,9 +2715,6 @@ const summary = document.getElementById("summary");
 const searchEl = document.getElementById("search");
 const filterCategory = document.getElementById("filterCategory");
 const filterItemCategory = document.getElementById("filterItemCategory");
-const filterPriorityBar = document.getElementById("filterPriorityBar");
-/** Empty string = all priorities. */
-let filterPriorityValue = "";
 const quickSort = document.getElementById("quickSort");
 const viewModeEl = document.getElementById("viewMode");
 const gridSizeEl = document.getElementById("gridSize");
@@ -1394,7 +2742,6 @@ const playlistBudget = document.getElementById("playlistBudget");
 const playlistSort = document.getElementById("playlistSort");
 const btnBuildPlaylist = document.getElementById("btnBuildPlaylist");
 const playlistOut = document.getElementById("playlistOut");
-const btnCompactCards = document.getElementById("btnCompactCards");
 const btnExportYouTube = document.getElementById("btnExportYouTube");
 const ytExportModal = document.getElementById("ytExportModal");
 let ytImportPlaylistsCache = [];
@@ -1454,45 +2801,6 @@ function fillThemeFilter() {
     `<option value="">All categories</option>` +
       themes.map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`).join("")
   );
-}
-
-function renderPriorityFilterBar() {
-  if (!filterPriorityBar) return;
-  filterPriorityBar.innerHTML = "";
-  const all = document.createElement("button");
-  all.type = "button";
-  all.className = "filter-pri-btn filter-pri-btn--all" + (!filterPriorityValue ? " active" : "");
-  all.setAttribute("data-priority-all", "1");
-  all.textContent = "All";
-  filterPriorityBar.appendChild(all);
-  for (const p of PRIORITY_LEVELS) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `filter-pri-btn ${p.colorClass}${filterPriorityValue === p.id ? " active" : ""}`;
-    b.setAttribute("data-priority", p.id);
-    b.title = p.label;
-    b.textContent = p.short;
-    filterPriorityBar.appendChild(b);
-  }
-}
-
-if (filterPriorityBar && !filterPriorityBar.dataset.bound) {
-  filterPriorityBar.dataset.bound = "1";
-  filterPriorityBar.addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn || !filterPriorityBar.contains(btn)) return;
-    if (btn.hasAttribute("data-priority-all")) filterPriorityValue = "";
-    else filterPriorityValue = btn.getAttribute("data-priority") || "";
-    filterPriorityBar.querySelectorAll("button").forEach((b) => {
-      const isAll = b.hasAttribute("data-priority-all");
-      const pv = isAll ? "" : b.getAttribute("data-priority") || "";
-      b.classList.toggle(
-        "active",
-        (!filterPriorityValue && isAll) || (Boolean(filterPriorityValue) && filterPriorityValue === pv)
-      );
-    });
-    render();
-  });
 }
 
 function escapeHtml(s) {
@@ -1907,7 +3215,6 @@ async function loadState() {
 
   fillCategoryFilter();
   fillThemeFilter();
-  renderPriorityFilterBar();
   renderThemeSidebars();
   initWatchDateDefaults();
   updateWatchPickerVisibility();
@@ -2025,145 +3332,66 @@ function renderLatestImportPanel() {
 function visibleItems() {
   const q = searchEl.value;
   const cat = filterCategory.value;
-  const pri = filterPriorityValue;
   const th = filterItemCategory.value;
   const ws = filterWatchStateValue;
-  let filtered = allItems.filter((it) => {
-    if (!matchesSearch(it, q)) return false;
-    if (cat && it.category !== cat) return false;
-    if (pri && it.priority !== pri) return false;
-    if (th && it.themeId !== th) return false;
-    if (ws && itemWatchState(it) !== ws) return false;
-    return true;
-  });
   if (playlistViewVideoIds && playlistViewVideoIds.size > 0) {
-    filtered = filtered.filter((it) => it.videoId && playlistViewVideoIds.has(it.videoId));
+    const pl = playlistViewMeta?.id ? localPlaylists.find((x) => x.id === playlistViewMeta.id) : null;
+    if (pl) return visibleItemsFromPlaylist(pl, q, cat, th, ws);
   }
+  let filtered = allItems.filter((it) => itemMatchesVisibleFilters(it, q, cat, th, ws));
   return sortCopy(filtered, quickSort.value);
 }
 
 function render() {
   const list = visibleItems();
-  const btnRestorePl = document.getElementById("btnRestorePlaylistSession");
-  if (btnRestorePl) {
-    const showPlRestore = Boolean(playlistViewMeta?.id);
-    btnRestorePl.classList.toggle("hidden", !showPlRestore);
-    if (showPlRestore) {
-      const pl = localPlaylists.find((x) => x.id === playlistViewMeta.id);
-      const n = (pl?.items || []).length;
-      btnRestorePl.textContent = n ? `Restore playlist session (${n})` : "Restore playlist session";
-    }
+  const toolsBar = document.getElementById("playlistToolsBar");
+  const onPlaylist = Boolean(playlistViewMeta?.id);
+  toolsBar?.classList.toggle("hidden", !onPlaylist);
+  if (toolsBar && onPlaylist) {
+    const pl = localPlaylists.find((x) => x.id === playlistViewMeta.id);
+    const n = (pl?.items || []).length;
+    const restoreBtn = document.getElementById("btnRestorePlaylistSession");
+    if (restoreBtn) restoreBtn.textContent = n ? `Restore session (${n})` : "Restore session";
   }
+  renderCurrentPlaylistHead();
   if (summary) {
-    summary.classList.toggle("summary--playlist-filter", Boolean(playlistViewVideoIds?.size && playlistViewMeta));
+    summary.classList.remove("summary--playlist-filter");
     summary.replaceChildren();
     const base = `${list.length} shown · ${allItems.length} saved · ${themes.length} categories`;
     summary.appendChild(document.createTextNode(base));
-    if (playlistViewVideoIds?.size && playlistViewMeta) {
-      summary.appendChild(
-        document.createTextNode(
-          ` · Playlist “${playlistViewMeta.name}” (${list.length} in library / ${playlistViewVideoIds.size} in snapshot)`
-        )
-      );
-      const plCtx = localPlaylists.find((x) => x.id === playlistViewMeta.id);
-      if (plCtx) {
-        const stackPanel = buildLocalPlaylistStackPanel(plCtx);
-        stackPanel.classList.add("summary-stack-notes");
-        summary.appendChild(stackPanel);
-      }
-      const clearBtn = document.createElement("button");
-      clearBtn.type = "button";
-      clearBtn.className = "btn small ghost";
-      clearBtn.textContent = "Show entire library";
-      clearBtn.addEventListener("click", () => {
-        playlistViewVideoIds = null;
-        playlistViewMeta = null;
-        history.replaceState({}, "", "dashboard.html");
-        render();
-      });
-      summary.appendChild(clearBtn);
-    }
   }
   empty.classList.toggle("hidden", list.length > 0);
+  updatePlaylistGridHint(list);
   grid.innerHTML = "";
   const isGridView = viewMode === "grid";
   const isListView = viewMode === "list";
   grid.classList.toggle("grid-view", isGridView);
 
   for (const it of list) {
+    if (isGridView) {
+      grid.appendChild(renderGridCard(it));
+      continue;
+    }
+    if (isListView) {
+      grid.appendChild(renderListCard(it));
+      continue;
+    }
+
     const card = document.createElement("article");
-    const compact = isListView || (viewMode === "details" && compactCardRows);
-    card.className = "card" + (compact ? " card--compact" : "") + (isGridView ? " card--grid" : "");
-    if (isGridView && gridTileSize <= 104) card.classList.add("card--grid-min");
+    card.className = "card";
     card.dataset.id = it.id;
-    card.draggable = true;
-    card.addEventListener("dragstart", (e) => {
-      const interactive = e.target?.closest("button, input, select, textarea, a");
-      if (interactive) {
-        e.preventDefault();
-        return;
-      }
-      draggingPlaylistItemIds = getDragPlaylistItemIds(it.id);
-      e.dataTransfer.effectAllowed = "copy";
-      e.dataTransfer.setData("text/plain", "tubestack-playlist-items");
-      card.classList.add("card--dragging");
-    });
-    card.addEventListener("dragend", () => {
-      draggingPlaylistItemIds = [];
-      card.classList.remove("card--dragging");
-      document.querySelectorAll(".playlist-drop-target.drop-active").forEach((x) => x.classList.remove("drop-active"));
-    });
+    const playlistReorder = isPlaylistEditMode();
+    wireCardDrag(card, it, playlistReorder);
 
-    const pick = document.createElement("div");
-    pick.className = "card-pick";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = selected.has(it.id);
-    cb.addEventListener("change", () => {
-      if (cb.checked) selected.add(it.id);
-      else selected.delete(it.id);
-    });
-    pick.appendChild(cb);
+    const pick = makePickCheckbox(it);
 
-    const thumb = document.createElement("div");
-    thumb.className = "thumb-wrap";
-    const img = document.createElement("img");
-    img.alt = "";
-    img.loading = "lazy";
-    img.src =
-      it.thumbnail ||
-      (it.videoId ? `https://i.ytimg.com/vi/${it.videoId}/mqdefault.jpg` : "");
-    thumb.appendChild(img);
-    const d = getDuration(it);
-    if (d != null) {
-      const badge = document.createElement("span");
-      badge.className = "dur-badge";
-      badge.textContent = formatDuration(d);
-      thumb.appendChild(badge);
-    }
+    const thumb = makeThumbWrap(it);
 
-    const priStack = document.createElement("div");
-    priStack.className = "card-priority-stack";
-    for (const p of PRIORITY_LEVELS) {
-      const pb = document.createElement("button");
-      pb.type = "button";
-      pb.className = `pri-btn ${p.colorClass}${it.priority === p.id ? " pri-btn--on" : ""}`;
-      pb.title = p.label;
-      pb.textContent = p.short;
-      pb.addEventListener("click", async () => {
-        await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, priority: p.id } });
-        it.priority = p.id;
-        for (const c of priStack.querySelectorAll(".pri-btn")) {
-          c.classList.remove("pri-btn--on");
-        }
-        pb.classList.add("pri-btn--on");
-      });
-      priStack.appendChild(pb);
-    }
+    const priStack = buildPriorityControl(it, { inline: false });
 
     const mediaRow = document.createElement("div");
     mediaRow.className = "card-media-row";
-    mediaRow.appendChild(priStack);
+    if (!isListView) mediaRow.appendChild(priStack);
     mediaRow.appendChild(thumb);
 
     const rowCat = document.createElement("div");
@@ -2179,8 +3407,8 @@ function render() {
       selCat.appendChild(opt);
     }
     selCat.addEventListener("change", async () => {
-      await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, category: selCat.value } });
-      it.category = selCat.value;
+      const ok = await applyDashboardItemUpdate(it, { category: selCat.value });
+      if (ok) it.category = selCat.value;
     });
     rowCat.appendChild(labCat);
     rowCat.appendChild(selCat);
@@ -2188,15 +3416,17 @@ function render() {
     const thumbCol = document.createElement("div");
     thumbCol.className = "card-thumb-col";
     thumbCol.appendChild(mediaRow);
-    thumbCol.appendChild(rowCat);
 
-    const body = document.createElement("div");
-    body.className = "card-body";
+    const detailsInner = document.createElement("div");
+    detailsInner.className = "card-details-inner";
+
+    const main = document.createElement("div");
+    main.className = "card-details-main";
 
     const titleRow = document.createElement("div");
     titleRow.className = "title-row";
     const a = document.createElement("a");
-    a.href = it.url;
+    a.href = itemOpenUrl(it);
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     a.textContent = it.title || "Untitled";
@@ -2212,40 +3442,37 @@ function render() {
 
     const meta = document.createElement("div");
     meta.className = "meta";
-    if (compact || (isGridView && gridTileSize <= 104)) {
-      const creator = it.channel || "Unknown creator";
-      const len = getDuration(it);
-      const wsLab = TS_WATCH ? TS_WATCH.watchStateLabel(itemWatchState(it)) : "";
-      meta.textContent = `${creator} · ${len != null ? formatDuration(len) : "—"}${wsLab ? ` · ${wsLab}` : ""}`;
-    } else {
-      const tl = timeLeft(it);
-      const comp = completion(it);
-      const parts = [];
-      if (it.channel) parts.push(it.channel);
-      parts.push(`Time left: ${tl != null ? formatDuration(tl) : "—"}`);
-      parts.push(`Watched: ${pct(comp)}`);
-      parts.push(`Interest: ${Math.round(interestScore(it))}`);
-      meta.textContent = parts.join(" · ");
-    }
+    const tl = timeLeft(it);
+    const comp = completion(it);
+    const parts = [];
+    if (it.channel) parts.push(it.channel);
+    parts.push(`Time left: ${tl != null ? formatDuration(tl) : "—"}`);
+    parts.push(`Watched: ${pct(comp)}`);
+    parts.push(`Interest: ${Math.round(interestScore(it))}`);
+    meta.textContent = parts.join(" · ");
+
+    const detailsSide = document.createElement("div");
+    detailsSide.className = "card-details-fields";
 
     const rowTheme = document.createElement("div");
-    rowTheme.className = "row";
+    rowTheme.className = "row card-details-field";
     const labTh = document.createElement("label");
     labTh.textContent = "Category";
     const selTh = document.createElement("select");
     fillThemeSelectOptions(selTh, it.themeId);
     selTh.addEventListener("change", async () => {
       const themeId = selTh.value || null;
-      await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, themeId } });
-      it.themeId = themeId;
+      const ok = await applyDashboardItemUpdate(it, { themeId });
+      if (ok) it.themeId = themeId;
     });
     rowTheme.appendChild(labTh);
     rowTheme.appendChild(selTh);
 
     const rowAlbum = document.createElement("div");
-    rowAlbum.className = "row row-under-thumb row-album-under-thumb";
+    rowAlbum.className = "row card-details-field row-album-field";
     const labAl = document.createElement("label");
-    labAl.textContent = "Album / series";
+    labAl.textContent = "Album";
+    labAl.title = "Album / series";
     const albumSelect = document.createElement("select");
     const existingAlbums = [...new Set(allItems.map((x) => (x.libraryAlbum || "").trim()).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b)
@@ -2279,8 +3506,8 @@ function render() {
       clearTimeout(albumTimer);
       albumTimer = setTimeout(async () => {
         const val = String(v || "").trim();
-        await send("TUBESTACK_UPDATE_ITEM", { patch: { id: it.id, libraryAlbum: val || null } });
-        it.libraryAlbum = val || null;
+        const ok = await applyDashboardItemUpdate(it, { libraryAlbum: val || null });
+        if (ok) it.libraryAlbum = val || null;
       }, 450);
     };
     albumSelect.addEventListener("change", () => {
@@ -2338,47 +3565,46 @@ function render() {
       : "Suggested tags arrive in a later AI phase.";
     sug.innerHTML = `<span>Suggested:</span> ${escapeHtml(sugTags)}`;
 
-    body.appendChild(titleRow);
-    body.appendChild(meta);
-    if (!compact) {
-      body.appendChild(
-        buildWatchStateRow(it, (ws) => {
-          const badge = titleRow.querySelector(".watch-state-badge");
-          if (badge && TS_WATCH) {
-            badge.textContent = TS_WATCH.watchStateLabel(ws);
-            badge.className = `watch-state-badge watch-state-badge--${ws}`;
-          }
-        })
-      );
-    }
-    body.appendChild(rowTheme);
-    body.appendChild(rowTags);
-    body.appendChild(sug);
-    if (!compact) {
-      buildCollapsibleVideoNote(body, it);
-      buildTimestampNotesSection(body, it);
+    const rowWatchState = buildWatchStateRow(it, (ws) => {
+      const badge = titleRow.querySelector(".watch-state-badge");
+      if (badge && TS_WATCH) {
+        badge.textContent = TS_WATCH.watchStateLabel(ws);
+        badge.className = `watch-state-badge watch-state-badge--${ws}`;
+      }
+    });
+    rowWatchState.classList.add("card-details-field");
+    const watchLab = rowWatchState.querySelector("label");
+    if (watchLab) {
+      watchLab.textContent = "Watch";
+      watchLab.title = "Watch State";
     }
 
-    thumbCol.appendChild(rowAlbum);
+    detailsSide.appendChild(rowAlbum);
+    detailsSide.appendChild(rowTheme);
+    detailsSide.appendChild(rowWatchState);
+
+    main.appendChild(titleRow);
+    main.appendChild(meta);
+    main.appendChild(detailsSide);
+    main.appendChild(rowTags);
+    main.appendChild(sug);
+    main.appendChild(buildCardThumbNotesBlock(it));
+
+    detailsInner.appendChild(main);
+
+    thumbCol.appendChild(rowCat);
 
     card.appendChild(pick);
     card.appendChild(thumbCol);
-    card.appendChild(body);
+    card.appendChild(detailsInner);
     grid.appendChild(card);
   }
   renderLatestImportPanel();
   renderSubscriptionDirectory();
   if (activeWindow === "aiCategorize") updateAiCatScopeCount();
-  btnDeleteLocalPlaylist?.classList.toggle("hidden", !activeLocalPlaylistId);
-}
-
-function buildOpenUrl(it) {
-  const vid = it.videoId;
-  if (!vid) return it.url;
-  const pos = getPlayhead(it);
-  const base = `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
-  if (pos > 2) return `${base}&t=${Math.floor(pos)}s`;
-  return base;
+  btnDeleteLocalPlaylist?.classList.toggle("hidden", !getEditingPlaylistId());
+  updateBulkCheckButtons();
+  updateBulkBarUi();
 }
 
 function bindPlaylistPackDelegation() {
@@ -2884,17 +4110,21 @@ function renderSidebarRecentTablists() {
   if (!sidebarRecentTablists) return;
   sidebarRecentTablists.innerHTML = "";
   const pool = localPlaylistsVisibleInUi();
-  const recent = [...pool]
+  const currentId = activeLocalPlaylistId || null;
+  const poolMinusCurrent = currentId ? pool.filter((p) => p.id !== currentId) : pool;
+  const recent = [...poolMinusCurrent]
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-    .slice(0, recentTablistsExpanded ? pool.length : 6);
+    .slice(0, recentTablistsExpanded ? poolMinusCurrent.length : 6);
   if (!recent.length) {
-    const p = document.createElement("div");
-    p.className = "panel-hint";
-    p.textContent =
-      localPlaylists.length && settings.libraryShowYoutubeImported === false
-        ? "Imported playlists hidden — see Settings."
-        : "No saved tab lists yet.";
-    sidebarRecentTablists.appendChild(p);
+    if (!pool.length) {
+      const p = document.createElement("div");
+      p.className = "panel-hint";
+      p.textContent =
+        localPlaylists.length && settings.libraryShowYoutubeImported === false
+          ? "Imported playlists hidden — see Settings."
+          : "No saved tab lists yet.";
+      sidebarRecentTablists.appendChild(p);
+    }
   } else {
     for (const pl of recent) {
       const b = document.createElement("button");
@@ -2919,9 +4149,9 @@ function renderSidebarRecentTablists() {
     }
   }
   if (btnRecentTablistsMore) {
-    if (pool.length <= 6) recentTablistsExpanded = false;
+    if (poolMinusCurrent.length <= 6) recentTablistsExpanded = false;
     btnRecentTablistsMore.textContent = recentTablistsExpanded ? "Show less" : "Show more";
-    btnRecentTablistsMore.classList.toggle("hidden", pool.length <= 6);
+    btnRecentTablistsMore.classList.toggle("hidden", poolMinusCurrent.length <= 6);
   }
 }
 
@@ -3122,12 +4352,13 @@ function setActiveWindow(next) {
   layoutRoot?.classList.toggle("layout--sidebar-hidden", sidebarHidden);
   btnShowSidebarFloating?.classList.toggle("hidden", !sidebarHidden);
   if (btnToggleSidebar) btnToggleSidebar.textContent = "Hide sidebar";
+  updateBulkCheckButtons();
 }
 
 function applyViewControlsUi() {
   if (viewModeEl) viewModeEl.value = viewMode;
   if (gridSizeEl) gridSizeEl.value = String(gridTileSize);
-  gridSizeWrap?.classList.toggle("hidden", viewMode !== "grid");
+  gridSizeWrap?.classList.add("hidden");
   grid?.style.setProperty("--grid-tile-size", `${gridTileSize}px`);
 }
 
@@ -3135,6 +4366,22 @@ function setupWindowLayout() {
   const searchWrapEl = document.querySelector(".search-wrap") || document.createElement("div");
   const filtersEl = document.querySelector(".filters") || document.createElement("div");
   const bulkEl = document.querySelector(".bulk") || document.createElement("div");
+  const playlistToolsEl = document.getElementById("playlistToolsBar");
+  const playlistHead = document.createElement("div");
+  playlistHead.id = "currentPlaylistHead";
+  playlistHead.className = "current-playlist-head hidden";
+  playlistHead.setAttribute("role", "region");
+  playlistHead.setAttribute("aria-label", "Current playlist");
+
+  const playlistHeadMain = document.createElement("div");
+  playlistHeadMain.id = "currentPlaylistHeadMain";
+  playlistHeadMain.className = "current-playlist-head-main";
+  playlistHead.appendChild(playlistHeadMain);
+
+  const playlistActions = document.createElement("div");
+  playlistActions.className = "current-playlist-actions";
+  if (playlistToolsEl) playlistActions.appendChild(playlistToolsEl);
+  playlistHead.appendChild(playlistActions);
 
   const shell = document.createElement("div");
   shell.className = "current-controls-shell";
@@ -3146,52 +4393,49 @@ function setupWindowLayout() {
   const topActions = document.createElement("div");
   topActions.className = "current-controls-actions";
 
-  const sortBtn = document.createElement("button");
-  sortBtn.type = "button";
-  sortBtn.className = "btn small ghost compact-toggle-btn";
-  sortBtn.id = "btnCompactSortToggle";
-  sortBtn.setAttribute("aria-expanded", "false");
-  sortBtn.title = "Show sort and view controls";
-  sortBtn.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" class="compact-icon">
-      <path d="M7 4v14m0 0l-3-3m3 3l3-3M17 20V6m0 0l-3 3m3-3l3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  `;
+  const viewIconSvg =
+    '<svg class="compact-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>';
+  const sortIconSvg =
+    '<svg class="compact-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2v12"/><path d="M3 4l2-2 2 2"/><path d="M11 14V2"/><path d="M9 12l2 2 2-2"/></svg>';
 
   const viewBtn = document.createElement("button");
   viewBtn.type = "button";
-  viewBtn.className = "btn small ghost compact-toggle-btn";
+  viewBtn.className = "btn small ghost compact-toggle-btn compact-toggle-btn--icon";
   viewBtn.id = "btnCompactViewToggle";
   viewBtn.setAttribute("aria-expanded", "false");
-  viewBtn.title = "Show view controls";
-  viewBtn.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" class="compact-icon">
-      <path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-    </svg>
-  `;
+  viewBtn.setAttribute("aria-controls", "compactViewPanel");
+  viewBtn.title = "View options";
+  viewBtn.setAttribute("aria-label", "View");
+  viewBtn.innerHTML = viewIconSvg;
 
-  const saveBtn = document.createElement("button");
-  saveBtn.type = "button";
-  saveBtn.className = "btn small primary compact-toggle-btn";
-  saveBtn.id = "btnCompactSaveToggle";
-  saveBtn.setAttribute("aria-expanded", "false");
-  saveBtn.textContent = "Actions";
-  saveBtn.title = "Open actions: save playlist, bulk remove, delete playlist…";
+  const sortBtn = document.createElement("button");
+  sortBtn.type = "button";
+  sortBtn.className = "btn small ghost compact-toggle-btn compact-toggle-btn--icon";
+  sortBtn.id = "btnCompactSortToggle";
+  sortBtn.setAttribute("aria-expanded", "false");
+  sortBtn.setAttribute("aria-controls", "compactSortPanel");
+  sortBtn.title = "Sort and filter";
+  sortBtn.setAttribute("aria-label", "Sort and filter");
+  sortBtn.innerHTML = sortIconSvg;
 
-  topActions.appendChild(sortBtn);
+  const selectedBtn = document.createElement("button");
+  selectedBtn.type = "button";
+  selectedBtn.className = "btn small ghost compact-toggle-btn";
+  selectedBtn.id = "btnCompactSaveToggle";
+  selectedBtn.setAttribute("aria-expanded", "false");
+  selectedBtn.textContent = "Selected";
+  selectedBtn.title = "Actions for checked videos";
+
   topActions.appendChild(viewBtn);
-  topActions.appendChild(saveBtn);
+  topActions.appendChild(sortBtn);
+  topActions.appendChild(selectedBtn);
   top.appendChild(topActions);
   shell.appendChild(top);
-
-  const sortPanel = document.createElement("div");
-  sortPanel.className = "compact-panel compact-sort-panel hidden";
-  sortPanel.id = "compactSortPanel";
-  sortPanel.appendChild(filtersEl);
 
   const viewPanel = document.createElement("div");
   viewPanel.className = "compact-panel compact-view-panel hidden";
   viewPanel.id = "compactViewPanel";
+
   const viewBar = document.createElement("div");
   viewBar.className = "compact-view-bar";
   const viewModes = [
@@ -3211,24 +4455,25 @@ function setupWindowLayout() {
       localStorage.setItem("ts_view_mode", viewMode);
       applyViewControlsUi();
       render();
-      for (const x of viewBar.querySelectorAll(".compact-view-btn")) {
-        x.classList.toggle("active", x.dataset.viewMode === viewMode);
-      }
+      syncViewPanelUi();
     });
     viewBar.appendChild(b);
   }
+
   const sizeWrap = document.createElement("label");
   sizeWrap.className = "compact-view-size hidden";
   const sizeTxt = document.createElement("span");
-  sizeTxt.textContent = "Size";
+  sizeTxt.className = "compact-view-size-label";
+  sizeTxt.textContent = "Tile size";
   const sizeInput = document.createElement("input");
   sizeInput.type = "range";
-  sizeInput.min = "84";
-  sizeInput.max = "180";
+  sizeInput.min = String(GRID_TILE_MIN);
+  sizeInput.max = String(GRID_TILE_MAX);
   sizeInput.step = "4";
   sizeInput.value = String(gridTileSize);
+  sizeInput.setAttribute("aria-label", "Grid tile size");
   sizeInput.addEventListener("input", () => {
-    gridTileSize = Math.max(84, Math.min(180, Number(sizeInput.value) || 132));
+    gridTileSize = clampGridTileSize(sizeInput.value);
     localStorage.setItem("ts_grid_tile_size", String(gridTileSize));
     if (gridSizeEl) gridSizeEl.value = String(gridTileSize);
     applyViewControlsUi();
@@ -3236,50 +4481,78 @@ function setupWindowLayout() {
   });
   sizeWrap.appendChild(sizeTxt);
   sizeWrap.appendChild(sizeInput);
-  viewPanel.appendChild(viewBar);
-  viewPanel.appendChild(sizeWrap);
 
-  const savePanel = document.createElement("div");
-  savePanel.className = "compact-panel compact-save-panel hidden";
-  savePanel.id = "compactSavePanel";
-  savePanel.appendChild(bulkEl);
+  const viewRow = document.createElement("div");
+  viewRow.className = "compact-view-row";
+  viewRow.appendChild(viewBar);
+  viewRow.appendChild(sizeWrap);
+  viewPanel.appendChild(viewRow);
 
-  shell.appendChild(sortPanel);
+  const sortPanel = document.createElement("div");
+  sortPanel.className = "compact-panel compact-sort-panel hidden";
+  sortPanel.id = "compactSortPanel";
+  sortPanel.appendChild(filtersEl);
+
+  const selectedPanel = document.createElement("div");
+  selectedPanel.className = "compact-panel compact-selected-panel hidden";
+  selectedPanel.id = "compactSavePanel";
+  selectedPanel.appendChild(bulkEl);
+
   shell.appendChild(viewPanel);
-  shell.appendChild(savePanel);
+  shell.appendChild(sortPanel);
+  shell.appendChild(selectedPanel);
+  windowCurrentControlsMount?.appendChild(playlistHead);
   windowCurrentControlsMount?.appendChild(shell);
 
-  sortBtn.addEventListener("click", () => {
-    const nextOpen = sortPanel.classList.contains("hidden");
-    sortPanel.classList.toggle("hidden", !nextOpen);
-    viewPanel.classList.add("hidden");
-    savePanel.classList.add("hidden");
-    sortBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-    viewBtn.setAttribute("aria-expanded", "false");
-    saveBtn.setAttribute("aria-expanded", "false");
-  });
-  viewBtn.addEventListener("click", () => {
-    const nextOpen = viewPanel.classList.contains("hidden");
-    viewPanel.classList.toggle("hidden", !nextOpen);
-    sortPanel.classList.add("hidden");
-    savePanel.classList.add("hidden");
-    viewBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-    sortBtn.setAttribute("aria-expanded", "false");
-    saveBtn.setAttribute("aria-expanded", "false");
+  const syncViewPanelUi = () => {
     for (const x of viewBar.querySelectorAll(".compact-view-btn")) {
       x.classList.toggle("active", x.dataset.viewMode === viewMode);
     }
     sizeWrap.classList.toggle("hidden", viewMode !== "grid");
     sizeInput.value = String(gridTileSize);
-  });
-  saveBtn.addEventListener("click", () => {
-    const nextOpen = savePanel.classList.contains("hidden");
-    savePanel.classList.toggle("hidden", !nextOpen);
-    sortPanel.classList.add("hidden");
+  };
+
+  const closePanels = () => {
     viewPanel.classList.add("hidden");
-    saveBtn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-    sortBtn.setAttribute("aria-expanded", "false");
+    sortPanel.classList.add("hidden");
+    selectedPanel.classList.add("hidden");
     viewBtn.setAttribute("aria-expanded", "false");
+    sortBtn.setAttribute("aria-expanded", "false");
+    selectedBtn.setAttribute("aria-expanded", "false");
+    viewBtn.classList.remove("active");
+    sortBtn.classList.remove("active");
+    selectedBtn.classList.remove("active");
+  };
+
+  viewBtn.addEventListener("click", () => {
+    const nextOpen = viewPanel.classList.contains("hidden");
+    closePanels();
+    if (nextOpen) {
+      viewPanel.classList.remove("hidden");
+      viewBtn.setAttribute("aria-expanded", "true");
+      viewBtn.classList.add("active");
+      syncViewPanelUi();
+    }
+  });
+
+  sortBtn.addEventListener("click", () => {
+    const nextOpen = sortPanel.classList.contains("hidden");
+    closePanels();
+    if (nextOpen) {
+      sortPanel.classList.remove("hidden");
+      sortBtn.setAttribute("aria-expanded", "true");
+      sortBtn.classList.add("active");
+    }
+  });
+
+  selectedBtn.addEventListener("click", () => {
+    const nextOpen = selectedPanel.classList.contains("hidden");
+    closePanels();
+    if (nextOpen) {
+      selectedPanel.classList.remove("hidden");
+      selectedBtn.setAttribute("aria-expanded", "true");
+      selectedBtn.classList.add("active");
+    }
   });
 
   const currentSectionIds = [];
@@ -3564,20 +4837,25 @@ viewModeEl?.addEventListener("change", () => {
   render();
 });
 gridSizeEl?.addEventListener("input", () => {
-  gridTileSize = Math.max(84, Math.min(180, Number(gridSizeEl.value) || 132));
+  gridTileSize = clampGridTileSize(gridSizeEl.value);
   localStorage.setItem("ts_grid_tile_size", String(gridTileSize));
   applyViewControlsUi();
   render();
 });
-btnCompactCards?.addEventListener("click", () => {
-  compactCardRows = !compactCardRows;
-  btnCompactCards.textContent = compactCardRows ? "Show full details" : "Show less details";
-  render();
-});
 searchEl.addEventListener("search", () => render());
 sidebarCurrentPlaylistLink?.addEventListener("click", () => {
+  if (activeLocalPlaylistId) {
+    activatePlaylistView(activeLocalPlaylistId, { replaceUrl: true });
+  } else {
+    playlistViewVideoIds = null;
+    playlistViewMeta = null;
+    history.replaceState({}, "", "dashboard.html");
+    render();
+  }
   setActiveWindow("current");
 });
+document.getElementById("btnCheckAllVisible")?.addEventListener("click", () => checkAllVisibleItems());
+document.getElementById("btnUncheckAllVisible")?.addEventListener("click", () => uncheckAllVisibleItems());
 btnSidebarRenamePlaylist?.addEventListener("click", () => openSidebarPlaylistRename());
 sidebarPlaylistRenameInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
@@ -4116,38 +5394,29 @@ document.getElementById("btnRestorePlaylistSession")?.addEventListener("click", 
   await restoreLocalPlaylistSessionById(pid);
 });
 
-document.getElementById("btnBulkWatchState")?.addEventListener("click", async () => {
-  const ids = [...selected];
-  const ws = document.getElementById("bulkWatchState")?.value || "";
-  if (!ids.length) {
-    alert("Select at least one video.");
-    return;
-  }
-  if (!ws) {
-    alert("Choose a Watch State.");
-    return;
-  }
-  const r = await send("TUBESTACK_BULK_UPDATE_ITEMS", { ids, patch: { watchState: ws } });
-  if (!r?.ok) {
-    alert(r?.error || "Could not update Watch State.");
-    return;
-  }
-  await loadState();
-  render();
+document.getElementById("bulkWatchState")?.addEventListener("change", (e) => {
+  const ws = e.target.value;
+  if (!ws) return;
+  void bulkApplyFromSelect(e.target, { watchState: ws });
 });
 
 btnDelete.addEventListener("click", async () => {
   const ids = [...selected];
   if (!ids.length) {
-    alert("Select at least one video.");
+    alert("Check at least one video.");
     return;
   }
-  if (!confirm(`Remove ${ids.length} video(s) from TubeStack?`)) return;
+  if (!confirm(`Delete ${ids.length} video(s) from your library?`)) return;
   await send("TUBESTACK_DELETE_ITEMS", { ids });
   ids.forEach((id) => selected.delete(id));
   allItems = allItems.filter((x) => !ids.includes(x.id));
   render();
 });
+
+document.getElementById("btnBulkMove")?.addEventListener("click", () => void bulkMoveSelectedToPlaylist());
+document.getElementById("btnBulkRemoveFromPlaylist")?.addEventListener("click", () =>
+  void bulkRemoveSelectedFromPlaylist()
+);
 
 btnDeleteLocalPlaylist?.addEventListener("click", async () => {
   const id = activeLocalPlaylistId;
@@ -4233,11 +5502,7 @@ document.getElementById("obNext0").addEventListener("click", () => showObStep(1)
 
 document.getElementById("obOpenSetupGuide")?.addEventListener("click", () => {
   const url = chrome.runtime.getURL("dashboard/setup-guide.html");
-  chrome.windows.create({ url, type: "normal", focused: true }, () => {
-    if (chrome.runtime.lastError) {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-  });
+  chrome.tabs.create({ url, active: true });
 });
 
 document.getElementById("obApiKey")?.addEventListener("input", () => {

@@ -471,20 +471,8 @@
           />
         </label>
         <div class="filters">
-          <div class="filter-field view-field hidden">
-            <span class="label">View</span>
-            <select id="viewMode">
-              <option value="list">List</option>
-              <option value="details" selected>Details</option>
-              <option value="grid">Grid</option>
-            </select>
-            <div id="gridSizeWrap" class="grid-size-wrap hidden">
-              <span class="label">Grid size</span>
-              <input type="range" id="gridSize" min="84" max="180" step="4" value="132" />
-            </div>
-          </div>
           <div class="filter-field">
-            <span class="label">Quick sort</span>
+            <span class="label">Sort</span>
             <select id="quickSort">
               <option value="title_asc">Title</option>
               <option value="creator_asc">Creator</option>
@@ -495,7 +483,7 @@
             </select>
           </div>
           <div class="filter-field">
-            <span class="label">Categories</span>
+            <span class="label">Category</span>
             <select id="filterItemCategory"></select>
           </div>
           <div class="filter-field">
@@ -503,32 +491,43 @@
             <select id="filterCategory"></select>
           </div>
           <div class="filter-field">
-            <span class="label">Watch State</span>
+            <span class="label">Watch state</span>
             <select id="filterWatchState" aria-label="Filter by Watch State"></select>
           </div>
-          <div class="filter-field filter-field-priority">
-            <span class="label">Priority</span>
-            <div id="filterPriorityBar" class="filter-priority-bar" role="group" aria-label="Filter by priority"></div>
+        </div>
+        <div id="bulkBar" class="bulk bulk-bar">
+          <div class="bulk-row bulk-row--select">
+            <span id="bulkSelectionSummary" class="bulk-selection-summary">0 selected</span>
+            <button type="button" id="btnCheckAllVisible" class="btn small ghost">Check all</button>
+            <button type="button" id="btnUncheckAllVisible" class="btn small ghost">Uncheck all</button>
+          </div>
+          <div class="bulk-row bulk-row--actions">
+            <select id="bulkWatchState" class="bulk-inline-select" aria-label="Set watch state for checked videos" disabled>
+              <option value="">Watch state…</option>
+            </select>
+            <select id="bulkMovePlaylist" class="bulk-inline-select" aria-label="Add checked videos to playlist" disabled>
+              <option value="">Add to playlist…</option>
+            </select>
+            <button type="button" id="btnBulkMove" class="btn small" disabled>Add</button>
+            <button type="button" id="btnBulkRemoveFromPlaylist" class="btn small ghost hidden" disabled>
+              Remove from playlist
+            </button>
+            <span class="bulk-row-divider" aria-hidden="true"></span>
+            <button type="button" id="btnRestore" class="btn small" disabled>Open</button>
+            <button type="button" id="btnDelete" class="btn small danger" disabled>Delete</button>
           </div>
         </div>
-        <div class="bulk">
-          <button type="button" id="btnCompactCards" class="btn small ghost">Show less details</button>
-          <button type="button" id="btnSmartPlaylist" class="btn small">Smart playlist…</button>
-          <button type="button" id="btnExportYouTube" class="btn small primary">Save playlist…</button>
-          <button type="button" id="btnRestore" class="btn small">Open selected</button>
+        <div id="playlistToolsBar" class="playlist-tools-bar hidden">
           <button
             type="button"
             id="btnRestorePlaylistSession"
-            class="btn small primary hidden"
-            title="Open every video in the current playlist snapshot as YouTube tabs (background tabs, resume where possible)"
+            class="btn small"
+            title="Open every video in the current playlist snapshot as YouTube tabs"
           >
-            Restore playlist session
+            Restore session
           </button>
-          <select id="bulkWatchState" class="bulk-watch-state-select" aria-label="Set Watch State for selected videos">
-            <option value="">Set Watch State…</option>
-          </select>
-          <button type="button" id="btnBulkWatchState" class="btn small">Apply Watch State</button>
-          <button type="button" id="btnDelete" class="btn small danger">Remove selected</button>
+          <button type="button" id="btnExportYouTube" class="btn small primary">Save to YouTube…</button>
+          <button type="button" id="btnSmartPlaylist" class="btn small ghost">Smart playlist…</button>
           <button type="button" id="btnDeleteLocalPlaylist" class="btn small danger hidden">Delete playlist</button>
         </div>
 
@@ -801,7 +800,6 @@
                 <option value="prio_high">High</option>
                 <option value="prio_med">Medium</option>
                 <option value="prio_low">Low</option>
-                <option value="prio_drop">Drop</option>
               </select>
             </fieldset>
             <p class="modal-status" id="spStatus" role="status"></p>
@@ -942,6 +940,7 @@
           </header>
           <div id="windowCurrentControlsMount" class="window-controls-mount"></div>
           <div id="windowCurrentSectionsMount" class="window-sections-mount"></div>
+          <p id="currentPlaylistGridHint" class="current-playlist-grid-hint hidden" aria-live="polite"></p>
           <div id="grid" class="grid"></div>
           <p id="empty" class="empty hidden">No saved videos yet. Use the extension popup on a YouTube tab.</p>
         </section>

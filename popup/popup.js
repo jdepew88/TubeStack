@@ -24,6 +24,24 @@ async function openExtensionInNewTabAndClose(path) {
   window.close();
 }
 
+function dashboardPlaylistPath(playlistId) {
+  const id = String(playlistId || "").trim();
+  if (!id) return "dashboard/dashboard.html";
+  return `dashboard/dashboard.html?playlist=${encodeURIComponent(id)}`;
+}
+
+async function resolveMostRecentPlaylistId() {
+  const r = await send("TUBESTACK_GET_STATE");
+  const lists = Array.isArray(r?.localPlaylists) ? r.localPlaylists : [];
+  const fromSettings = String(r?.settings?.currentPlaylistId || "").trim();
+  if (fromSettings && lists.some((x) => x.id === fromSettings)) return fromSettings;
+  if (!lists.length) return null;
+  const sorted = [...lists].sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+  );
+  return sorted[0]?.id || null;
+}
+
 async function refreshLibraryLine() {
   const data = await chrome.storage.local.get("items");
   const n = Array.isArray(data.items) ? data.items.length : 0;
@@ -76,12 +94,10 @@ function attachSaveHandler(btn, mode) {
         if (!savePl?.ok) {
           status.textContent = savePl?.error || "Saved tabs, but playlist creation failed.";
         } else {
-          const playlistId = savePl.playlists?.[0]?.id;
+          const playlistId = savePl.playlistId || savePl.playlists?.[0]?.id;
           status.textContent = labelForMode(r.mode || mode, r.savedCount);
           if (playlistId) {
-            await openExtensionInNewTabAndClose(
-              `dashboard/dashboard.html?playlist=${encodeURIComponent(playlistId)}`
-            );
+            await openExtensionInNewTabAndClose(dashboardPlaylistPath(playlistId));
             return;
           }
         }
@@ -99,7 +115,8 @@ attachSaveHandler(btnSaveAll, "all");
 attachSaveHandler(btnSaveExcept, "except_current");
 
 btnDash.addEventListener("click", async () => {
-  await openExtensionInNewTabAndClose("dashboard/dashboard.html");
+  const playlistId = await resolveMostRecentPlaylistId();
+  await openExtensionInNewTabAndClose(dashboardPlaylistPath(playlistId));
 });
 
 btnHome?.addEventListener("click", async () => {

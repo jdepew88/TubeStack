@@ -1077,6 +1077,7 @@ async function loadLocalPlaylists() {
   let changed = false;
   for (const pl of arr) {
     if (TS_WATCH.normalizeLocalPlaylistFields(pl)) changed = true;
+    if (dedupeLocalPlaylistItems(pl)) changed = true;
   }
   if (changed) await saveLocalPlaylists(arr);
   return arr;
@@ -1443,7 +1444,10 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
     }
 
     const snapshots = [];
+    const seenPlaylistVids = new Set();
     for (const vid of videoIdsOrdered) {
+      if (seenPlaylistVids.has(vid)) continue;
+      seenPlaylistVids.add(vid);
       const v = detailById.get(vid);
       let snap;
       if (!v) {
@@ -1612,11 +1616,15 @@ async function saveLocalPlaylistEntry({ name, items, kind, groupBy, smartSummary
   }
   const src =
     playlistSource === "youtube_import" ? "youtube_import" : playlistSource === "session" ? "session" : "session";
+  const dedupedItems = dedupePlaylistItems(items);
+  if (!dedupedItems.length) {
+    return { ok: false, error: "no_items" };
+  }
   const entry = {
     id: uuid(),
     name: finalName.slice(0, 200),
     createdAt: new Date().toISOString(),
-    items,
+    items: dedupedItems,
     kind: kind === "smart" ? "smart" : "static",
     groupBy: typeof groupBy === "string" && groupBy.length < 64 ? groupBy : null,
     smartSummary: typeof smartSummary === "string" ? smartSummary.slice(0, 500) : null,
@@ -1630,7 +1638,11 @@ async function saveLocalPlaylistEntry({ name, items, kind, groupBy, smartSummary
   }
   const next = trimPlaylistsCap([entry, ...lists], MAX_LOCAL_PLAYLISTS);
   await saveLocalPlaylists(next);
-  return { ok: true, playlists: next };
+  await saveSettings({
+    currentPlaylistId: entry.id,
+    currentPlaylistName: entry.name,
+  });
+  return { ok: true, playlists: next, playlistId: entry.id };
 }
 
 async function renameLocalPlaylistEntry({ id, name }) {
@@ -1659,12 +1671,78 @@ async function deleteLocalPlaylistEntry(id) {
   return { ok: true, playlists: lists };
 }
 
-function playlistItemKey(it) {
-  const vid = String(it?.videoId || "").trim();
-  if (vid) return `v:${vid}`;
+function videoIdFromPlaylistItem(it) {
+  const direct = String(it?.videoId || "").trim();
+  if (/^[\w-]{11}$/.test(direct)) return direct;
   const url = String(it?.url || "").trim();
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = u.pathname.slice(1).split("/")[0];
+      return /^[\w-]{11}$/.test(id) ? id : "";
+    }
+    if (host.includes("youtube.com") || host.includes("youtube-nocookie.com")) {
+      const fromQuery = u.searchParams.get("v");
+      if (fromQuery && /^[\w-]{11}$/.test(fromQuery)) return fromQuery;
+      const pathMatch = u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/);
+      if (pathMatch) return pathMatch[1];
+    }
+  } catch {
+    /* ignore malformed URLs */
+  }
+  return "";
+}
+
+function playlistItemKey(it) {
+  const vid = videoIdFromPlaylistItem(it);
+  if (vid) return `v:${vid}`;
+  const url = String(it?.url || "").trim().toLowerCase();
   if (url) return `u:${url}`;
   return `t:${String(it?.title || "").trim().toLowerCase()}::${String(it?.channel || "").trim().toLowerCase()}`;
+}
+
+function normalizePlaylistItem(it) {
+  if (!it || typeof it !== "object") return null;
+  const videoId = videoIdFromPlaylistItem(it);
+  const url =
+    String(it.url || "").trim() ||
+    (videoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` : "");
+  if (!videoId && !url) return null;
+  return { ...it, videoId: videoId || it.videoId || "", url };
+}
+
+/** Keep first row per video/URL; same file may appear in multiple playlists, never twice in one. */
+function dedupePlaylistItems(items) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of items || []) {
+    const it = normalizePlaylistItem(raw);
+    if (!it) continue;
+    const key = playlistItemKey(it);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+  }
+  return out;
+}
+
+function dedupeLocalPlaylistItems(pl) {
+  if (!pl || !Array.isArray(pl.items)) return false;
+  const next = dedupePlaylistItems(pl.items);
+  if (next.length === pl.items.length) {
+    let same = true;
+    for (let i = 0; i < next.length; i++) {
+      if (playlistItemKey(next[i]) !== playlistItemKey(pl.items[i])) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return false;
+  }
+  pl.items = next;
+  return true;
 }
 
 async function addItemsToLocalPlaylistEntry({ playlistId, items, createNew, name }) {
@@ -1684,10 +1762,12 @@ async function addItemsToLocalPlaylistEntry({ playlistId, items, createNew, name
   const target = lists.find((x) => x.id === playlistId);
   if (!target) return { ok: false, error: "not_found" };
 
-  const curItems = Array.isArray(target.items) ? target.items : [];
+  const curItems = dedupePlaylistItems(Array.isArray(target.items) ? target.items : []);
   const seen = new Set(curItems.map(playlistItemKey));
   let addedCount = 0;
-  for (const it of incoming) {
+  for (const raw of incoming) {
+    const it = normalizePlaylistItem(raw);
+    if (!it) continue;
     const k = playlistItemKey(it);
     if (seen.has(k)) continue;
     curItems.push(it);
@@ -1697,6 +1777,63 @@ async function addItemsToLocalPlaylistEntry({ playlistId, items, createNew, name
   target.items = curItems;
   await saveLocalPlaylists(lists);
   return { ok: true, playlists: lists, addedCount };
+}
+
+async function reorderLocalPlaylistItems({ playlistId, videoIds }) {
+  const pid = String(playlistId || "").trim();
+  if (!pid) return { ok: false, error: "missing_id" };
+  const lists = await loadLocalPlaylists();
+  const target = lists.find((x) => x.id === pid);
+  if (!target) return { ok: false, error: "not_found" };
+  const cur = dedupePlaylistItems(Array.isArray(target.items) ? target.items : []);
+  const byKey = new Map();
+  for (const it of cur) {
+    const key = playlistItemKey(it);
+    if (!byKey.has(key)) byKey.set(key, it);
+  }
+  const ordered = [];
+  const seen = new Set();
+  for (const raw of videoIds || []) {
+    const vid = String(raw || "").trim();
+    if (!vid) continue;
+    const key = `v:${vid}`;
+    if (seen.has(key)) continue;
+    const row = byKey.get(key);
+    if (row) {
+      ordered.push(row);
+      seen.add(key);
+    }
+  }
+  for (const it of cur) {
+    const key = playlistItemKey(it);
+    if (!seen.has(key)) {
+      ordered.push(it);
+      seen.add(key);
+    }
+  }
+  target.items = dedupePlaylistItems(ordered);
+  await saveLocalPlaylists(lists);
+  return { ok: true, playlists: lists };
+}
+
+async function removeItemsFromLocalPlaylist({ playlistId, videoIds }) {
+  const pid = String(playlistId || "").trim();
+  if (!pid) return { ok: false, error: "missing_id" };
+  const drop = new Set((videoIds || []).map((v) => String(v || "").trim()).filter(Boolean));
+  if (!drop.size) return { ok: false, error: "no_items" };
+  const lists = await loadLocalPlaylists();
+  const target = lists.find((x) => x.id === pid);
+  if (!target) return { ok: false, error: "not_found" };
+  const cur = Array.isArray(target.items) ? target.items : [];
+  const next = cur.filter((it) => {
+    const vid = String(it?.videoId || "").trim();
+    return !vid || !drop.has(vid);
+  });
+  const removedCount = cur.length - next.length;
+  if (!removedCount) return { ok: true, playlists: lists, removedCount: 0 };
+  target.items = next;
+  await saveLocalPlaylists(lists);
+  return { ok: true, playlists: lists, removedCount };
 }
 
 function todayKey() {
@@ -3070,6 +3207,11 @@ function sanitizeItemPatch(fields) {
   if ("timestampNotes" in next) {
     next.timestampNotes = TS_WATCH.normalizeTimestampNotes(next.timestampNotes);
   }
+  if ("priority" in next) {
+    const p = String(next.priority || "").trim();
+    if (LEGACY_PRIORITY[p]) next.priority = LEGACY_PRIORITY[p];
+    else if (!VALID_PRIORITIES.has(p)) next.priority = "prio_med";
+  }
   return next;
 }
 
@@ -3478,6 +3620,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         );
         break;
       }
+      case "TUBESTACK_REORDER_LOCAL_PLAYLIST_ITEMS": {
+        sendResponse(
+          await reorderLocalPlaylistItems({
+            playlistId: msg.playlistId,
+            videoIds: msg.videoIds,
+          })
+        );
+        break;
+      }
+      case "TUBESTACK_REMOVE_LOCAL_PLAYLIST_ITEMS": {
+        sendResponse(
+          await removeItemsFromLocalPlaylist({
+            playlistId: msg.playlistId,
+            videoIds: msg.videoIds,
+          })
+        );
+        break;
+      }
       case "TUBESTACK_UPDATE_ITEM": {
         sendResponse(await updateItem(msg.patch));
         break;
@@ -3658,7 +3818,7 @@ const TUBESTACK_CTX = {
   setupWizardAction: "tubestack-ctx-action-setup-wizard",
 };
 
-const TUBESTACK_CTX_WEB = ["http://*/*", "https://*/*"];
+const TUBESTACK_CTX_YT = ["https://www.youtube.com/*", "https://m.youtube.com/*"];
 const TUBESTACK_CTX_CONTEXTS = ["page", "frame", "link", "video", "audio", "image", "selection"];
 
 /** Chrome’s `contextMenus.create` rejects unknown keys (e.g. `icons` on child items). Only pass allowed props. */
@@ -3698,7 +3858,7 @@ function rebuildTubeStackContextMenus() {
     try {
       const child = {
         contexts: TUBESTACK_CTX_CONTEXTS,
-        documentUrlPatterns: TUBESTACK_CTX_WEB,
+        documentUrlPatterns: TUBESTACK_CTX_YT,
       };
       createContextMenuEntry({
         id: TUBESTACK_CTX.root,
@@ -3738,9 +3898,8 @@ function rebuildTubeStackContextMenus() {
       });
       createContextMenuEntry({
         id: TUBESTACK_CTX.dashboard,
-        parentId: TUBESTACK_CTX.root,
         title: "Open dashboard",
-        ...child,
+        contexts: ["action"],
       });
       if (!wizardDone) {
         createContextMenuEntry({

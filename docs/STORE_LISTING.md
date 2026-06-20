@@ -52,11 +52,10 @@ Use these in the **“Permission justification”** fields (paraphrase if the fo
 
 | Permission | Why TubeStack needs it |
 |------------|-------------------------|
-| **contextMenus** | Adds **right-click menu items** so you can save YouTube tabs or open the TubeStack dashboard without hunting for buttons. |
+| **contextMenus** | Adds **right-click menu items** on **YouTube pages** (save tabs) and on the **extension icon** (open dashboard). |
 | **identity** | Uses Chrome’s **identity API** for **Google OAuth** when you enable features that require signing in to your YouTube/Google account. |
 | **scripting** | Lets the extension **inject** small scripts on **YouTube** pages when needed to **read page-visible metadata** (for example titles or progress hints) to support save/restore and local organization. |
 | **storage** | Persists your **local library**, playlists, settings, and progress in **Chrome extension storage** (`chrome.storage.local` / related APIs)—**on your device**. |
-| **windows** | Reads **open tabs in the current window** so TubeStack can **save YouTube watch tabs** by position (for example “tabs to the left/right”) in a predictable way. |
 
 TubeStack **does not request Chrome History permission** and **does not scan unrelated browsing history**.
 

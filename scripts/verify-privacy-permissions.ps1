@@ -6,11 +6,31 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 
 $manifest = Get-Content -Raw "manifest.json" | ConvertFrom-Json
-$perms = @($manifest.permissions)
+$perms = @($manifest.permissions | Sort-Object)
 $optPerms = @($manifest.optional_permissions)
 $hostPerms = @($manifest.host_permissions)
 $optHostPerms = @($manifest.optional_host_permissions)
-$all = $perms + $optPerms
+$all = @($manifest.permissions) + $optPerms
+
+$expectedPerms = @("contextMenus", "identity", "scripting", "storage") | Sort-Object
+$extra = Compare-Object -ReferenceObject $expectedPerms -DifferenceObject $perms | Where-Object { $_.SideIndicator -eq "=>" }
+$missing = Compare-Object -ReferenceObject $expectedPerms -DifferenceObject $perms | Where-Object { $_.SideIndicator -eq "<=" }
+if ($extra -or $missing) {
+  Write-Error @"
+manifest.json permissions must be exactly: $($expectedPerms -join ', ')
+Found: $($perms -join ', ')
+"@
+}
+
+$expectedHosts = @(
+  "https://www.youtube.com/*",
+  "https://m.youtube.com/*"
+)
+$hostSorted = @($hostPerms | Sort-Object)
+$expectedHostsSorted = @($expectedHosts | Sort-Object)
+if (Compare-Object $expectedHostsSorted $hostSorted) {
+  Write-Error "manifest.json host_permissions must be exactly: $($expectedHosts -join ', ')"
+}
 
 $forbiddenApi = @("history", "tabs", "windows", "bookmarks", "topSites", "webNavigation", "debugger")
 foreach ($p in $forbiddenApi) {
@@ -39,6 +59,16 @@ if ($historyHits.Count -gt 0) {
   Write-Error "Found chrome.history usage:`n$msg"
 }
 
+$windowsHits = @()
+foreach ($f in $codeFiles) {
+  $m = Select-String -Path $f.FullName -Pattern 'chrome\.windows' -SimpleMatch:$false -ErrorAction SilentlyContinue
+  if ($m) { $windowsHits += $m }
+}
+if ($windowsHits.Count -gt 0) {
+  $msg = ($windowsHits | ForEach-Object { "$($_.Path):$($_.LineNumber): $($_.Line.Trim())" }) -join "`n"
+  Write-Error "Found chrome.windows usage (remove permission and use chrome.tabs instead):`n$msg"
+}
+
 $ctxBroad = Select-String -Path "background\service-worker.js" -Pattern 'http://\*/\*|https://\*/\*' -ErrorAction SilentlyContinue
 if ($ctxBroad) {
   Write-Error "Context menus must not use all-URL documentUrlPatterns (http(s)://*/*)."
@@ -63,4 +93,6 @@ foreach ($perm in $declared.Keys) {
   }
 }
 
-Write-Host "OK: Privacy permission audit passed (no History, no broad hosts, declared permissions used)."
+Write-Host "OK: Privacy permission audit passed."
+Write-Host "  permissions: $($expectedPerms -join ', ')"
+Write-Host "  host_permissions: $($expectedHosts -join ', ')"

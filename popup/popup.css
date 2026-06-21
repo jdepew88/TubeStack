@@ -218,3 +218,21 @@ body {
 .btn.ghost:not(:disabled):focus-visible {
   color: var(--text);
 }
+
+.ftr-privacy {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 12px 8px;
+  text-align: center;
+  font-size: 10px;
+}
+
+.ftr-privacy a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.ftr-privacy a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}

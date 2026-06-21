@@ -124,6 +124,29 @@ function parseVideoId(url) {
 const OPTIONAL_ORIGINS_GOOGLE_APIS = ["https://www.googleapis.com/*"];
 const OPTIONAL_ORIGINS_OPENAI = ["https://api.openai.com/*"];
 
+function tubestackSafeErrorMessage(err) {
+  const msg = err?.message != null ? String(err.message) : String(err || "unknown error");
+  return msg.replace(/\s+/g, " ").trim().slice(0, 240);
+}
+
+async function saveYouTubeTabsAsNewPlaylistAndOpen(mode) {
+  const r = await saveYouTubeTabsByMode(mode);
+  if (!r?.ok || !r.savedCount) return { ok: false, error: r?.error || "nothing_to_save", savedCount: 0 };
+  const savePl = await saveLocalPlaylistEntry({
+    name: "",
+    items: r.saved,
+    playlistSource: "session",
+  });
+  if (!savePl?.ok || !savePl.playlistId) {
+    return { ok: false, error: savePl?.error || "playlist_save_failed", savedCount: r.savedCount };
+  }
+  const url = chrome.runtime.getURL(
+    `dashboard/dashboard.html?playlist=${encodeURIComponent(savePl.playlistId)}`
+  );
+  await chrome.tabs.create({ url, active: true });
+  return { ok: true, savedCount: r.savedCount, playlistId: savePl.playlistId };
+}
+
 async function ensureOptionalHostOrigins(origins) {
   try {
     if (await chrome.permissions.contains({ origins })) return true;
@@ -633,7 +656,7 @@ async function runYoutubeApiScan({ boostThemes = true } = {}) {
     summary,
     themes,
     message:
-      "Pulled recent uploads and categories. Keyword weights were updated for matching themes. Full subscription lists will use OAuth in a future update.",
+      "Pulled recent uploads and categories. Keyword weights were updated for matching themes. To sync your full subscription list, add OAuth in Settings and use Subbed Channels sync.",
   };
 }
 
@@ -3795,7 +3818,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: false, error: "Unknown message" });
       }
     } catch (e) {
-      console.error("[TubeStack] onMessage error:", msg?.type, e);
+      console.error("[TubeStack] onMessage error:", msg?.type, tubestackSafeErrorMessage(e));
       try {
         sendResponse({ ok: false, error: String(e?.message || e) });
       } catch {
@@ -3939,7 +3962,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         if (!scrape?.ok) return;
         await mergeSubscriptionChannelLabels(scrape.channels || []);
       } catch (e) {
-        console.error("[TubeStack] channel import menu error:", e);
+        console.error("[TubeStack] channel import menu error:", tubestackSafeErrorMessage(e));
       }
     })();
     return;
@@ -3953,8 +3976,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   };
   const mode = modeById[id];
   if (!mode) return;
-  void saveYouTubeTabsByMode(mode).catch((e) => {
-    console.error("[TubeStack] context menu save error:", e);
+  void saveYouTubeTabsAsNewPlaylistAndOpen(mode).catch((e) => {
+    console.error("[TubeStack] context menu save error:", tubestackSafeErrorMessage(e));
   });
 });
 

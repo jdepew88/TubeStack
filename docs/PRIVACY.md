@@ -2,6 +2,8 @@
 
 **Last updated:** May 2026
 
+**Chrome Web Store listing:** publish the HTML copy at [`privacy/privacy.html`](../privacy/privacy.html) to a public HTTPS URL and paste that URL in the developer dashboard. The extension links to the bundled copy from the popup and Settings.
+
 This policy describes how the **TubeStack** Chrome Extension handles information when you use it. It is written in plain English for Chrome Web Store listing and for anyone using the extension.
 
 ---
@@ -35,8 +37,9 @@ Depending on how you use TubeStack, the extension may store locally, among other
 **Credentials stay on your device:**
 
 - **YouTube Data API keys** you enter are stored locally in Chrome extension storage (Settings or the optional **Setup Integrations** guided page).
-- **OAuth Web Client IDs** for YouTube account features are stored locally; the optional **Connect YouTube** guide helps you set them up without sending credentials to TubeStack.
-- **YouTube OAuth** configuration (such as your OAuth Web Client ID) and **OAuth access tokens** used for signed-in Google features are handled **on your device**.
+- **YouTube OAuth Web Client IDs** for YouTube account features are stored locally; the optional **Connect YouTube** guide helps you set them up without sending credentials to TubeStack.
+- **Google account email** (optional) — if you enter the email tied to your Google Cloud project during setup, it is stored locally in extension settings to help you remember which project your API key belongs to. TubeStack does not send this email to a TubeStack server.
+- **YouTube OAuth access tokens** — when you sign in with Google for YouTube features, the bearer token is kept **in the extension service worker’s memory only** (not written to `chrome.storage.local`) until it expires or you use **Sign out of Google** in Settings.
 - **OpenAI API keys** you enter are stored locally in Chrome extension storage.
 
 ---
@@ -49,23 +52,23 @@ Depending on how you use TubeStack, the extension may store locally, among other
 
 ### OpenAI
 
-**OpenAI API calls only happen when you enable or use optional AI features** (for example AI-assisted categorization). Requests go **directly from the extension to OpenAI’s API** (`api.openai.com`), using your OpenAI API key only when you have provided one and only for those user-initiated actions.
+**OpenAI API calls only happen when you enable or use optional AI features** (for example AI-assisted categorization or **Test OpenAI connection** in Settings). Requests go **directly from the extension to OpenAI’s API** (`api.openai.com`), using your OpenAI API key only when you have provided one and only for those user-initiated actions. The connection test may call OpenAI’s models list, send a minimal test completion, and optionally read billing-credit metadata exposed by OpenAI for your key.
 
 **AI categorization** and **AI Watch State suggestions** may send **selected video metadata** the feature needs to work—for example titles, channel names, tags, notes, current Watch State, and related fields the extension already has in your **saved library**. Watch States and tags are kept separate; AI does not overwrite your Watch States unless you confirm an apply step.
 
 ---
 
-## Watch progress (local, YouTube pages only)
+## Watch progress (local, YouTube watch/Shorts pages only)
 
-TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in YouTube tabs while the extension is installed, so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` and `watchByDay`).
+TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in **YouTube watch or Shorts tabs** while the extension is installed, so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` and `watchByDay`).
 
 Progress may come from:
 
-- **Observed playback** on open watch tabs (`content/youtube-progress.js` heartbeats)
-- **Capture on save** when you save/close tabs (playhead read from the page when available)
+- **Observed playback** on open YouTube `/watch` or `/shorts` tabs (`content/youtube-progress.js` heartbeats)
+- **Capture on save** when you save/close tabs (playhead read from the page when available, including Shorts when metadata injection runs)
 - **URL timestamps** when a saved tab URL includes a `t=` start time
 
-TubeStack does **not** reconstruct what you watched before install or on sites other than YouTube watch pages.
+TubeStack does **not** reconstruct what you watched before install or on sites other than YouTube watch/Shorts pages.
 
 ---
 
@@ -86,7 +89,7 @@ TubeStack declares only **`contextMenus`**, **`identity`**, **`scripting`**, and
 
 **Page access:**
 
-- **YouTube watch pages** — Content scripts read page-visible metadata when you save tabs and send **local-only** progress updates while a watch tab is open (see [Watch progress](#watch-progress-local-youtube-pages-only)).
+- **YouTube watch and Shorts pages** — Content scripts read page-visible metadata when you save tabs and send **local-only** progress updates while a watch or Shorts tab is open (see [Watch progress](#watch-progress-local-youtube-watchshorts-pages-only)).
 - **YouTube subscription / channels pages** — A content script reads **visible channel names** when **you** run subscription import or sync.
 - **Other websites** — No content scripts, no context-menu save actions, and no host permission at install time.
 
@@ -97,6 +100,12 @@ TubeStack does **not** use the Chrome History API.
 ## Your choices and deleting data
 
 You can **delete local TubeStack data** from the extension’s **Settings / dashboard**, including actions to clear your saved library, API keys, OAuth session cache, OpenAI key, AI-related local cache, and similar controls where provided.
+
+**What “Delete saved videos, progress & local playlists” removes:** saved library videos, `videoProgress`, `watchByDay`, all local playlist snapshots, and related import/scan summary fields in settings.
+
+**What it keeps unless you use other buttons:** YouTube/OpenAI API keys and OAuth Client ID you saved, category/theme definitions, the **Subbed Channels** directory (use **Clear Subbed Channels list** separately), and UI preferences.
+
+**Sign out of Google (clear session)** clears the in-memory OAuth access token only; it does not remove your saved OAuth Client ID.
 
 You can also remove all extension data by **uninstalling TubeStack** from Chrome.
 

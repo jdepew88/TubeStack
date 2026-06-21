@@ -34,7 +34,8 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 ## Disclosures, privacy, and data
 
 - [ ] **OpenAI disclosure present** — Store listing and/or in-extension copy states that optional AI features may send **selected video metadata** to OpenAI; [STORE_LISTING.md](STORE_LISTING.md) and [PRIVACY.md](PRIVACY.md) aligned with actual behavior.
-- [ ] **Privacy policy present** — [PRIVACY.md](PRIVACY.md) is complete; a **hosted HTTPS URL** (or GitHub raw/pages link the store accepts) is ready for the dashboard “Privacy policy” field.
+- [ ] **Privacy policy present** — [`privacy/privacy.html`](../privacy/privacy.html) matches [`PRIVACY.md`](PRIVACY.md). Enable **GitHub Pages** (or another HTTPS host) for the repo and use the public URL in the Chrome Web Store **Privacy policy** field. Example after Pages is enabled: `https://<user>.github.io/TubeStack/privacy/privacy.html`
+- [ ] **Privacy link in extension** — Popup footer and Settings → Data &amp; privacy link to the bundled policy page.
 - [ ] **Data deletion controls tested** — Settings actions for deleting library data, clearing API keys, OAuth sign-out / Client ID removal, OpenAI key removal, and AI cache clear were exercised and confirmed in the UI (with confirmations).
 - [ ] **Local storage cleared successfully** — After deletion actions, verify `chrome.storage.local` (via devtools / extension storage inspector) reflects expected keys removed or emptied; no silent retention beyond what the policy describes.
 

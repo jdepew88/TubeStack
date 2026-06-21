@@ -144,7 +144,7 @@ TubeStack declares two content-script entries in `manifest.json`:
 
 | Pages | Behavior | User control |
 |-------|----------|--------------|
-| **`/watch*` on youtube.com / m.youtube.com** | Metadata on demand when saving; progress heartbeats while a watch tab is open (local storage only) | Saving is explicit; progress runs only on open watch tabs |
+| **`/watch*` and `/shorts/*` on youtube.com / m.youtube.com** | Metadata on demand when saving; progress heartbeats while a watch or Shorts tab is open (local storage only) | Saving is explicit; progress runs only on open YouTube watch/Shorts tabs |
 | **`/feed/channels*` and `/feed/subscriptions*`** | Reads visible channel names from the page when user runs subscription import/sync | User-initiated; may scroll feed to load rows |
 
 **Justification text:**
@@ -227,7 +227,7 @@ Copy as needed into the listing or “Additional information”:
 
 - [ ] Short description within Chrome’s character limit.  
 - [ ] Screenshots and promotional images prepared (no API keys or tokens visible).  
-- [ ] Privacy policy URL points to hosted **[PRIVACY.md](PRIVACY.md)** (HTTPS) or equivalent page.  
+- [ ] Privacy policy URL points to hosted **[privacy/privacy.html](../privacy/privacy.html)** (HTTPS via GitHub Pages or equivalent). Markdown source: **[PRIVACY.md](PRIVACY.md)**.  
 - [ ] OAuth consent screen (Google Cloud) matches the scopes and branding you describe.  
 - [ ] `manifest.json` version bumped for the build you upload.  
 - [ ] **`.\scripts\verify-privacy-permissions.ps1`** passes on the release tree.  

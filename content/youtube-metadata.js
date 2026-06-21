@@ -99,7 +99,11 @@
     const base = playerMeta || fromLd || {};
     const url = new URL(window.location.href);
     const vParam = url.searchParams.get("v");
-    const videoId = base.videoId || vParam || null;
+    let videoId = base.videoId || vParam || null;
+    if (!videoId) {
+      const shortsMatch = url.pathname.match(/^\/shorts\/([^/?#]+)/i);
+      if (shortsMatch?.[1]) videoId = shortsMatch[1];
+    }
     const currentTime = getCurrentTimeFromVideo();
     let timestampSec = currentTime;
     /** "page_player" | "url_only" | null — tells the service worker whether progress is from the <video> element. */

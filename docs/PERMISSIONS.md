@@ -2,7 +2,9 @@
 
 This document matches **`manifest.json`** in this repository (Manifest V3). Use it when filling out Chrome Web Store **permission justification** fields, privacy questionnaires, and internal review before upload.
 
-**Related:** [STORE_LISTING.md](STORE_LISTING.md) (copy-paste listing text) · [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) · [PRIVACY.md](PRIVACY.md)
+**Privacy policy (store listing URL):** host **`privacy/privacy.html`** at a public HTTPS URL (for example GitHub Pages). The same page is linked from the extension popup and Settings.
+
+**Related:** [STORE_LISTING.md](STORE_LISTING.md) · [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) · [PRIVACY.md](PRIVACY.md)
 
 ---
 
@@ -36,7 +38,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch t
 
 | Matches | Scripts | Purpose |
 |---------|---------|---------|
-| `https://www.youtube.com/watch*`, `https://m.youtube.com/watch*` | `youtube-metadata.js`, `youtube-progress.js` | Read page-visible video metadata on save; track playback progress on open watch tabs (local only) |
+| `https://www.youtube.com/watch*`, `https://m.youtube.com/watch*`, `https://www.youtube.com/shorts/*`, `https://m.youtube.com/shorts/*` | `youtube-metadata.js`, `youtube-progress.js` | Read page-visible video metadata on save; track playback progress on open watch/Shorts tabs (local only) |
 | `https://www.youtube.com/feed/channels*`, `https://www.youtube.com/feed/subscriptions*` | `channel-scrape.js` | User-initiated channel-name scrape on YouTube subscription pages |
 
 ---
@@ -51,7 +53,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch t
 | **Where used** | `background/service-worker.js` — `rebuildTubeStackContextMenus()` |
 | **User trigger** | User right-clicks on a **YouTube page** or on the **extension toolbar icon**. |
 | **Scope** | **YouTube pages only** for save actions (`documentUrlPatterns`: `youtube.com`, `m.youtube.com`). **Open dashboard** appears on **extension icon** right-click (`contexts: ["action"]`), not on every website. |
-| **Data accessed** | None directly from the menu. Save actions query **YouTube watch tabs** in the current window (see host permissions + tabs API below). |
+| **Data accessed** | None directly from the menu. Save actions query **YouTube watch tabs** in the current window, save them to the library, create a **new local playlist**, and open the dashboard on that playlist (same flow as the toolbar popup). |
 
 **Chrome Web Store justification (short):**
 
@@ -205,7 +207,7 @@ TubeStack intentionally **does not** declare these permissions:
 
 When the dashboard asks what runs on web pages:
 
-1. **Watch pages** — Passive message listener for metadata on user save; periodic progress ticks **only while a watch tab is open** (stored locally as `videoProgress` / `watchByDay`). No Chrome History API.
+1. **Watch and Shorts pages** — Passive message listener for metadata on user save; periodic progress ticks **only while a watch or Shorts tab is open** (stored locally as `videoProgress` / `watchByDay`). No Chrome History API.
 2. **Subscription / channels feed** — Scrapes **visible channel names from the DOM** only when the user triggers import/sync; may scroll the page to load more rows.
 3. **No content scripts** on non-YouTube sites.
 

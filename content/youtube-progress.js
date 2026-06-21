@@ -49,7 +49,10 @@
   function getVideoId() {
     try {
       const u = new URL(window.location.href);
-      return u.searchParams.get("v");
+      const v = u.searchParams.get("v");
+      if (v) return v;
+      const m = u.pathname.match(/^\/shorts\/([^/?#]+)/i);
+      return m?.[1] || null;
     } catch {
       return null;
     }

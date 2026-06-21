@@ -3352,6 +3352,7 @@ function render() {
     const n = (pl?.items || []).length;
     const restoreBtn = document.getElementById("btnRestorePlaylistSession");
     if (restoreBtn) restoreBtn.textContent = n ? `Restore session (${n})` : "Restore session";
+    btnExportYouTube?.classList.toggle("hidden", !(String(settings.youtubeOAuthClientId || "").trim()));
   }
   renderCurrentPlaylistHead();
   if (summary) {

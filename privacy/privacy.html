@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TubeStack — Privacy policy</title>
+    <link rel="icon" type="image/png" href="../icons/logo.png" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --text: #1a1a1a;
+        --muted: #555;
+        --link: #0b57d0;
+        --bg: #fff;
+        --border: #ddd;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --text: #e8e8e8;
+          --muted: #aaa;
+          --link: #8ab4f8;
+          --bg: #121212;
+          --border: #333;
+        }
+      }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.55;
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 24px 20px 48px;
+        color: var(--text);
+        background: var(--bg);
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin-bottom: 0.25rem;
+      }
+      h2 {
+        font-size: 1.15rem;
+        margin-top: 2rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.35rem;
+      }
+      p,
+      li {
+        color: var(--text);
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 1.5rem;
+      }
+      a {
+        color: var(--link);
+      }
+      ul {
+        padding-left: 1.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TubeStack — Privacy policy</h1>
+    <p class="meta"><strong>Last updated:</strong> May 2026</p>
+
+    <p>
+      This policy describes how the <strong>TubeStack</strong> Chrome Extension handles information when you use it.
+      TubeStack is <strong>not affiliated with YouTube, Google, or OpenAI.</strong>
+    </p>
+
+    <h2>Local-first design</h2>
+    <p>
+      Most of what you see in TubeStack—saved tabs, playlists, categories, tags, notes, and locally tracked watch
+      progress—is stored <strong>locally in your browser</strong> using Chrome extension storage (<code
+        >chrome.storage.local</code
+      >), not on a TubeStack-owned server. TubeStack has no central backend that collects your library or credentials.
+    </p>
+
+    <h2>What is stored on your device</h2>
+    <ul>
+      <li>Saved YouTube tabs and library items (titles, channels, URLs, tags, notes, watch states, and related fields).</li>
+      <li>Local playlists and organization data (stack notes, research summaries, decision logs).</li>
+      <li>
+        Locally tracked watch progress on open YouTube <code>/watch</code> and <code>/shorts</code> tabs (<code
+          >videoProgress</code
+        >
+        and daily totals in <code>watchByDay</code>). TubeStack does <strong>not</strong> use the Chrome History API.
+      </li>
+      <li>Extension settings and UI preferences.</li>
+      <li>YouTube Data API keys and OpenAI API keys you paste (stored locally only).</li>
+      <li>YouTube OAuth Web Client IDs you paste (public client identifiers, stored locally).</li>
+      <li>
+        <strong>Google account email (optional)</strong> — if you enter it during setup, it is stored locally to help you
+        remember which Google Cloud project your API key belongs to. TubeStack does not send this email to a TubeStack
+        server.
+      </li>
+      <li>
+        <strong>OAuth access tokens</strong> — when you sign in with Google, bearer tokens are kept in the extension
+        service worker’s <strong>memory only</strong> (not written to <code>chrome.storage.local</code>) until they expire
+        or you choose <strong>Sign out of Google</strong> in Settings.
+      </li>
+    </ul>
+
+    <h2>Network requests and third parties</h2>
+    <p>
+      <strong>Google / YouTube</strong> — API and OAuth calls happen only when you configure and use those optional
+      features. Requests go directly from the extension to Google’s services.
+    </p>
+    <p>
+      <strong>OpenAI</strong> — Calls happen only when you configure an API key and run optional AI features (including
+      <strong>Test OpenAI connection</strong> in Settings). Selected saved-video metadata may be sent for
+      categorization or Watch State suggestions when you explicitly run those tools.
+    </p>
+
+    <h2>Permissions and page access</h2>
+    <p>
+      TubeStack declares <code>contextMenus</code>, <code>identity</code>, <code>scripting</code>, and
+      <code>storage</code>, plus YouTube host permissions. Google APIs and OpenAI are optional runtime host permissions.
+      TubeStack does <strong>not</strong> request Chrome History, the broad <code>tabs</code> permission, or
+      <code>windows</code>.
+    </p>
+    <p>
+      Content scripts run on YouTube watch/Shorts pages (metadata and local progress) and on YouTube subscription/channel
+      feed pages when you import channel names. No content scripts run on non-YouTube sites.
+    </p>
+
+    <h2>Deleting data</h2>
+    <p>
+      From Settings you can delete saved videos, progress, and local playlists; clear API keys; sign out of Google
+      (in-memory token); clear AI cache; and clear the Subbed Channels list separately. Uninstalling the extension
+      removes its local storage.
+    </p>
+    <p>
+      <strong>Delete saved videos, progress &amp; local playlists</strong> keeps saved API keys, OAuth Client ID,
+      categories/themes, and the Subbed Channels list unless you use the other clear buttons.
+    </p>
+
+    <h2>What TubeStack does not do</h2>
+    <ul>
+      <li>Does not request Chrome History permission.</li>
+      <li>Does not scan unrelated browsing history.</li>
+      <li>Does not sell user data.</li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>
+      For privacy questions, use the support channel listed on the TubeStack Chrome Web Store listing or the project
+      repository at
+      <a href="https://github.com/jdepew88/TubeStack" rel="noopener noreferrer">github.com/jdepew88/TubeStack</a>.
+    </p>
+  </body>
+</html>

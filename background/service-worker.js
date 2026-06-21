@@ -233,7 +233,7 @@ async function requestMetadataFromTab(tabId) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["content/youtube-metadata.js"],
+      files: ["lib/youtube-url.js", "content/youtube-metadata.js"],
     });
     const res = await chrome.tabs.sendMessage(tabId, { type: "TUBESTACK_GET_METADATA" });
     if (res && res.ok) return res.data;
@@ -2130,7 +2130,7 @@ async function buildPlaylist({ themeIds, budgetMinutes, sortMode }) {
   };
 }
 
-/** Observed playback on open YouTube watch tabs (content/youtube-progress.js → TUBESTACK_PROGRESS_TICK). */
+/** Observed playback on open YouTube watch/Shorts tabs (content/youtube-progress.js → TUBESTACK_PROGRESS_TICK). */
 async function handleProgressTick(msg) {
   const { videoId, playheadSec, durationSec, deltaWatchSec } = msg;
   if (!videoId) return;
@@ -3899,7 +3899,7 @@ function rebuildTubeStackContextMenus() {
       createContextMenuEntry({
         id: TUBESTACK_CTX.saveAll,
         parentId: TUBESTACK_CTX.root,
-        title: "Save all watch tabs",
+        title: "Save all videos",
         ...child,
       });
       createContextMenuEntry({

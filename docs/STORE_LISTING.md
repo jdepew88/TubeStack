@@ -26,7 +26,7 @@ Use this document when filling out the Chrome Web Store developer dashboard (lis
 
 ## Detailed description (store listing body)
 
-**TubeStack** is a Chrome extension for people who keep many **YouTube** watch tabs open. It helps you **save open YouTube tabs** into a **local** playlist-style library, **close** those tabs to free memory, and **restore** videos later—often with **watch progress** preserved when the page allows it.
+**TubeStack** is a Chrome extension for people who keep many **YouTube** watch or Shorts tabs open. It helps you **save open YouTube tabs** into a **local** playlist-style library, **close** those tabs to free memory, and **restore** videos later—often with **watch progress** preserved on `/watch` pages (best-effort on Shorts).
 
 Inside the **dashboard**, you can **organize** saved videos with **lists**, **themes / categories**, **tags**, **notes**, and **priority**. You can build **local playlists**, use **focus-session** tools, and work through queues without losing context.
 
@@ -44,11 +44,11 @@ Inside the **dashboard**, you can **organize** saved videos with **lists**, **th
 
 ## Single-purpose explanation
 
-TubeStack has **one clear purpose:** to help users **save, organize, and reopen YouTube watch tabs and related metadata** inside Chrome, with an optional **local library** and optional **user-configured** connections to **Google (YouTube API / OAuth)** and **OpenAI** for advanced workflows. It is **not** a general-purpose web monitor, ad blocker, or unrelated browsing tracker.
+TubeStack has **one clear purpose:** to help users **save, organize, and reopen YouTube watch and Shorts tabs and related metadata** inside Chrome, with an optional **local library** and optional **user-configured** connections to **Google (YouTube API / OAuth)** and **OpenAI** for advanced workflows. It is **not** a general-purpose web monitor, ad blocker, or unrelated browsing tracker.
 
 **For the “single purpose” / “narrow use case” field:**
 
-> Save, organize, and reopen YouTube watch tabs in a local library inside Chrome. Optional user-configured YouTube API, Google OAuth, and OpenAI features for imports and organization.
+> Save, organize, and reopen YouTube watch and Shorts tabs in a local library inside Chrome. Optional user-configured YouTube API, Google OAuth, and OpenAI features for imports and organization.
 
 ---
 
@@ -60,7 +60,7 @@ Paste into each **Permission justification** field in the Chrome Web Store devel
 
 **Standard:**
 
-> Adds right-click menu items on **YouTube pages** to save open YouTube watch tabs (left/right/all), and on the **extension icon** to open the TubeStack dashboard. Menus do not appear on non-YouTube websites.
+> Adds right-click menu items on **YouTube pages** to save open YouTube watch and Shorts tabs (left/right/all), and on the **extension icon** to open the TubeStack dashboard. Menus do not appear on non-YouTube websites.
 
 **Short:**
 
@@ -84,7 +84,7 @@ Paste into each **Permission justification** field in the Chrome Web Store devel
 
 **Standard:**
 
-> Injects small helper scripts on **specific YouTube tabs** when a user saves tabs or runs import and the page did not already load a content script (for example some Shorts URLs). Used to read **page-visible** video metadata only—not arbitrary sites.
+> Injects small helper scripts on **specific YouTube tabs** when a user saves tabs or runs import and the page did not already load a content script (for example a tab opened before install). Used to read **page-visible** video metadata only—not arbitrary sites.
 
 **Short:**
 
@@ -116,12 +116,12 @@ Paste into each **Permission justification** field in the Chrome Web Store devel
 
 | Host pattern | Dashboard justification |
 |--------------|-------------------------|
-| **`https://www.youtube.com/*`** | Core functionality: save YouTube watch tabs, content scripts on watch/subscription pages, read YouTube tab metadata when saving, open saved videos. |
+| **`https://www.youtube.com/*`** | Core functionality: save YouTube watch and Shorts tabs, content scripts on watch/Shorts/subscription pages, read YouTube tab metadata when saving, open saved videos. |
 | **`https://m.youtube.com/*`** | Same as desktop YouTube for mobile YouTube URLs Chrome may use. |
 
 **Combined (one field):**
 
-> Limited to YouTube only. Required for saving/organizing YouTube watch tabs, watch-page progress helpers, and user-initiated features on YouTube subscription pages. No access to other websites at install time.
+> Limited to YouTube only. Required for saving/organizing YouTube watch and Shorts tabs, watch/Shorts progress helpers (full on `/watch`, best-effort on Shorts), and user-initiated features on YouTube subscription pages. No access to other websites at install time.
 
 ---
 
@@ -144,12 +144,12 @@ TubeStack declares two content-script entries in `manifest.json`:
 
 | Pages | Behavior | User control |
 |-------|----------|--------------|
-| **`/watch*` and `/shorts/*` on youtube.com / m.youtube.com** | Metadata on demand when saving; progress heartbeats while a watch or Shorts tab is open (local storage only) | Saving is explicit; progress runs only on open YouTube watch/Shorts tabs |
+| **`/watch*` and `/shorts/*` on youtube.com / m.youtube.com** | Metadata on demand when saving; progress heartbeats while a watch or Shorts tab is open (local storage only; full on `/watch`, best-effort on Shorts) | Saving is explicit; progress runs only on open YouTube watch/Shorts tabs |
 | **`/feed/channels*` and `/feed/subscriptions*`** | Reads visible channel names from the page when user runs subscription import/sync | User-initiated; may scroll feed to load rows |
 
 **Justification text:**
 
-> Content scripts run only on YouTube watch and subscription pages. They support saving tab metadata, local resume progress on open watch tabs, and optional user-initiated channel list import—not tracking on non-YouTube sites.
+> Content scripts run only on YouTube watch, Shorts, and subscription pages. They support saving tab metadata, local resume progress on open watch tabs (best-effort on Shorts), and optional user-initiated channel list import—not tracking on non-YouTube sites.
 
 ---
 
@@ -233,4 +233,4 @@ Copy as needed into the listing or “Additional information”:
 - [ ] **`.\scripts\verify-privacy-permissions.ps1`** passes on the release tree.  
 - [ ] Permission justifications in the dashboard match **[PERMISSIONS.md](PERMISSIONS.md)** and the **actual** shipped build.  
 - [ ] Optional host permissions described as **runtime / user-initiated** in the listing.  
-- [ ] Content script behavior (watch progress, channel scrape) disclosed in privacy policy.
+- [ ] Content script behavior (watch/Shorts progress, channel scrape) disclosed in privacy policy.

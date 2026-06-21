@@ -13,7 +13,7 @@
   </tr>
 </table>
 
-TubeStack is a **Chrome extension** (Manifest V3) for people who keep many **YouTube** tabs open. It helps you **save watch tabs into a local library**, **close them to free RAM**, and **come back later**—with optional hooks to **YouTube** and **OpenAI** only when you turn them on.
+TubeStack is a **Chrome extension** (Manifest V3) for people who keep many **YouTube** tabs open. It helps you **save watch and Shorts tabs into a local library**, **close them to free RAM**, and **come back later**—with optional hooks to **YouTube** and **OpenAI** only when you turn them on.
 
 **Local-first:** your library, playlists, and settings stay **on your device** in Chrome extension storage—not on a TubeStack server. TubeStack does **not** request Chrome History permission or scan unrelated browsing history. **[Privacy ↓](#privacy)** · **[Full privacy policy →](docs/PRIVACY.md)**
 
@@ -21,11 +21,11 @@ TubeStack is a **Chrome extension** (Manifest V3) for people who keep many **You
 
 ## What TubeStack is and does
 
-Inspired by **OneTab**, built for **YouTube power users**. Instead of leaving dozens of watch tabs open, TubeStack collapses them into **organized local playlists** while preserving URLs and **locally tracked watch progress** (for videos you open while the extension is installed).
+Inspired by **OneTab**, built for **YouTube power users**. Instead of leaving dozens of watch or Shorts tabs open, TubeStack collapses them into **organized local playlists** while preserving URLs and **locally tracked watch progress** (full on `/watch`, best-effort on Shorts, for videos you open while the extension is installed).
 
 **Core workflows**
 
-- **Save** open YouTube tabs from the toolbar or context menu; optionally close tabs after save to cut clutter and RAM use.
+- **Save** open YouTube watch and Shorts tabs from the toolbar or context menu; optionally close tabs after save to cut clutter and RAM use.
 - **Library** view with an iTunes-style **Artist · Album · Category** browser, compact session picker, and searchable video list.
 - **Restore** individual videos or whole saved sessions; **focus sessions** and queue tools for intentional watching.
 - **Organize** with **Watch States** (workflow status), user-defined **tags**, themes/categories, video and stack notes, timestamp notes, decision logs, priority tiers, and local playlist snapshots.
@@ -73,7 +73,7 @@ Features include:
 - Focus sessions
 - Queue management
 - Prioritization systems
-- Locally tracked watch progress on YouTube watch tabs (`videoProgress`, `watchByDay`) — no Chrome History API
+- Locally tracked watch progress on YouTube `/watch` tabs (`videoProgress`, `watchByDay`); best-effort on Shorts — no Chrome History API
 - Resume later workflows
 - Preserve watch progress when possible
 
@@ -253,9 +253,9 @@ Pin it to the right of the address bar by selecting the puzzle piece and pinning
 
 TubeStack is **local-first**: saved videos, playlists, organization data, locally tracked watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server.
 
-TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in YouTube tabs while the extension is installed, so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` per video and `watchByDay` for daily totals).
+TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in YouTube `/watch` tabs while the extension is installed (best-effort on Shorts), so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` per video and `watchByDay` for daily totals).
 
-- Progress is observed on **YouTube watch pages** via `content/youtube-progress.js` (heartbeats to the service worker) and optionally **captured when you save tabs** from the open player or URL timestamp.
+- Progress is observed on **YouTube `/watch` pages** via `content/youtube-progress.js` (heartbeats to the service worker); on Shorts, progress is best-effort. Progress may also be **captured when you save tabs** from the open player or URL timestamp.
 - **Does not request** the Chrome **History**, **`tabs`**, or **`windows`** permissions (YouTube tab access is limited by YouTube host permissions).
 - **YouTube API keys**, **OAuth client/session data**, and **OpenAI API keys** you provide are stored **locally on your device**.
 - **Google** and **OpenAI** are contacted **only when you enable and use** those optional features; requests go **directly** from the extension to those services (not through a TubeStack backend).

@@ -59,7 +59,7 @@ async function refreshCount() {
     return;
   }
   const { left, right, all: allN, exceptCurrent } = r;
-  countLine.textContent = `${allN} watch tab${allN === 1 ? "" : "s"} here · ${left} left · ${right} right · ${exceptCurrent} except this tab`;
+  countLine.textContent = `${allN} video tab${allN === 1 ? "" : "s"} here · ${left} left · ${right} right · ${exceptCurrent} except this tab`;
 
   btnSaveLeft.disabled = left === 0;
   btnSaveRight.disabled = right === 0;
@@ -71,7 +71,7 @@ function labelForMode(mode, n) {
   const word = n === 1 ? "tab" : "tabs";
   if (mode === "left") return `Saved ${n} ${word} to the left into a new playlist.`;
   if (mode === "right") return `Saved ${n} ${word} to the right into a new playlist.`;
-  if (mode === "all") return `Saved ${n} watch ${word} into a new playlist.`;
+  if (mode === "all") return `Saved ${n} video ${word} into a new playlist.`;
   if (mode === "except_current") return `Saved ${n} ${word} (except current) into a new playlist.`;
   return `Saved ${n} ${word} into a new playlist.`;
 }

@@ -10,7 +10,7 @@ This policy describes how the **TubeStack** Chrome Extension handles information
 
 ## What TubeStack is
 
-**TubeStack is a Chrome Extension** (Manifest V3) that runs in your browser. It helps you save and organize YouTube watch tabs, build a local video library, and optionally use YouTube’s APIs and OpenAI for extra features.
+**TubeStack is a Chrome Extension** (Manifest V3) that runs in your browser. It helps you save and organize YouTube watch and Shorts tabs, build a local video library, and optionally use YouTube’s APIs and OpenAI for extra features.
 
 **TubeStack is not affiliated with YouTube, Google, or OpenAI.** Those are separate companies with their own terms and privacy policies.
 
@@ -31,7 +31,7 @@ Depending on how you use TubeStack, the extension may store locally, among other
 - **Saved YouTube tabs and library items** (titles, channels, URLs, **Watch States**, **tags**, video notes, timestamp notes, and related fields you add in the app).
 - **Playlists and organization data** you create inside TubeStack (including local playlist snapshots, **stack notes**, **research summaries**, and **decision logs**).
 - **Categories, themes, tags, Watch States, and similar labels** you use to organize your library.
-- **Locally tracked watch progress** for YouTube videos you watch in YouTube tabs **while TubeStack is installed** — for example `playheadSec`, `durationSec`, `totalWatchedSec`, `updatedAt`, and daily totals in `watchByDay`. TubeStack observes open YouTube watch pages via its content scripts; it does **not** use the Chrome History API.
+- **Locally tracked watch progress** for YouTube videos you watch in YouTube `/watch` or `/shorts` tabs **while TubeStack is installed** — for example `playheadSec`, `durationSec`, `totalWatchedSec`, `updatedAt`, and daily totals in `watchByDay`. Full progress on `/watch` pages; **best-effort** on Shorts. TubeStack observes open tabs via its content scripts; it does **not** use the Chrome History API.
 - **Extension settings** (for example sidebar preferences, import options, and similar configuration).
 
 **Credentials stay on your device:**

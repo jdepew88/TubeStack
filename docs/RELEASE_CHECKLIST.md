@@ -14,7 +14,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 - [ ] **Permissions reviewed** — `manifest.json` matches [PERMISSIONS.md](PERMISSIONS.md): `contextMenus`, `identity`, `scripting`, `storage` only; **no** `history`, `tabs`, `windows`, or `<all_urls>`.
 - [ ] **Host permissions minimized** — Required hosts: `youtube.com`, `m.youtube.com` only. Optional: `www.googleapis.com`, `api.openai.com` (runtime grant).
 - [ ] **Context menus scoped** — Save menus on **YouTube URLs only**; “Open dashboard” on **extension icon** only (not all websites). Confirm in `background/service-worker.js` (`TUBESTACK_CTX_YT`).
-- [ ] **Content scripts scoped** — Watch/subscription YouTube paths only; no scripts on non-YouTube sites (see manifest `content_scripts`).
+- [ ] **Content scripts scoped** — Watch, Shorts, and subscription YouTube paths only; no scripts on non-YouTube sites (see manifest `content_scripts`).
 - [ ] **No Chrome History permission** — `manifest.json` does **not** include `"history"` in `permissions` or `optional_permissions`.
 - [ ] **No `chrome.history` usage** — Grep returns **zero** matches in `*.js`.
 - [ ] **Store & privacy copy** — [STORE_LISTING.md](STORE_LISTING.md), [PERMISSIONS.md](PERMISSIONS.md), and [PRIVACY.md](PRIVACY.md) match the shipped build and state **no** History permission / **no** unrelated browsing history scan.
@@ -59,7 +59,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 ## Functional QA (manual)
 
-- [ ] **Core save / restore YouTube tab flow tested** — Save tabs (popup/context menu/dashboard as applicable), confirm items in library, restore opens correct watch URLs; progress behavior spot-checked where supported.
+- [ ] **Core save / restore YouTube tab flow tested** — Save watch and Shorts tabs (popup/context menu/dashboard as applicable), confirm items in library, restore opens correct watch/Shorts URLs; progress spot-checked on `/watch` and best-effort on Shorts.
 - [ ] **AI categorization tested with small batch** — Run on a **small** set of items with a test OpenAI key; confirm results, errors, and that you are comfortable with metadata sent (per disclosure).
 - [ ] **YouTube playlist creation tested** — OAuth path creates a playlist on the intended Google account; verify visibility (public/unlisted/private) matches expectation.
 

@@ -120,8 +120,9 @@
       <code>windows</code>.
     </p>
     <p>
-      Content scripts run on YouTube watch/Shorts pages (metadata and local progress) and on YouTube subscription/channel
-      feed pages when you import channel names. No content scripts run on non-YouTube sites.
+      Content scripts run on YouTube watch and Shorts pages (metadata on save; local progress on open tabs—full on
+      <code>/watch</code>, best-effort on <code>/shorts</code>) and on YouTube subscription/channel feed pages when you
+      import channel names. No content scripts run on non-YouTube sites.
     </p>
 
     <h2>Deleting data</h2>
@@ -138,6 +139,7 @@
     <h2>What TubeStack does not do</h2>
     <ul>
       <li>Does not request Chrome History permission.</li>
+      <li>Does not request the broad <code>tabs</code> permission (YouTube tab access is scoped via YouTube host permissions).</li>
       <li>Does not scan unrelated browsing history.</li>
       <li>Does not sell user data.</li>
     </ul>

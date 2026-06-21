@@ -10,7 +10,7 @@ This document matches **`manifest.json`** in this repository (Manifest V3). Use 
 
 ## Summary for reviewers
 
-TubeStack is a **single-purpose** extension: save and organize **YouTube watch tabs** in a **local library**. It:
+TubeStack is a **single-purpose** extension: save and organize **YouTube watch and Shorts tabs** in a **local library**. It:
 
 - **Does not** request Chrome **History**, **`tabs`**, **`windows`**, **`<all_urls>`**, or broad site access.
 - **Does not** call `chrome.history` or read unrelated browsing history.
@@ -38,7 +38,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch t
 
 | Matches | Scripts | Purpose |
 |---------|---------|---------|
-| `https://www.youtube.com/watch*`, `https://m.youtube.com/watch*`, `https://www.youtube.com/shorts/*`, `https://m.youtube.com/shorts/*` | `youtube-metadata.js`, `youtube-progress.js` | Read page-visible video metadata on save; track playback progress on open watch/Shorts tabs (local only) |
+| `https://www.youtube.com/watch*`, `https://m.youtube.com/watch*`, `https://www.youtube.com/shorts/*`, `https://m.youtube.com/shorts/*` | `lib/youtube-url.js`, `youtube-metadata.js`, `youtube-progress.js` | Read page-visible video metadata on save; track playback progress on open watch/Shorts tabs (full on `/watch`, best-effort on Shorts; local only) |
 | `https://www.youtube.com/feed/channels*`, `https://www.youtube.com/feed/subscriptions*` | `channel-scrape.js` | User-initiated channel-name scrape on YouTube subscription pages |
 
 ---
@@ -53,15 +53,15 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch t
 | **Where used** | `background/service-worker.js` — `rebuildTubeStackContextMenus()` |
 | **User trigger** | User right-clicks on a **YouTube page** or on the **extension toolbar icon**. |
 | **Scope** | **YouTube pages only** for save actions (`documentUrlPatterns`: `youtube.com`, `m.youtube.com`). **Open dashboard** appears on **extension icon** right-click (`contexts: ["action"]`), not on every website. |
-| **Data accessed** | None directly from the menu. Save actions query **YouTube watch tabs** in the current window, save them to the library, create a **new local playlist**, and open the dashboard on that playlist (same flow as the toolbar popup). |
+| **Data accessed** | None directly from the menu. Save actions query **YouTube watch and Shorts tabs** in the current window, save them to the library, create a **new local playlist**, and open the dashboard on that playlist (same flow as the toolbar popup). |
 
 **Chrome Web Store justification (short):**
 
-> Adds right-click menu items on YouTube pages to save open YouTube watch tabs, and on the extension icon to open the TubeStack dashboard.
+> Adds right-click menu items on YouTube pages to save open YouTube watch and Shorts tabs, and on the extension icon to open the TubeStack dashboard.
 
 **Chrome Web Store justification (long):**
 
-> TubeStack registers context menu entries so users can save YouTube watch tabs without opening the popup. Save items appear only on YouTube URLs. “Open dashboard” appears when right-clicking the extension icon. Menu actions do not read Chrome History or non-YouTube sites.
+> TubeStack registers context menu entries so users can save YouTube watch and Shorts tabs without opening the popup. Save items appear only on YouTube URLs. “Open dashboard” appears when right-clicking the extension icon. Menu actions do not read Chrome History or non-YouTube sites.
 
 ---
 
@@ -90,10 +90,10 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch t
 | | |
 |--|--|
 | **Why declared** | Required for `chrome.scripting.executeScript` when a content script is not already present on a tab. |
-| **Where used** | `background/service-worker.js` — fallback injection of `youtube-metadata.js` or `channel-scrape.js` on **specific YouTube tab IDs** before `sendMessage`. |
-| **User trigger** | Saving tabs, importing channels, or other actions that need metadata from a YouTube tab that did not load a content script (for example `/shorts/` URLs). |
+| **Where used** | `background/service-worker.js` — fallback injection of `lib/youtube-url.js` + `youtube-metadata.js`, or `channel-scrape.js`, on **specific YouTube tab IDs** before `sendMessage`. |
+| **User trigger** | Saving tabs, importing channels, or other actions that need metadata from a YouTube tab where the manifest content script did not load (for example a tab opened before install, or a failed injection). |
 | **Scope** | **YouTube tab IDs only** — never arbitrary URLs or non-YouTube sites. |
-| **Relationship to content scripts** | Watch pages normally use manifest content scripts; scripting is a **fallback**, not a substitute for broad injection. |
+| **Relationship to content scripts** | Watch and Shorts pages normally use manifest content scripts; scripting is a **fallback**, not a substitute for broad injection. |
 
 **Chrome Web Store justification (short):**
 
@@ -101,7 +101,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch t
 
 **Chrome Web Store justification (long):**
 
-> TubeStack declares scripting to inject youtube-metadata.js or channel-scrape.js on specific YouTube tab IDs when saving tabs or running a user-initiated import and the manifest content script is not present (for example some Shorts URLs). Injection is limited to YouTube tabs involved in an explicit user action.
+> TubeStack declares scripting to inject lib/youtube-url.js and youtube-metadata.js (or channel-scrape.js for channel import) on specific YouTube tab IDs when saving tabs or running a user-initiated import and the manifest content script is not present. Injection is limited to YouTube tabs involved in an explicit user action.
 
 ---
 
@@ -132,17 +132,17 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch t
 | | |
 |--|--|
 | **Why required** | Core product scope; content scripts; tab URL/title access for YouTube tabs; opening YouTube links from the library. |
-| **Where used** | Content scripts (watch + subscription pages); `chrome.tabs.query` filtered to YouTube URLs; opening saved watch URLs. |
+| **Where used** | Content scripts (watch, Shorts, and subscription pages); `chrome.tabs.query` filtered to YouTube URLs; opening saved watch/Shorts URLs. |
 | **User trigger** | Saving tabs, viewing library, resuming videos, optional channel scrape on YouTube subscription pages. |
 | **Not used for** | Reading non-YouTube pages, background tracking on other sites, or History API replacement. |
 
 **Chrome Web Store justification (short):**
 
-> TubeStack only works with YouTube watch tabs and YouTube pages for save, metadata, progress, and organization features.
+> TubeStack only works with YouTube watch/Shorts tabs and YouTube pages for save, metadata, progress, and organization features.
 
 **Chrome Web Store justification (long):**
 
-> Host permission is limited to youtube.com and m.youtube.com. TubeStack saves and organizes YouTube watch tabs, runs content scripts on YouTube watch and subscription pages, and reads tab metadata for YouTube URLs when the user saves tabs. No access to other websites is requested at install time.
+> Host permission is limited to youtube.com and m.youtube.com. TubeStack saves and organizes YouTube watch and Shorts tabs, runs content scripts on YouTube watch, Shorts, and subscription pages, and reads tab metadata for YouTube URLs when the user saves tabs. No access to other websites is requested at install time.
 
 ---
 
@@ -207,30 +207,30 @@ TubeStack intentionally **does not** declare these permissions:
 
 When the dashboard asks what runs on web pages:
 
-1. **Watch and Shorts pages** — Passive message listener for metadata on user save; periodic progress ticks **only while a watch or Shorts tab is open** (stored locally as `videoProgress` / `watchByDay`). No Chrome History API.
+1. **Watch and Shorts pages** — Passive message listener for metadata on user save; periodic progress ticks **only while a watch or Shorts tab is open** (stored locally as `videoProgress` / `watchByDay`). Full progress on `/watch`; **best-effort** on Shorts. No Chrome History API.
 2. **Subscription / channels feed** — Scrapes **visible channel names from the DOM** only when the user triggers import/sync; may scroll the page to load more rows.
 3. **No content scripts** on non-YouTube sites.
 
-Align wording with [PRIVACY.md — Watch progress](PRIVACY.md#watch-progress-local-youtube-pages-only).
+Align wording with [PRIVACY.md — Watch progress](PRIVACY.md#watch-progress-local-youtube-watch-pages-best-effort-on-shorts).
 
 ---
 
 ## Common reviewer questions — suggested answers
 
 **Does TubeStack collect browsing history?**  
-No. It does not use the Chrome History permission or `chrome.history`. Progress is observed on **open YouTube watch tabs** via a content script and stored locally.
+No. It does not use the Chrome History permission or `chrome.history`. Progress is observed on **open YouTube `/watch` tabs** via a content script (best-effort on Shorts) and stored locally.
 
 **Why `identity` if OAuth is optional?**  
 Chrome requires the `identity` permission for `launchWebAuthFlow`. The feature is optional; local library use does not require sign-in.
 
 **Why `scripting` if you have content scripts?**  
-Fallback injection on specific YouTube tabs (for example Shorts) when saving, if the manifest content script did not load.
+Fallback injection on specific YouTube tabs when saving or importing, if the manifest content script did not load (for example a tab opened before install).
 
 **Why context menus on many context types (`page`, `link`, `video`, etc.)?**  
 So users can right-click a video link or the page on **YouTube** and still reach save actions. Menu entries are restricted to **YouTube URL patterns**, not all websites.
 
 **Does TubeStack access tabs on non-YouTube sites?**  
-Tab queries filter to YouTube watch URLs. Without the `tabs` permission and without host access to other origins, TubeStack cannot read unrelated tab URLs.
+Tab queries filter to YouTube watch and Shorts URLs. Without the `tabs` permission and without host access to other origins, TubeStack cannot read unrelated tab URLs.
 
 ---
 

@@ -3,47 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TubeStack — Privacy policy</title>
+    <title>TubeStack Privacy Policy</title>
     <style>
       html {
         color-scheme: light;
       }
 
-      body,
-      p,
-      li,
-      h1,
-      h2,
-      strong,
-      b,
-      nav,
-      footer,
-      footer p {
-        color: #1a1a1a;
-      }
-
       body {
-        margin: 0;
+        margin: 0 auto;
         padding: 24px 20px 48px;
+        max-width: 42rem;
         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         font-size: 16px;
         line-height: 1.65;
+        color: #1a1a1a;
         background: #ffffff;
-        max-width: 42rem;
-        margin-left: auto;
-        margin-right: auto;
-      }
-
-      strong,
-      b {
-        font-weight: 700;
-        color: inherit;
-      }
-
-      nav a,
-      footer a,
-      p a {
-        color: #0b57d0;
       }
 
       nav {
@@ -51,18 +25,24 @@
         font-size: 15px;
       }
 
+      nav a,
+      p a,
+      footer a {
+        color: #0b57d0;
+      }
+
       h1 {
+        margin: 0 0 8px;
         font-size: 1.75rem;
         line-height: 1.25;
-        margin: 0 0 8px;
       }
 
       h2 {
-        font-size: 1.15rem;
-        line-height: 1.35;
         margin: 32px 0 12px;
         padding-top: 8px;
         border-top: 1px solid #ddd;
+        font-size: 1.15rem;
+        line-height: 1.35;
       }
 
       p {
@@ -82,18 +62,24 @@
         margin-bottom: 0;
       }
 
+      strong,
+      b {
+        font-weight: 700;
+        color: inherit;
+      }
+
       code {
         font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
         font-size: 0.92em;
-        color: #1a1a1a;
-        background: #f0f0f0;
         padding: 2px 6px;
         border-radius: 4px;
+        color: #1a1a1a;
+        background: #f0f0f0;
       }
 
       .meta {
-        color: #444;
         margin-bottom: 20px;
+        color: #444;
       }
 
       footer {
@@ -109,20 +95,8 @@
           color-scheme: dark;
         }
 
-        body,
-        p,
-        li,
-        h1,
-        h2,
-        strong,
-        b,
-        nav,
-        footer,
-        footer p {
-          color: #e8e8e8;
-        }
-
         body {
+          color: #e8e8e8;
           background: #121212;
         }
 
@@ -142,8 +116,8 @@
         }
 
         nav a,
-        footer a,
-        p a {
+        p a,
+        footer a {
           color: #8ab4f8;
         }
       }
@@ -151,12 +125,12 @@
   </head>
   <body>
     <nav>
-      <a href="../">TubeStack home</a>
-      ·
+      <a href="../index.html">TubeStack home</a>
+      &middot;
       <a href="https://github.com/jdepew88/TubeStack">GitHub</a>
     </nav>
 
-    <h1>TubeStack — Privacy policy</h1>
+    <h1>TubeStack Privacy Policy</h1>
     <p class="meta"><strong>Last updated:</strong> May 2026</p>
 
     <p>
@@ -166,10 +140,10 @@
 
     <h2>Local-first design</h2>
     <p>
-      Most of what you see in TubeStack—saved tabs, playlists, categories, tags, notes, and locally tracked watch
-      progress—is stored <strong>locally in your browser</strong> using Chrome extension storage
-      (<code>chrome.storage.local</code>), not on a TubeStack-owned server. TubeStack has no central backend that
-      collects your library or credentials.
+      TubeStack is local-first. Most of what you see in TubeStack, including saved tabs, playlists, categories, tags,
+      notes, and locally tracked watch progress, is stored <strong>locally in your browser</strong> using Chrome
+      extension storage (<code>chrome.storage.local</code>), not on a TubeStack-owned server. TubeStack has no central
+      backend that collects your library or credentials.
     </p>
 
     <h2>What is stored on your device</h2>
@@ -194,33 +168,33 @@
       </li>
       <li>
         <strong>OAuth access tokens</strong> — when you sign in with Google, bearer tokens are kept in the extension
-        service worker’s <strong>memory only</strong> (not written to <code>chrome.storage.local</code>) until they
-        expire or you choose <strong>Sign out of Google</strong> in Settings.
+        service worker&rsquo;s <strong>memory only</strong> (not written to <code>chrome.storage.local</code>) until
+        they expire or you choose <strong>Sign out of Google</strong> in Settings.
       </li>
     </ul>
 
     <h2>Network requests and third parties</h2>
     <p>
-      <strong>Google / YouTube</strong> — API and OAuth calls happen only when you configure and use those optional
-      features. Requests go directly from the extension to Google’s services.
+      <strong>Google / YouTube</strong> — Optional API and OAuth calls happen only when you configure and use those
+      features. Requests go directly from the extension to Google&rsquo;s services.
     </p>
     <p>
-      <strong>OpenAI</strong> — Calls happen only when you configure an API key and run optional AI features (including
-      <strong>Test OpenAI connection</strong> in Settings). Selected saved-video metadata may be sent for categorization
-      or Watch State suggestions when you explicitly run those tools.
+      <strong>OpenAI</strong> — Optional calls happen only when you configure an API key and run AI features (including
+      <strong>Test OpenAI connection</strong> in Settings). Selected saved-video metadata may be sent for
+      categorization or Watch State suggestions when you explicitly run those tools.
     </p>
 
     <h2>Permissions and page access</h2>
     <p>
       TubeStack declares <code>contextMenus</code>, <code>identity</code>, <code>scripting</code>, and
-      <code>storage</code>, plus YouTube host permissions. Google APIs and OpenAI are optional runtime host permissions.
-      TubeStack does <strong>not</strong> request Chrome History, the broad <code>tabs</code> permission, or
-      <code>windows</code>.
+      <code>storage</code>, plus YouTube host permissions. Google APIs and OpenAI are optional runtime host
+      permissions. TubeStack does <strong>not</strong> request Chrome History, the broad <code>tabs</code> permission,
+      or <code>windows</code>.
     </p>
     <p>
-      Content scripts run on YouTube watch and Shorts pages (metadata on save; local progress on open tabs—full on
-      <code>/watch</code>, best-effort on <code>/shorts</code>) and on YouTube subscription/channel feed pages when you
-      import channel names. No content scripts run on non-YouTube sites.
+      Content scripts run on YouTube watch and Shorts pages (metadata on save; local progress on open tabs — full on
+      <code>/watch</code>, best-effort on <code>/shorts</code>) and on YouTube subscription or channel feed pages when
+      you import channel names. No content scripts run on non-YouTube sites.
     </p>
 
     <h2>Deleting data</h2>
@@ -231,7 +205,7 @@
     </p>
     <p>
       <strong>Delete saved videos, progress &amp; local playlists</strong> keeps saved API keys, OAuth Client ID,
-      categories/themes, and the Subbed Channels list unless you use the other clear buttons.
+      categories and themes, and the Subbed Channels list unless you use the other clear buttons.
     </p>
 
     <h2>What TubeStack does not do</h2>
@@ -254,9 +228,9 @@
 
     <footer>
       <p>
-        TubeStack ·
-        <a href="../">Home</a>
-        ·
+        TubeStack &middot;
+        <a href="../index.html">Home</a>
+        &middot;
         <a href="https://github.com/jdepew88/TubeStack">GitHub repository</a>
       </p>
     </footer>

@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TubeStack — Your YouTube library in Chrome</title>
+    <meta
+      name="description"
+      content="TubeStack is a Chrome extension that saves YouTube watch and Shorts tabs into a local library—organize, resume progress, and watch intentionally."
+    />
+    <meta name="theme-color" content="#09090b" />
+    <style>
+      :root {
+        --bg: #09090b;
+        --surface: #111113;
+        --elevated: #18181b;
+        --border: #27272a;
+        --text: #f4f4f5;
+        --muted: #a1a1aa;
+        --accent: #84cc16;
+        --accent-dim: #65a30d;
+        --accent-soft: rgba(132, 204, 22, 0.14);
+        --glow: rgba(132, 204, 22, 0.35);
+        --radius: 14px;
+        --radius-sm: 10px;
+        --max: 1120px;
+        --nav-h: 64px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .skip {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+      }
+
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        z-index: 999;
+        background: var(--elevated);
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius-sm);
+      }
+
+      /* Background atmosphere */
+      .bg-glow {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        overflow: hidden;
+      }
+
+      .bg-glow::before,
+      .bg-glow::after {
+        content: "";
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(80px);
+        opacity: 0.45;
+      }
+
+      .bg-glow::before {
+        width: 520px;
+        height: 520px;
+        top: -120px;
+        right: -80px;
+        background: radial-gradient(circle, var(--glow), transparent 70%);
+      }
+
+      .bg-glow::after {
+        width: 420px;
+        height: 420px;
+        bottom: 10%;
+        left: -100px;
+        background: radial-gradient(circle, rgba(163, 230, 53, 0.12), transparent 70%);
+      }
+
+      .grid-lines {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black, transparent);
+      }
+
+      .wrap {
+        position: relative;
+        z-index: 1;
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* Nav */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        height: var(--nav-h);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border-bottom: 1px solid rgba(39, 39, 42, 0.8);
+        background: rgba(9, 9, 11, 0.82);
+        backdrop-filter: blur(12px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .brand:hover {
+        text-decoration: none;
+      }
+
+      .brand img {
+        width: 36px;
+        height: 36px;
+        border-radius: 9px;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+        font-size: 0.92rem;
+      }
+
+      .nav-links a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+
+      .nav-links a:hover {
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        padding: 0.65rem 1.15rem;
+        border-radius: var(--radius-sm);
+        font-size: 0.92rem;
+        font-weight: 600;
+        border: 1px solid transparent;
+        cursor: pointer;
+        text-decoration: none;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      }
+
+      .btn:hover {
+        text-decoration: none;
+        transform: translateY(-1px);
+      }
+
+      .btn-primary {
+        background: linear-gradient(180deg, #a3e635 0%, var(--accent) 100%);
+        color: #1a2e05;
+        box-shadow: 0 0 0 1px rgba(163, 230, 53, 0.3), 0 8px 24px rgba(132, 204, 22, 0.25);
+      }
+
+      .btn-primary:hover {
+        box-shadow: 0 0 0 1px rgba(163, 230, 53, 0.5), 0 12px 32px rgba(132, 204, 22, 0.32);
+      }
+
+      .btn-ghost {
+        background: rgba(255, 255, 255, 0.04);
+        border-color: var(--border);
+        color: var(--text);
+      }
+
+      .btn-ghost:hover {
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      /* Hero */
+      .hero {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 3rem;
+        align-items: center;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        border: 1px solid rgba(132, 204, 22, 0.25);
+        color: #d9f99d;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        margin-bottom: 1.25rem;
+      }
+
+      .pill-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 10px var(--accent);
+      }
+
+      .hero h1 {
+        margin: 0 0 1rem;
+        font-size: clamp(2.2rem, 5vw, 3.35rem);
+        line-height: 1.08;
+        letter-spacing: -0.035em;
+        font-weight: 800;
+      }
+
+      .hero h1 span {
+        background: linear-gradient(135deg, #ecfccb 0%, var(--accent) 55%, #65a30d 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .hero-lead {
+        margin: 0 0 1.75rem;
+        font-size: 1.12rem;
+        color: var(--muted);
+        max-width: 34rem;
+      }
+
+      .hero-cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .trust-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      .trust-row span::before {
+        content: "✓ ";
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .hero-visual {
+        position: relative;
+        display: flex;
+        justify-content: center;
+      }
+
+      .hero-card {
+        width: 100%;
+        max-width: 380px;
+        background: linear-gradient(165deg, rgba(24, 24, 27, 0.95), rgba(17, 17, 19, 0.98));
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) + 4px);
+        padding: 1.25rem;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+          0 24px 60px rgba(0, 0, 0, 0.45),
+          0 0 80px rgba(132, 204, 22, 0.08);
+      }
+
+      .hero-card-head {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.85rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .hero-card-head img {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+      }
+
+      .hero-card-head strong {
+        display: block;
+        font-size: 0.95rem;
+      }
+
+      .hero-card-head small {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .mock-tabs {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+      }
+
+      .mock-tab {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.55rem 0.65rem;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: var(--radius-sm);
+        font-size: 0.82rem;
+      }
+
+      .mock-tab.saved {
+        border-color: rgba(132, 204, 22, 0.35);
+        background: var(--accent-soft);
+      }
+
+      .mock-thumb {
+        width: 48px;
+        height: 32px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #27272a, #3f3f46);
+        flex-shrink: 0;
+      }
+
+      .mock-tab span {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #e4e4e7;
+      }
+
+      .mock-badge {
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #bef264;
+        background: rgba(132, 204, 22, 0.18);
+        padding: 0.2rem 0.45rem;
+        border-radius: 999px;
+      }
+
+      /* Sections */
+      section,
+      .hero-wrap {
+        scroll-margin-top: calc(var(--nav-h) + 16px);
+      }
+
+      .hero-wrap {
+        padding: 4.5rem 0 3.5rem;
+      }
+
+      section {
+        padding: 4.5rem 0;
+        border-top: 1px solid var(--border);
+      }
+
+      section:first-of-type {
+        border-top: none;
+      }
+
+      section.section-alt {
+        background: rgba(17, 17, 19, 0.55);
+        border-top-color: rgba(39, 39, 42, 0.9);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      }
+
+      .section-head {
+        margin-bottom: 2.25rem;
+        padding-bottom: 1.25rem;
+        border-bottom: 1px solid rgba(39, 39, 42, 0.85);
+      }
+
+      .section-label {
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 0.5rem;
+      }
+
+      .section-title {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.6rem, 3vw, 2.1rem);
+        letter-spacing: -0.025em;
+        line-height: 1.2;
+      }
+
+      .section-sub {
+        margin: 0;
+        color: var(--muted);
+        max-width: 42rem;
+        font-size: 1.02rem;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1rem;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.25rem 1.35rem;
+        transition: border-color 0.15s ease, transform 0.15s ease;
+      }
+
+      .card:hover {
+        border-color: rgba(132, 204, 22, 0.35);
+        transform: translateY(-2px);
+      }
+
+      .card-icon {
+        width: 2.25rem;
+        height: 2.25rem;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        background: var(--accent-soft);
+        color: #d9f99d;
+        font-size: 1.1rem;
+        margin-bottom: 0.85rem;
+      }
+
+      .card h3 {
+        margin: 0 0 0.45rem;
+        font-size: 1.05rem;
+      }
+
+      .card p {
+        margin: 0;
+        font-size: 0.92rem;
+        color: var(--muted);
+      }
+
+      /* Steps */
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.25rem;
+        counter-reset: step;
+      }
+
+      .step {
+        position: relative;
+        padding: 1.35rem;
+        background: var(--elevated);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+
+      .step::before {
+        counter-increment: step;
+        content: counter(step);
+        display: inline-grid;
+        place-items: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #1a2e05;
+        font-size: 0.85rem;
+        font-weight: 800;
+        margin-bottom: 0.75rem;
+      }
+
+      .step h3 {
+        margin: 0 0 0.4rem;
+        font-size: 1rem;
+      }
+
+      .step p {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      /* Split panel */
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        align-items: start;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.5rem;
+      }
+
+      .panel h3 {
+        margin: 0 0 0.75rem;
+        font-size: 1.05rem;
+      }
+
+      .panel ul {
+        margin: 0;
+        padding-left: 1.1rem;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .panel li + li {
+        margin-top: 0.4rem;
+      }
+
+      .panel.optional {
+        border-color: rgba(132, 204, 22, 0.2);
+        background: linear-gradient(165deg, rgba(24, 24, 27, 0.9), rgba(17, 17, 19, 0.95));
+      }
+
+      /* Install box */
+      .install-box {
+        background: var(--elevated);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.5rem;
+      }
+
+      .install-box ol {
+        margin: 0;
+        padding-left: 1.25rem;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .install-box li {
+        padding-left: 0.25rem;
+      }
+
+      .install-box li + li {
+        margin-top: 0.75rem;
+      }
+
+      .link-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.65rem 1rem;
+        margin-top: 0.25rem;
+      }
+
+      .link-row a:not(.btn) {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .link-row a:not(.btn):hover {
+        color: var(--text);
+      }
+
+      code,
+      .code {
+        font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
+        font-size: 0.88em;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 0.15rem 0.45rem;
+        border-radius: 6px;
+        color: #e4e4e7;
+      }
+
+      /* Privacy band */
+      .privacy-band {
+        background: linear-gradient(90deg, rgba(132, 204, 22, 0.08), rgba(132, 204, 22, 0.02));
+        border: 1px solid rgba(132, 204, 22, 0.2);
+        border-radius: var(--radius);
+        padding: 2rem 1.75rem;
+      }
+
+      .privacy-band .section-head {
+        border-bottom-color: rgba(132, 204, 22, 0.2);
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+      }
+
+      .privacy-band p {
+        margin: 0 0 1rem;
+        color: var(--muted);
+        max-width: 52rem;
+      }
+
+      .privacy-band p:last-child {
+        margin-bottom: 0;
+      }
+
+      /* Footer */
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 2.5rem 0 3rem;
+        margin-top: 2rem;
+      }
+
+      .footer-grid {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 1.5rem;
+        align-items: start;
+      }
+
+      .footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem 1.5rem;
+        font-size: 0.92rem;
+      }
+
+      .footer-links a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+
+      .footer-links a:hover {
+        color: var(--text);
+      }
+
+      .fine {
+        margin-top: 1.5rem;
+        font-size: 0.82rem;
+        color: #71717a;
+      }
+
+      @media (max-width: 860px) {
+        .hero-wrap {
+          padding-top: 2.5rem;
+        }
+
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-visual {
+          order: -1;
+        }
+
+        .split {
+          grid-template-columns: 1fr;
+        }
+
+        .nav-links {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="bg-glow" aria-hidden="true"></div>
+    <div class="grid-lines" aria-hidden="true"></div>
+
+    <header class="wrap nav">
+      <a class="brand" href="./">
+        <img src="assets/icon512.png" width="36" height="36" alt="" />
+        TubeStack
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#install">Install</a>
+        <a href="privacy/privacy.html">Privacy</a>
+        <a href="https://github.com/jdepew88/TubeStack">GitHub</a>
+      </nav>
+      <a class="btn btn-primary" href="#install">Get TubeStack</a>
+    </header>
+
+    <main id="main">
+      <div class="wrap hero-wrap">
+        <div class="hero">
+        <div>
+          <div class="pill"><span class="pill-dot" aria-hidden="true"></span> Chrome extension · Local-first</div>
+          <h1>Turn YouTube tab chaos into a <span>library you control</span></h1>
+          <p class="hero-lead">
+            Save watch and Shorts tabs into organized local playlists. Close tabs to free RAM, resume where you left off,
+            and browse your collection like iTunes—not like a browser graveyard.
+          </p>
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="https://github.com/jdepew88/TubeStack">Install from GitHub</a>
+            <a class="btn btn-ghost" href="privacy/privacy.html">Privacy policy</a>
+          </div>
+          <div class="trust-row">
+            <span>No Chrome History permission</span>
+            <span>Data stays on your device</span>
+            <span>Watch + Shorts support</span>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="hero-card">
+            <div class="hero-card-head">
+              <img src="assets/icon512.png" width="44" height="44" alt="" />
+              <div>
+                <strong>12 video tabs saved</strong>
+                <small>New playlist · Session stack</small>
+              </div>
+            </div>
+            <div class="mock-tabs">
+              <div class="mock-tab saved">
+                <div class="mock-thumb"></div>
+                <span>Homelab networking deep dive</span>
+                <span class="mock-badge">Saved</span>
+              </div>
+              <div class="mock-tab saved">
+                <div class="mock-thumb"></div>
+                <span>React patterns for 2026</span>
+                <span class="mock-badge">Saved</span>
+              </div>
+              <div class="mock-tab">
+                <div class="mock-thumb"></div>
+                <span>Short: quick CLI tip</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+
+      <section id="features" class="section-alt">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-label">Features</p>
+            <h2 class="section-title">Built for YouTube power users</h2>
+            <p class="section-sub">
+              Inspired by OneTab, designed for watch pages and Shorts. Everything lives in Chrome extension storage on your
+              machine—not on a TubeStack server.
+            </p>
+          </header>
+          <div class="cards">
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">📥</div>
+              <h3>Save tabs fast</h3>
+              <p>Popup or right-click on YouTube to save left, right, all, or all except current—watch and Shorts included.</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">📚</div>
+              <h3>Library &amp; playlists</h3>
+              <p>Artist · Album · Category browsing, local playlists, tags, notes, and Watch States for real workflows.</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">⏱</div>
+              <h3>Resume progress</h3>
+              <p>Local progress on <code>/watch</code> pages; best-effort on Shorts. No History API, no cloud upload.</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">🎯</div>
+              <h3>Focus sessions</h3>
+              <p>Queues, priorities, and focused playlists so you watch intentionally instead of drowning in tabs.</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">🔌</div>
+              <h3>Optional YouTube API</h3>
+              <p>Bring your own API key or OAuth for imports, playlist sync, and subscription helpers—only if you want it.</p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">✨</div>
+              <h3>Optional AI organize</h3>
+              <p>OpenAI categorization runs only when you trigger it, on metadata you already saved locally.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="how">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-label">How it works</p>
+            <h2 class="section-title">Three steps to a calmer browser</h2>
+            <p class="section-sub">No account required. No TubeStack login. Install, save, organize.</p>
+          </header>
+          <div class="steps">
+            <div class="step">
+              <h3>Open your YouTube tabs</h3>
+              <p>Research rabbit holes, Shorts, tutorials—whatever is eating your RAM right now.</p>
+            </div>
+            <div class="step">
+              <h3>Save to TubeStack</h3>
+              <p>Capture titles, channels, URLs, and thumbnails into a new local playlist. Close tabs if you want.</p>
+            </div>
+            <div class="step">
+              <h3>Come back anytime</h3>
+              <p>Open the dashboard or library, restore videos, track progress, and keep your queue under control.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="compare" class="section-alt">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-label">What's included</p>
+            <h2 class="section-title">Core features vs optional integrations</h2>
+            <p class="section-sub">Everything you need to save and organize tabs works offline and locally. Connect Google or OpenAI only if you choose to.</p>
+          </header>
+          <div class="split">
+          <div class="panel">
+            <h3>Core (always local)</h3>
+            <ul>
+              <li>Save &amp; restore watch and Shorts tabs</li>
+              <li>Local playlists, tags, and Watch States</li>
+              <li>Progress tracking on-device</li>
+              <li>Focus sessions and library views</li>
+            </ul>
+          </div>
+          <div class="panel optional">
+            <h3>Optional integrations</h3>
+            <ul>
+              <li>YouTube Data API key (your Google Cloud project)</li>
+              <li>Google OAuth for playlist export &amp; sync</li>
+              <li>OpenAI API for AI-assisted categorization</li>
+              <li>Requested at runtime—never required to save tabs</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="install">
+        <div class="wrap">
+          <header class="section-head">
+            <p class="section-label">Install</p>
+            <h2 class="section-title">Load unpacked in Chrome</h2>
+            <p class="section-sub">TubeStack is distributed as open source. Clone or download the repo, then load it in Developer Mode.</p>
+          </header>
+          <div class="install-box">
+            <ol>
+              <li>Clone <a href="https://github.com/jdepew88/TubeStack">github.com/jdepew88/TubeStack</a> or download a ZIP</li>
+              <li>Open <span class="code">chrome://extensions</span></li>
+              <li>Enable <strong>Developer mode</strong></li>
+              <li>Click <strong>Load unpacked</strong> and select the folder containing <span class="code">manifest.json</span></li>
+              <li>Pin TubeStack from the extensions menu</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="privacy" class="section-alt">
+        <div class="wrap">
+          <div class="privacy-band">
+            <header class="section-head">
+              <p class="section-label">Privacy</p>
+              <h2 class="section-title">Local-first by design</h2>
+            </header>
+            <p>
+              TubeStack does <strong>not</strong> request Chrome History, the broad <code>tabs</code> permission, or
+              <code>windows</code>. Your library, progress, and settings stay in extension storage on your device. Google
+              and OpenAI are contacted only when <strong>you</strong> enable and use those optional features.
+            </p>
+            <div class="link-row">
+              <a class="btn btn-ghost" href="privacy/privacy.html">Read the full privacy policy</a>
+              <a href="docs/PRIVACY.md">Markdown source</a>
+              <a href="docs/PERMISSIONS.md">Permission justifications</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap footer-grid">
+        <div>
+          <a class="brand" href="./">
+            <img src="assets/icon512.png" width="32" height="32" alt="" />
+            TubeStack
+          </a>
+          <p class="fine">Not affiliated with YouTube, Google, or OpenAI. MIT License.</p>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/jdepew88/TubeStack">GitHub</a>
+          <a href="privacy/privacy.html">Privacy</a>
+          <a href="docs/STORE_LISTING.md">Store listing docs</a>
+          <a href="docs/RELEASE_CHECKLIST.md">Release checklist</a>
+          <a href="README.md">Full README</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

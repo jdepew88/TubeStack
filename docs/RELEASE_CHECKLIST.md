@@ -1,4 +1,4 @@
-# TubeStack — Release checklist (Chrome Web Store)
+# TubeStack Release Checklist (Chrome Web Store)
 
 Use this before uploading a build to the Chrome Web Store or tagging a release. Check boxes as you complete each item.
 
@@ -44,7 +44,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
   - Grep returns **zero** matches in `*.js`
 
 - [ ] **Store and privacy copy aligned**
-  - [STORE_LISTING.md](STORE_LISTING.md), [PERMISSIONS.md](PERMISSIONS.md), [PRIVACY.md](PRIVACY.md), and [privacy/privacy.html](../privacy/privacy.html) match the shipped build
+  - [STORE_LISTING.md](STORE_LISTING.md), [PERMISSIONS.md](PERMISSIONS.md), [PRIVACY.md](PRIVACY.md), and [`privacy/privacy.html`](../privacy/privacy.html) match the shipped build
 
 - [ ] **No remote executable code**
   - MV3 packaging matches Chrome policy
@@ -77,8 +77,9 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
   - Store listing and in-extension copy state optional AI may send selected video metadata to OpenAI
 
 - [ ] **Privacy policy present**
-  - [`privacy/privacy.html`](../privacy/privacy.html) is valid standalone HTML and matches [`PRIVACY.md`](PRIVACY.md)
-  - Host on HTTPS (example: `https://<user>.github.io/TubeStack/privacy/privacy.html`)
+  - [`privacy/privacy.html`](../privacy/privacy.html) is valid standalone HTML and matches [PRIVACY.md](PRIVACY.md)
+  - Host on HTTPS (example: `https://jdepew88.github.io/TubeStack/privacy/privacy.html`)
+  - **Do not** use `docs/PRIVACY.md` as the store URL (GitHub Pages serves it as raw Markdown)
 
 - [ ] **Privacy link in extension**
   - Popup footer and Settings → Data & privacy link to bundled policy page
@@ -94,7 +95,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 ## Documentation and listing
 
 - [ ] **README updated**
-  - Privacy summary links to [PRIVACY.md](PRIVACY.md)
+  - Privacy summary links to [PRIVACY.md](PRIVACY.md) and store URL to [`privacy/privacy.html`](../privacy/privacy.html)
   - Permissions summary links to [PERMISSIONS.md](PERMISSIONS.md)
 
 - [ ] **STORE_LISTING.md prepared**
@@ -120,7 +121,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 - [ ] **Core save / restore flow**
   - Save watch and Shorts tabs (popup, context menu, dashboard)
   - Confirm library items and correct watch/Shorts URLs on restore
-  - Progress spot-checked on `/watch` and best-effort on Shorts
+  - Full progress on `/watch`; best-effort on Shorts
 
 - [ ] **AI categorization (small batch)**
   - Test with a small set and test OpenAI key; confirm metadata sent matches disclosure
@@ -135,6 +136,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 - [ ] **Version bumped** — `manifest.json` `version` incremented appropriately
 - [ ] **Zip matches repo** — Packaged folder is the same tree you tested
 - [ ] **Store justification fields** — Paste from [STORE_LISTING.md](STORE_LISTING.md) and [PERMISSIONS.md](PERMISSIONS.md)
+- [ ] **Privacy policy URL** — `privacy/privacy.html` on HTTPS, not `docs/PRIVACY.md`
 
 ---
 

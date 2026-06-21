@@ -1,8 +1,8 @@
-# TubeStack — Chrome Web Store listing
+# TubeStack Chrome Web Store Listing
 
 Use this document when filling out the Chrome Web Store developer dashboard: listing text, permission justifications, privacy fields, and reviewer notes.
 
-Keep wording aligned with **`manifest.json`** and **[PRIVACY.md](PRIVACY.md)**.
+Keep wording aligned with **`manifest.json`**, **[PRIVACY.md](PRIVACY.md)**, and **[`privacy/privacy.html`](../privacy/privacy.html)**.
 
 **Permission reference:** [PERMISSIONS.md](PERMISSIONS.md)
 
@@ -32,11 +32,13 @@ If you need a shorter line, drop the last sentence or shorten “Optional” to 
 
 - **Save** open YouTube tabs into a **local** playlist-style library
 - **Close** those tabs to free memory
-- **Restore** videos later — with watch progress preserved on `/watch` pages (best-effort on Shorts)
+- **Restore** videos later — with full watch progress on `/watch` pages (best-effort on Shorts; **saving Shorts works**)
 
 Inside the **dashboard**, you can organize saved videos with lists, themes/categories, tags, notes, and priority. Build local playlists, use focus-session tools, and work through queues without losing context.
 
 ### Optional integrations (your choice)
+
+These are **advanced optional features**. Local save and organize works without them.
 
 **YouTube Data API key (optional)**
 
@@ -52,7 +54,9 @@ If you add an OpenAI API key, AI-assisted tools run only when you use them. Requ
 
 ### Privacy in one line
 
-TubeStack is **local-first**. Your library, playlists, progress, and settings live in extension storage on your device. TubeStack does **not** request Chrome History permission, does **not** scan unrelated browsing history, and does **not** sell your data. Full policy: **[PRIVACY.md](PRIVACY.md)**.
+TubeStack is **local-first**. Your library, playlists, progress, and settings live in extension storage on your device. TubeStack does **not** request Chrome History permission, does **not** scan unrelated browsing history, and does **not** sell your data.
+
+**Store listing URL:** [`privacy/privacy.html`](../privacy/privacy.html) (hosted on HTTPS). Expanded source: [PRIVACY.md](PRIVACY.md).
 
 ### Disclaimers
 
@@ -124,7 +128,7 @@ Paste into each **Permission justification** field in the Chrome Web Store dashb
 
 ---
 
-### Permissions TubeStack does **not** request
+### Permissions TubeStack does not request
 
 > TubeStack does **not** request **History**, **`tabs`**, **`windows`**, or **`<all_urls>`**. It does not use `chrome.history`. Tab access is limited to **YouTube URLs** via host permissions.
 
@@ -165,7 +169,7 @@ TubeStack declares two content-script entries in `manifest.json`:
 | Pages | Behavior | User control |
 |-------|----------|--------------|
 | `/watch*` and `/shorts/*` on youtube.com / m.youtube.com | Metadata on save; progress heartbeats while tab is open (local only; full on `/watch`, best-effort on Shorts) | Saving is explicit; progress only on open tabs |
-| `/feed/channels*` and `/feed/subscriptions*` | Reads visible channel names when user runs import/sync | User-initiated; may scroll feed to load rows |
+| `/feed/channels*` and `/feed/subscriptions*` on youtube.com | Reads visible channel names when user runs import/sync | User-initiated; may scroll feed to load rows |
 
 **Justification text:**
 
@@ -186,9 +190,9 @@ TubeStack declares two content-script entries in `manifest.json`:
 | Topic | Answer |
 |-------|--------|
 | What is collected | TubeStack does **not** send your full library to a TubeStack-operated server. Data you generate is stored **locally** unless **you** trigger Google or OpenAI |
-| What may leave the device | **Google** — when you use API/OAuth features. **OpenAI** — when you run AI tools (selected metadata, your API key) |
+| What may leave the device | **Google** — when you use optional API/OAuth features. **OpenAI** — when you run optional AI tools (selected metadata, your API key) |
 | Selling / ads | TubeStack does **not** sell personal data |
-| Deletion | Users can delete stored data from Settings or uninstall. See **[PRIVACY.md](PRIVACY.md)** |
+| Deletion | Users can delete stored data from Settings or uninstall. See [`privacy/privacy.html`](../privacy/privacy.html) |
 
 **Certification-style summary (if checkbox list):**
 
@@ -205,7 +209,7 @@ TubeStack supports **optional Google OAuth** for YouTube-related actions **at yo
 
 - You provide a **Google OAuth 2.0 Web application Client ID** in settings
 - **Sign-in is interactive** (Google consent screen)
-- **Access tokens** stay between your browser and Google’s APIs
+- **Access tokens** stay in service worker memory and between your browser and Google’s APIs — not in `chrome.storage.local`
 - **Revocation:** sign out in Settings, remove Client ID, or revoke in Google Account security settings
 
 **Scope note:** Describe only what your published build actually uses on your Google OAuth consent screen.
@@ -228,9 +232,9 @@ You can remove the key and clear local AI cache from Settings.
 
 - **Default posture:** Library and organization data stay **on-device**
 - **No TubeStack backend for your library**
-- **Third parties only when you opt in:** Google and OpenAI when you enable those features
+- **Third parties only when you opt in:** Google and OpenAI when you enable those optional features
 
-Full policy: **[PRIVACY.md](PRIVACY.md)**
+**Store listing URL:** [`privacy/privacy.html`](../privacy/privacy.html)
 
 ---
 

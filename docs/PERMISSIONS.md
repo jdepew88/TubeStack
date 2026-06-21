@@ -1,8 +1,8 @@
-# TubeStack — permissions (Chrome Web Store)
+# TubeStack Permissions (Chrome Web Store)
 
 This document matches **`manifest.json`** in this repository (Manifest V3). Use it when filling out Chrome Web Store **permission justification** fields, privacy questionnaires, and internal review before upload.
 
-**Privacy policy (store listing URL):** host [`privacy/privacy.html`](../privacy/privacy.html) at a public HTTPS URL (for example GitHub Pages). The extension popup and Settings link to the bundled copy.
+**Privacy policy (store listing URL):** Host [`privacy/privacy.html`](../privacy/privacy.html) at a public HTTPS URL (for example GitHub Pages). The extension popup and Settings link to the bundled copy.
 
 **Related docs:** [STORE_LISTING.md](STORE_LISTING.md) · [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) · [PRIVACY.md](PRIVACY.md)
 
@@ -57,8 +57,6 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | `https://m.youtube.com/shorts/*` | same | same |
 | `https://www.youtube.com/feed/channels*` | `channel-scrape.js` | User-initiated channel-name scrape |
 | `https://www.youtube.com/feed/subscriptions*` | `channel-scrape.js` | User-initiated channel-name scrape |
-| `https://m.youtube.com/feed/channels*` | `channel-scrape.js` | User-initiated channel-name scrape |
-| `https://m.youtube.com/feed/subscriptions*` | `channel-scrape.js` | User-initiated channel-name scrape |
 
 ---
 
@@ -92,7 +90,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | Where used | `background/service-worker.js` — YouTube OAuth sign-in and token exchange |
 | User trigger | User adds OAuth Client ID and runs Connect YouTube, playlist export, subscription sync, or similar optional flows |
 | Scope | Interactive Google consent screen only. Tokens in **service worker memory**, not `chrome.storage.local` |
-| If unused | Local save/organize works without OAuth |
+| If unused | Local save and organize works without OAuth |
 
 **Chrome Web Store justification (short):**
 
@@ -172,7 +170,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | Why optional | YouTube Data API v3 and OAuth-backed Google API calls |
 | Grant mechanism | `chrome.permissions.request` at runtime (`ensureOptionalHostOrigins`) |
 | User trigger | User adds API key or OAuth Client ID and runs import, playlist create, subscription sync, API test, etc. |
-| If denied | Local save/organize continues; Google API features show a clear error |
+| If denied | Local save and organize continues; Google API features show a clear error |
 
 **Chrome Web Store justification (short):**
 
@@ -222,11 +220,11 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 
 ## Content scripts — store / privacy disclosure
 
-1. **Watch and Shorts pages** — Metadata on user save; progress ticks while a watch or Shorts tab is open (`videoProgress` / `watchByDay`). Full progress on `/watch`; **best-effort** on Shorts. No Chrome History API.
+1. **Watch and Shorts pages** — Metadata on user save; progress ticks while a watch or Shorts tab is open (`videoProgress` / `watchByDay`). Full progress on `/watch`; **best-effort** on Shorts. **Saving Shorts works.** No Chrome History API.
 2. **Subscription / channels feed** — Scrapes visible channel names when the user triggers import/sync; may scroll to load rows.
 3. **Non-YouTube sites** — No content scripts.
 
-Align with [PRIVACY.md — Watch progress](PRIVACY.md#watch-progress-local-best-effort-on-shorts).
+Align with [PRIVACY.md](PRIVACY.md) and [`privacy/privacy.html`](../privacy/privacy.html).
 
 ---
 
@@ -287,3 +285,4 @@ When changing `manifest.json`:
 2. Run `.\scripts\verify-privacy-permissions.ps1`.
 3. Update [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) if verification steps change.
 4. Update Chrome Web Store dashboard justification fields to match the shipped build.
+5. Update [`privacy/privacy.html`](../privacy/privacy.html) if privacy disclosures change.

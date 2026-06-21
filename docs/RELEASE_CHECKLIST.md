@@ -10,6 +10,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **No real secrets committed** — Repo has no production API keys, OAuth client secrets, or `.env` files with live credentials. `.gitignore` covers common secret paths; run a final search for `AIza`, `sk-`, client secrets, and private keys.
 - [ ] **Privacy audit script passes** — From repo root: `.\scripts\verify-privacy-permissions.ps1` (see [PERMISSIONS.md](PERMISSIONS.md)).
+- [ ] **YouTube URL helpers** — `node scripts/test-youtube-url.cjs` passes (watch + Shorts URL parsing).
 - [ ] **Permissions reviewed** — `manifest.json` matches [PERMISSIONS.md](PERMISSIONS.md): `contextMenus`, `identity`, `scripting`, `storage` only; **no** `history`, `tabs`, `windows`, or `<all_urls>`.
 - [ ] **Host permissions minimized** — Required hosts: `youtube.com`, `m.youtube.com` only. Optional: `www.googleapis.com`, `api.openai.com` (runtime grant).
 - [ ] **Context menus scoped** — Save menus on **YouTube URLs only**; “Open dashboard” on **extension icon** only (not all websites). Confirm in `background/service-worker.js` (`TUBESTACK_CTX_YT`).

@@ -209,11 +209,22 @@ function setLibLibraryScope(scope) {
   renderAll();
 }
 
+function libraryItemIsShort(it) {
+  const url = String(it?.url || "").trim();
+  if (globalThis.TUBESTACK_YT_URL?.isYouTubeShortsUrl?.(url)) return true;
+  if (it?.category === "shorts") return true;
+  return Array.isArray(it?.tags) && it.tags.includes("shorts");
+}
+
 function watchUrlForItem(it) {
   const u = String(it.url || "").trim();
   if (u) return u;
   const vid = String(it.videoId || "").trim();
-  if (vid && /^[\w-]{11}$/.test(vid)) return `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
+  const YT = globalThis.TUBESTACK_YT_URL;
+  if (vid && YT?.isValidYouTubeVideoId?.(vid)) {
+    if (libraryItemIsShort(it)) return YT.canonicalYouTubeVideoUrl(vid, { shorts: true });
+    return YT.canonicalYouTubeVideoUrl(vid, { shorts: false });
+  }
   return "";
 }
 
@@ -316,17 +327,23 @@ function computeDisplayedVideoList() {
 }
 
 function libraryItemToPlaylistSnapshot(it) {
+  const YT = globalThis.TUBESTACK_YT_URL;
   const vid = String(it.videoId || "").trim();
-  const url =
-    String(it.url || "").trim() ||
-    (vid && /^[\w-]{11}$/.test(vid) ? `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}` : "");
+  const validVid = vid && YT?.isValidYouTubeVideoId?.(vid) ? vid : "";
+  let url = String(it.url || "").trim();
+  if (!url && validVid) {
+    url = libraryItemIsShort(it)
+      ? YT.canonicalYouTubeVideoUrl(validVid, { shorts: true })
+      : YT.canonicalYouTubeVideoUrl(validVid, { shorts: false });
+  }
+  url = url || "";
   const snap = {
-    videoId: vid && /^[\w-]{11}$/.test(vid) ? vid : "",
+    videoId: validVid,
     url,
     title: it.title || "Video",
     channel: it.channel || "",
     thumbnail:
-      it.thumbnail || (vid && /^[\w-]{11}$/.test(vid) ? `https://i.ytimg.com/vi/${vid}/mqdefault.jpg` : ""),
+      it.thumbnail || (validVid ? `https://i.ytimg.com/vi/${validVid}/mqdefault.jpg` : ""),
   };
   if (it.durationSec != null && !Number.isNaN(Number(it.durationSec))) snap.durationSec = Number(it.durationSec);
   return snap;

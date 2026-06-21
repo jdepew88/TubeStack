@@ -1,17 +1,21 @@
 /**
  * Watch-page progress for TubeStack (local-only; no Chrome History API).
  *
- * While a YouTube watch tab is open, this script sends TUBESTACK_PROGRESS_TICK messages to the
+ * While a YouTube watch or Shorts tab is open, this script sends TUBESTACK_PROGRESS_TICK messages to the
  * background service worker. The worker stores per-video records in chrome.storage.local → videoProgress:
  *   videoId → { playheadSec, durationSec, updatedAt, totalWatchedSec, progressSource }
  *
  * Daily in-player watch time is aggregated in watchByDay (YYYY-MM-DD → seconds).
+ *
+ * Shorts progress is best-effort: the player may not expose a stable duration.
  *
  * See background/service-worker.js (handleProgressTick) and content/youtube-metadata.js (capture on save).
  */
 (function () {
   if (window.__TUBESTACK_PROGRESS__) return;
   window.__TUBESTACK_PROGRESS__ = true;
+
+  const YT = globalThis.TUBESTACK_YT_URL;
 
   let lastSent = 0;
   let lastTime = 0;
@@ -47,22 +51,15 @@
   }
 
   function getVideoId() {
-    try {
-      const u = new URL(window.location.href);
-      const v = u.searchParams.get("v");
-      if (v) return v;
-      const m = u.pathname.match(/^\/shorts\/([^/?#]+)/i);
-      return m?.[1] || null;
-    } catch {
-      return null;
-    }
+    return YT?.extractYouTubeVideoId(window.location.href) || null;
   }
 
   function tick() {
     const v = getVideo();
     const videoId = getVideoId();
-    if (!v || !videoId || !v.duration || Number.isNaN(v.duration)) return;
+    if (!v || !videoId) return;
 
+    const durationKnown = v.duration && !Number.isNaN(v.duration) && v.duration > 0;
     const now = performance.now();
     const t = v.currentTime || 0;
     const playing = !v.paused && !v.ended && document.visibilityState === "visible";
@@ -77,7 +74,7 @@
     if (!shouldFlush) return;
 
     const playheadSec = Math.floor(t);
-    const durationSec = Math.floor(v.duration);
+    const durationSec = durationKnown ? Math.floor(v.duration) : null;
     const deltaWatch = Math.floor(accDelta);
     accDelta = 0;
     lastSent = performance.now();

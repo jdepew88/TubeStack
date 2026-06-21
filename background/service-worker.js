@@ -4,12 +4,12 @@
  * and are requested at runtime only when those features run (see ensureGoogleApisHostAccess / ensureOpenaiHostAccess).
  */
 
-const YT_HOSTS = new Set(["www.youtube.com", "m.youtube.com"]);
-
 importScripts("granular-genres.js");
 importScripts("genre-taxonomy.js");
 importScripts("../lib/watch-states.js");
+importScripts("../lib/youtube-url.js");
 const TS_WATCH = globalThis.TUBESTACK_WATCH;
+const YT_URL = globalThis.TUBESTACK_YT_URL;
 const GRANULAR_GENRE_PRESETS = globalThis.GRANULAR_GENRE_PRESETS || [];
 delete globalThis.GRANULAR_GENRE_PRESETS;
 const BROAD_GENRE_TAXONOMY = globalThis.TUBESTACK_BROAD_GENRES || [];
@@ -89,35 +89,28 @@ function migrateLibraryListAndPriority(items) {
 }
 
 function isYouTubeWatchUrl(url) {
-  try {
-    const u = new URL(url);
-    if (!YT_HOSTS.has(u.hostname)) return false;
-    if (u.pathname === "/watch" && u.searchParams.has("v")) return true;
-    return /^\/shorts\/[^/?#]+/i.test(u.pathname);
-  } catch {
-    return false;
-  }
+  return YT_URL.isYouTubeWatchUrl(url);
+}
+
+function isYouTubeShortsUrl(url) {
+  return YT_URL.isYouTubeShortsUrl(url);
+}
+
+function isSupportedYouTubeVideoUrl(url) {
+  return YT_URL.isSupportedYouTubeVideoUrl(url);
+}
+
+function extractYouTubeVideoId(url) {
+  return YT_URL.extractYouTubeVideoId(url);
 }
 
 function normalizeWatchUrl(videoId, timestampSec) {
-  const base = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
-  if (timestampSec != null && timestampSec > 0) {
-    return `${base}&t=${Math.floor(timestampSec)}s`;
-  }
-  return base;
+  return YT_URL.canonicalYouTubeVideoUrl(videoId, { shorts: false, timestampSec });
 }
 
+/** @deprecated use extractYouTubeVideoId */
 function parseVideoId(url) {
-  try {
-    const u = new URL(url);
-    const watchId = u.searchParams.get("v");
-    if (watchId) return watchId;
-    const m = u.pathname.match(/^\/shorts\/([^/?#]+)/i);
-    if (m?.[1]) return m[1];
-    return null;
-  } catch {
-    return null;
-  }
+  return extractYouTubeVideoId(url);
 }
 
 /** Match manifest optional_host_permissions (requested before network calls to these origins). */
@@ -196,7 +189,7 @@ async function getYouTubeWatchTabsForMode(mode) {
   }
   const all = await chrome.tabs.query({ windowId: current.windowId });
   const currentIndex = current.index ?? 0;
-  const watchTabs = all.filter((t) => t.url && isYouTubeWatchUrl(t.url));
+  const watchTabs = all.filter((t) => t.url && isSupportedYouTubeVideoUrl(t.url));
 
   let tabs;
   if (mode === "all") {
@@ -222,7 +215,7 @@ async function getSaveYouTubeTabCounts() {
   }
   const all = await chrome.tabs.query({ windowId: current.windowId });
   const currentIndex = current.index ?? 0;
-  const watchTabs = all.filter((t) => t.url && isYouTubeWatchUrl(t.url));
+  const watchTabs = all.filter((t) => t.url && isSupportedYouTubeVideoUrl(t.url));
   const left = watchTabs.filter((t) => t.id !== current.id && (t.index ?? 0) < currentIndex).length;
   const right = watchTabs.filter((t) => t.id !== current.id && (t.index ?? 0) > currentIndex).length;
   const allCount = watchTabs.length;
@@ -1696,20 +1689,20 @@ async function deleteLocalPlaylistEntry(id) {
 
 function videoIdFromPlaylistItem(it) {
   const direct = String(it?.videoId || "").trim();
-  if (/^[\w-]{11}$/.test(direct)) return direct;
+  if (YT_URL.isValidYouTubeVideoId(direct)) return direct;
   const url = String(it?.url || "").trim();
   if (!url) return "";
+  const fromYt = extractYouTubeVideoId(url);
+  if (fromYt) return fromYt;
   try {
     const u = new URL(url);
     const host = u.hostname.replace(/^www\./, "");
     if (host === "youtu.be") {
       const id = u.pathname.slice(1).split("/")[0];
-      return /^[\w-]{11}$/.test(id) ? id : "";
+      return YT_URL.isValidYouTubeVideoId(id) ? id : "";
     }
     if (host.includes("youtube.com") || host.includes("youtube-nocookie.com")) {
-      const fromQuery = u.searchParams.get("v");
-      if (fromQuery && /^[\w-]{11}$/.test(fromQuery)) return fromQuery;
-      const pathMatch = u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/);
+      const pathMatch = u.pathname.match(/^\/(?:embed|live)\/([\w-]{11})/);
       if (pathMatch) return pathMatch[1];
     }
   } catch {
@@ -3093,8 +3086,8 @@ async function dismissLatestImportBatch() {
 
 function buildItemFromTab(tab, meta) {
   const url = tab.url || "";
-  const isShort = /\/shorts\//i.test(url);
-  const videoId = parseVideoId(url) || meta?.videoId || null;
+  const isShort = isYouTubeShortsUrl(url);
+  const videoId = extractYouTubeVideoId(url) || meta?.videoId || null;
   let timestampSec = meta?.timestampSec ?? null;
   if (timestampSec == null) {
     try {
@@ -3122,7 +3115,10 @@ function buildItemFromTab(tab, meta) {
   const thumbnail = meta?.thumbnail ?? (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null);
   const durationSec = meta?.durationSec ?? null;
 
-  const canonicalUrl = videoId != null ? (isShort ? `https://www.youtube.com/shorts/${encodeURIComponent(videoId)}` : normalizeWatchUrl(videoId, timestampSec)) : url;
+  const canonicalUrl =
+    videoId != null
+      ? YT_URL.canonicalYouTubeVideoUrl(videoId, { shorts: isShort, timestampSec: isShort ? null : timestampSec }) || url
+      : url;
 
   const item = {
     id: uuid(),

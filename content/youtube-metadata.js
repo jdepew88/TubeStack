@@ -1,9 +1,11 @@
 /**
- * Runs on YouTube watch pages. Responds to TUBESTACK_GET_METADATA with player/DOM hints.
+ * Runs on YouTube watch and Shorts pages. Responds to TUBESTACK_GET_METADATA with player/DOM hints.
  */
 (function () {
   if (window.__TUBESTACK_METADATA__) return;
   window.__TUBESTACK_METADATA__ = true;
+
+  const YT = globalThis.TUBESTACK_YT_URL;
 
   function parseIsoDuration(iso) {
     if (!iso || typeof iso !== "string" || !iso.startsWith("PT")) return null;
@@ -64,19 +66,26 @@
         const j = JSON.parse(n.textContent || "{}");
         const graph = Array.isArray(j["@graph"]) ? j["@graph"] : [j];
         for (const node of graph) {
-          if (node["@type"] === "VideoObject" && node.embedUrl) {
-            const u = new URL(node.embedUrl);
-            const id = u.searchParams.get("v");
-            if (!id) continue;
-            const dur = node.duration ? parseIsoDuration(node.duration) : null;
-            return {
-              videoId: id,
-              title: node.name || document.title,
-              channel: node.author?.name || null,
-              durationSec: dur,
-              thumbnail: node.thumbnailUrl?.[0] || node.thumbnailUrl || null,
-            };
+          if (node["@type"] !== "VideoObject") continue;
+          let id = null;
+          if (node.embedUrl) {
+            id = YT?.extractYouTubeVideoId(node.embedUrl);
           }
+          if (!id && node.url) {
+            id = YT?.extractYouTubeVideoId(node.url);
+          }
+          if (!id && node.contentUrl) {
+            id = YT?.extractYouTubeVideoId(node.contentUrl);
+          }
+          if (!id) continue;
+          const dur = node.duration ? parseIsoDuration(node.duration) : null;
+          return {
+            videoId: id,
+            title: node.name || document.title,
+            channel: node.author?.name || null,
+            durationSec: dur,
+            thumbnail: node.thumbnailUrl?.[0] || node.thumbnailUrl || null,
+          };
         }
       } catch {
         /* */
@@ -93,50 +102,65 @@
     return null;
   }
 
+  function collectChannel(base) {
+    const channelEl =
+      document.querySelector("ytd-channel-name a") ||
+      document.querySelector("#channel-name a") ||
+      document.querySelector("ytd-reel-player-header-renderer #channel-name a") ||
+      document.querySelector("yt-reel-player-header-renderer #channel-name a") ||
+      document.querySelector('link[itemprop="name"]');
+    return (
+      base.channel ||
+      channelEl?.textContent?.trim() ||
+      document.querySelector('meta[itemprop="author"]')?.content ||
+      document.querySelector('meta[property="og:video:tag"]')?.content ||
+      null
+    );
+  }
+
   function collect() {
+    const pageUrl = window.location.href;
     const playerMeta = getFromYtInitialData();
     const fromLd = getFromJsonLd();
     const base = playerMeta || fromLd || {};
-    const url = new URL(window.location.href);
-    const vParam = url.searchParams.get("v");
-    let videoId = base.videoId || vParam || null;
-    if (!videoId) {
-      const shortsMatch = url.pathname.match(/^\/shorts\/([^/?#]+)/i);
-      if (shortsMatch?.[1]) videoId = shortsMatch[1];
-    }
+    const videoId = base.videoId || YT?.extractYouTubeVideoId(pageUrl) || null;
     const currentTime = getCurrentTimeFromVideo();
     let timestampSec = currentTime;
     /** "page_player" | "url_only" | null — tells the service worker whether progress is from the <video> element. */
     let progressCapture = currentTime != null ? "page_player" : null;
     if (timestampSec == null) {
-      const t = url.searchParams.get("t") || url.searchParams.get("start");
-      if (t) {
-        if (/^\d+$/.test(t)) {
+      try {
+        const u = new URL(pageUrl);
+        const t = u.searchParams.get("t") || u.searchParams.get("start");
+        if (t && /^\d+$/.test(t)) {
           timestampSec = parseInt(t, 10);
           progressCapture = "url_only";
         }
+      } catch {
+        /* */
       }
     }
     const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
     const ogImage = document.querySelector('meta[property="og:image"]')?.content;
-    const channelEl =
-      document.querySelector("ytd-channel-name a") ||
-      document.querySelector("#channel-name a") ||
-      document.querySelector('link[itemprop="name"]');
-    const channel =
-      base.channel ||
-      channelEl?.textContent?.trim() ||
-      document.querySelector('meta[itemprop="author"]')?.content ||
-      null;
+    const title =
+      base.title ||
+      ogTitle ||
+      document.title?.replace(/\s*-\s*YouTube\s*$/i, "") ||
+      "YouTube";
+    const thumbnail =
+      base.thumbnail ||
+      ogImage ||
+      (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null);
 
     return {
       videoId,
-      title: base.title || ogTitle || document.title?.replace(/\s*-\s*YouTube\s*$/i, "") || "YouTube",
-      channel,
+      title,
+      channel: collectChannel(base),
       durationSec: base.durationSec ?? null,
-      thumbnail: base.thumbnail || ogImage || null,
+      thumbnail,
       timestampSec,
       progressCapture,
+      pageUrl,
     };
   }
 

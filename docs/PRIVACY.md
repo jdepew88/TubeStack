@@ -58,15 +58,15 @@ Depending on how you use TubeStack, the extension may store locally, among other
 
 ---
 
-## Watch progress (local, YouTube watch/Shorts pages only)
+## Watch progress (local, YouTube watch pages; best-effort on Shorts)
 
-TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in **YouTube watch or Shorts tabs** while the extension is installed, so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` and `watchByDay`).
+TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in **YouTube `/watch` tabs** while the extension is installed, so it can preserve resume position, estimate remaining time, and build Focused Playlists. On **YouTube Shorts** (`/shorts/…`), progress tracking is **best-effort** because the Shorts player may not expose stable duration metadata; **saving Shorts tabs** still captures title, channel, URL, thumbnail, and video id when the page allows. This playback progress is stored locally in Chrome extension storage (`videoProgress` and `watchByDay`).
 
 Progress may come from:
 
-- **Observed playback** on open YouTube `/watch` or `/shorts` tabs (`content/youtube-progress.js` heartbeats)
-- **Capture on save** when you save/close tabs (playhead read from the page when available, including Shorts when metadata injection runs)
-- **URL timestamps** when a saved tab URL includes a `t=` start time
+- **Observed playback** on open YouTube `/watch` tabs (`content/youtube-progress.js` heartbeats). On Shorts, heartbeats are sent when a video id and playhead are available (duration optional).
+- **Capture on save** when you save/close tabs (playhead read from the page when available)
+- **URL timestamps** when a saved watch-tab URL includes a `t=` start time
 
 TubeStack does **not** reconstruct what you watched before install or on sites other than YouTube watch/Shorts pages.
 
@@ -89,7 +89,7 @@ TubeStack declares only **`contextMenus`**, **`identity`**, **`scripting`**, and
 
 **Page access:**
 
-- **YouTube watch and Shorts pages** — Content scripts read page-visible metadata when you save tabs and send **local-only** progress updates while a watch or Shorts tab is open (see [Watch progress](#watch-progress-local-youtube-watchshorts-pages-only)).
+- **YouTube watch and Shorts pages** — Content scripts read page-visible metadata when you save tabs and send **local-only** progress updates while a tab is open. Full progress heartbeats are reliable on `/watch` pages; on Shorts, progress is **best-effort** (see [Watch progress](#watch-progress-local-youtube-watch-pages-best-effort-on-shorts)).
 - **YouTube subscription / channels pages** — A content script reads **visible channel names** when **you** run subscription import or sync.
 - **Other websites** — No content scripts, no context-menu save actions, and no host permission at install time.
 

@@ -106,6 +106,10 @@ function normalizeVideoId(value) {
 }
 
 function videoIdFromUrl(url) {
+  if (YT_URL?.extractYouTubeVideoId) {
+    const id = YT_URL.extractYouTubeVideoId(url);
+    if (id) return id;
+  }
   const raw = String(url || "").trim();
   if (!raw) return "";
   try {
@@ -113,18 +117,23 @@ function videoIdFromUrl(url) {
     const host = u.hostname.replace(/^www\./, "");
     if (host === "youtu.be") {
       const id = u.pathname.slice(1).split("/")[0];
-      return /^[\w-]{11}$/.test(id) ? id : "";
+      return normalizeVideoId(id);
     }
     if (host.includes("youtube.com") || host.includes("youtube-nocookie.com")) {
-      const fromQuery = u.searchParams.get("v");
-      if (fromQuery && /^[\w-]{11}$/.test(fromQuery)) return fromQuery;
-      const pathMatch = u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/);
+      const pathMatch = u.pathname.match(/^\/(?:embed|live)\/([\w-]{11})/);
       if (pathMatch) return pathMatch[1];
     }
   } catch {
     /* ignore malformed URLs */
   }
   return "";
+}
+
+function itemIsShort(it) {
+  const url = String(it?.url || "").trim();
+  if (YT_URL?.isYouTubeShortsUrl?.(url)) return true;
+  if (it?.category === "shorts") return true;
+  return Array.isArray(it?.tags) && it.tags.includes("shorts");
 }
 
 function itemVideoId(it) {
@@ -150,10 +159,13 @@ function playlistVideoIdSet(pl) {
 
 function mergeLibraryWithSnapshot(lib, snap) {
   const vid = itemVideoId(snap) || itemVideoId(lib);
-  const url =
-    String(lib?.url || "").trim() ||
-    String(snap?.url || "").trim() ||
-    (vid ? `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}` : "");
+  let url = String(lib?.url || "").trim() || String(snap?.url || "").trim();
+  if (!url && vid) {
+    const isShort = itemIsShort(lib) || itemIsShort(snap);
+    url = isShort
+      ? YT_URL.canonicalYouTubeVideoUrl(vid, { shorts: true })
+      : YT_URL.canonicalYouTubeVideoUrl(vid, { shorts: false });
+  }
   const title = String(lib?.title || snap?.title || "").trim() || "Untitled";
   const channel = String(lib?.channel || snap?.channel || "").trim() || "Unknown creator";
   const thumbnail =
@@ -786,10 +798,7 @@ function makePickCheckbox(it) {
 }
 
 function itemOpenUrl(it) {
-  const url = String(it?.url || "").trim();
-  if (url) return url;
-  const vid = itemVideoId(it);
-  return vid ? `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}` : "#";
+  return buildOpenUrl(it);
 }
 
 function itemThumbnailUrl(it) {
@@ -803,8 +812,11 @@ function buildOpenUrl(it) {
   const vid = itemVideoId(it);
   const url = String(it?.url || "").trim();
   if (!vid) return url || "#";
+  if (itemIsShort(it)) {
+    return YT_URL?.canonicalYouTubeVideoUrl(vid, { shorts: true }) || url || "#";
+  }
   const pos = getPlayhead(it);
-  const base = `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
+  const base = YT_URL?.canonicalYouTubeVideoUrl(vid, { shorts: false }) || `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
   if (pos > 2) return `${base}&t=${Math.floor(pos)}s`;
   return url || base;
 }
@@ -1158,6 +1170,7 @@ async function applyDashboardItemUpdate(it, patch) {
 }
 
 const TS_WATCH = globalThis.TUBESTACK_WATCH;
+const YT_URL = globalThis.TUBESTACK_YT_URL;
 let filterWatchStateValue = "";
 /** @type {Array<{ videoId: string; itemId: string|null; suggestedWatchState: string; suggestedTags: string[]; reason: string }>} */
 let pendingAiWatchSuggestions = [];

@@ -956,10 +956,9 @@
             <div class="watch-analytics-head">
               <h3 id="watchHeading" class="watch-heading">Watch time (this extension)</h3>
               <p class="watch-sub">
-                TubeStack records <strong>active in-tab playback time</strong> on YouTube watch/shorts pages while this
-                extension is installed. Progress is saved only for videos you open while TubeStack is installed — not
-                reconstructed from past activity elsewhere. YouTube’s public Data API does not expose per-viewer watch
-                minutes for normal users, so this chart is the on-device signal for time spent with the player playing.
+                TubeStack records <strong>active in-tab playback time</strong> on YouTube watch pages while this
+                extension is installed (best-effort on Shorts). Progress is saved only for videos you open while
+                TubeStack is installed — not reconstructed from past activity elsewhere.
               </p>
             </div>
             <div class="watch-controls">
@@ -1032,6 +1031,7 @@
     <button type="button" id="btnShowSidebarFloating" class="btn small sidebar-floating-toggle hidden" aria-label="Reopen sidebar" title="Reopen sidebar">◂</button>
     <script src="../lib/ui-themes.js"></script>
     <script src="../lib/watch-states.js"></script>
+    <script src="../lib/youtube-url.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>

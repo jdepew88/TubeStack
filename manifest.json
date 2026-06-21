@@ -34,7 +34,7 @@
         "https://www.youtube.com/shorts/*",
         "https://m.youtube.com/shorts/*"
       ],
-      "js": ["content/youtube-metadata.js", "content/youtube-progress.js"],
+      "js": ["lib/youtube-url.js", "content/youtube-metadata.js", "content/youtube-progress.js"],
       "run_at": "document_idle"
     },
     {

@@ -1,10 +1,9 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TubeStack — Privacy policy</title>
-    <link rel="icon" type="image/png" href="../icons/logo.png" />
     <style>
       :root {
         color-scheme: light dark;
@@ -57,6 +56,17 @@
       ul {
         padding-left: 1.25rem;
       }
+      code {
+        font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
+        font-size: 0.92em;
+      }
+      footer {
+        margin-top: 2.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
     </style>
   </head>
   <body>
@@ -71,14 +81,16 @@
     <h2>Local-first design</h2>
     <p>
       Most of what you see in TubeStack—saved tabs, playlists, categories, tags, notes, and locally tracked watch
-      progress—is stored <strong>locally in your browser</strong> using Chrome extension storage (<code
-        >chrome.storage.local</code
-      >), not on a TubeStack-owned server. TubeStack has no central backend that collects your library or credentials.
+      progress—is stored <strong>locally in your browser</strong> using Chrome extension storage
+      (<code>chrome.storage.local</code>), not on a TubeStack-owned server. TubeStack has no central backend that
+      collects your library or credentials.
     </p>
 
     <h2>What is stored on your device</h2>
     <ul>
-      <li>Saved YouTube tabs and library items (titles, channels, URLs, tags, notes, watch states, and related fields).</li>
+      <li>
+        Saved YouTube tabs and library items (titles, channels, URLs, tags, notes, watch states, and related fields).
+      </li>
       <li>Local playlists and organization data (stack notes, research summaries, decision logs).</li>
       <li>
         Locally tracked watch progress on open YouTube <code>/watch</code> tabs (<code>videoProgress</code> and daily
@@ -96,8 +108,8 @@
       </li>
       <li>
         <strong>OAuth access tokens</strong> — when you sign in with Google, bearer tokens are kept in the extension
-        service worker’s <strong>memory only</strong> (not written to <code>chrome.storage.local</code>) until they expire
-        or you choose <strong>Sign out of Google</strong> in Settings.
+        service worker’s <strong>memory only</strong> (not written to <code>chrome.storage.local</code>) until they
+        expire or you choose <strong>Sign out of Google</strong> in Settings.
       </li>
     </ul>
 
@@ -139,16 +151,24 @@
     <h2>What TubeStack does not do</h2>
     <ul>
       <li>Does not request Chrome History permission.</li>
-      <li>Does not request the broad <code>tabs</code> permission (YouTube tab access is scoped via YouTube host permissions).</li>
+      <li>
+        Does not request the broad <code>tabs</code> permission (YouTube tab access is scoped via YouTube host
+        permissions).
+      </li>
       <li>Does not scan unrelated browsing history.</li>
       <li>Does not sell user data.</li>
     </ul>
 
     <h2>Contact</h2>
     <p>
-      For privacy questions, use the support channel listed on the TubeStack Chrome Web Store listing or the project
-      repository at
-      <a href="https://github.com/jdepew88/TubeStack" rel="noopener noreferrer">github.com/jdepew88/TubeStack</a>.
+      For privacy questions, use the support channel listed on the TubeStack Chrome Web Store listing or the open-source
+      project repository:
+      <a href="https://github.com/jdepew88/TubeStack" rel="noopener noreferrer">https://github.com/jdepew88/TubeStack</a>
     </p>
+
+    <footer>
+      TubeStack ·
+      <a href="https://github.com/jdepew88/TubeStack" rel="noopener noreferrer">GitHub repository</a>
+    </footer>
   </body>
 </html>

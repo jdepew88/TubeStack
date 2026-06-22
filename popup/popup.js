@@ -8,6 +8,7 @@ const status = document.getElementById("status");
 const btnDash = document.getElementById("btnDash");
 const btnHome = document.getElementById("btnHome");
 const btnLibrary = document.getElementById("btnLibrary");
+const btnSidebar = document.getElementById("btnSidebar");
 
 const saveButtons = [btnSaveLeft, btnSaveRight, btnSaveAll, btnSaveExcept].filter(Boolean);
 
@@ -125,6 +126,13 @@ btnHome?.addEventListener("click", async () => {
 
 btnLibrary?.addEventListener("click", async () => {
   await openExtensionInNewTabAndClose("dashboard/library.html");
+});
+
+btnSidebar?.addEventListener("click", async () => {
+  btnSidebar.disabled = true;
+  await send("TUBESTACK_SET_QUICK_SIDEBAR_MODE", { enabled: true });
+  status.textContent = "Minimal sidebar mode on. Click the toolbar icon to open the sidebar.";
+  setTimeout(() => window.close(), 1100);
 });
 
 async function initPopupTheme() {

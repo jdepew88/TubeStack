@@ -209,6 +209,12 @@ body {
   border-color: var(--border);
 }
 
+/* Full-width footer action that wraps below the 3-column nav grid (e.g. Pin as sidebar). */
+.ftr .btn.ghost.ftr-wide {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
 .btn.ghost:not(:disabled):hover {
   background: var(--card);
   color: var(--text);

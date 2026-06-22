@@ -12,7 +12,7 @@ $hostPerms = @($manifest.host_permissions)
 $optHostPerms = @($manifest.optional_host_permissions)
 $all = @($manifest.permissions) + $optPerms
 
-$expectedPerms = @("contextMenus", "identity", "scripting", "storage") | Sort-Object
+$expectedPerms = @("contextMenus", "identity", "scripting", "sidePanel", "storage") | Sort-Object
 $extra = Compare-Object -ReferenceObject $expectedPerms -DifferenceObject $perms | Where-Object { $_.SideIndicator -eq "=>" }
 $missing = Compare-Object -ReferenceObject $expectedPerms -DifferenceObject $perms | Where-Object { $_.SideIndicator -eq "<=" }
 if ($extra -or $missing) {
@@ -78,6 +78,7 @@ $declared = [ordered]@{
   contextMenus = 'chrome\.contextMenus'
   identity     = 'chrome\.identity'
   scripting    = 'chrome\.scripting'
+  sidePanel    = 'chrome\.sidePanel'
   storage      = 'chrome\.storage'
 }
 $jsFiles = Get-ChildItem -Recurse -File -Filter *.js | Where-Object { $_.FullName -notmatch '\\\.git\\' }

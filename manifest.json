@@ -9,7 +9,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["contextMenus", "identity", "scripting", "storage"],
+  "permissions": ["contextMenus", "identity", "scripting", "sidePanel", "storage"],
   "host_permissions": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
   "optional_host_permissions": ["https://www.googleapis.com/*", "https://api.openai.com/*"],
   "content_security_policy": {
@@ -25,6 +25,9 @@
   },
   "background": {
     "service_worker": "background/service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "sidebar/sidebar.html"
   },
   "content_scripts": [
     {

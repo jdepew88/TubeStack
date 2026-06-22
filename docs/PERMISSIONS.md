@@ -26,7 +26,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 ### Permissions
 
 ```json
-"permissions": ["contextMenus", "identity", "scripting", "storage"]
+"permissions": ["contextMenus", "identity", "scripting", "sidePanel", "storage"]
 ```
 
 ### Host permissions
@@ -119,6 +119,26 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 **Chrome Web Store justification (long):**
 
 > TubeStack declares scripting to inject lib/youtube-url.js and youtube-metadata.js (or channel-scrape.js for channel import) on specific YouTube tab IDs when saving or importing and the manifest content script is not present. Injection is limited to YouTube tabs involved in an explicit user action.
+
+---
+
+### `sidePanel`
+
+| Field | Detail |
+|-------|--------|
+| Why declared | Required for the `chrome.sidePanel` API (Quick Sidebar Mode) |
+| Where used | `background/service-worker.js` — `applyQuickSidebarMode()` calls `chrome.sidePanel.setPanelBehavior`; the panel page is `sidebar/sidebar.html` |
+| User trigger | User enables Quick Sidebar Mode from the popup ("Pin as sidebar") or disables it from the sidebar ("Use popup instead") |
+| Scope | Opens TubeStack's own bundled sidebar page in Chrome's side panel. No new host access, no new content scripts, no extra tab reading beyond what the popup already does |
+| If unused | Defaults off; the toolbar popup works exactly as before |
+
+**Chrome Web Store justification (short):**
+
+> Optional Quick Sidebar Mode that opens TubeStack's bundled save/queue panel in Chrome's side panel instead of the toolbar popup.
+
+**Chrome Web Store justification (long):**
+
+> When a user enables Quick Sidebar Mode, TubeStack uses chrome.sidePanel to open its own bundled page (sidebar/sidebar.html) inside Chrome's built-in side panel. The panel reuses the same local storage and runtime messaging as the popup; it does not read additional sites, add content scripts, or change host access. The mode defaults off, so the standard toolbar popup is unchanged.
 
 ---
 

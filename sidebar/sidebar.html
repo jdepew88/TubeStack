@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="zinc">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TubeStack — Sidebar</title>
+    <link rel="stylesheet" href="../lib/ui-themes.css" />
+    <link rel="stylesheet" href="sidebar.css" />
+  </head>
+  <body>
+    <header class="hdr">
+      <div class="hdr-top">
+        <img src="../icons/logo.png" alt="" class="hdr-logo" width="28" height="28" />
+        <h1>TubeStack</h1>
+        <span class="mode-pill" title="Minimal sidebar mode is on — click the toolbar icon to reopen this panel.">Sidebar</span>
+      </div>
+      <p id="playlistName" class="sub">Loading…</p>
+    </header>
+
+    <section class="panel">
+      <div class="bar">
+        <select id="playlistSelect" class="select" disabled aria-label="Playlist"></select>
+        <button type="button" id="btnImportTabs" class="btn primary" disabled title="Save this window's YouTube tabs into a new playlist. The saved tabs are closed (OneTab-style).">Import</button>
+      </div>
+      <p id="countLine" class="hint">Checking tabs…</p>
+
+      <ul id="videoList" class="video-list" hidden></ul>
+      <p id="emptyState" class="empty">Pick a playlist above, or import this window's tabs.</p>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <footer class="ftr">
+      <button type="button" id="btnFull" class="btn ghost">Open full TubeStack</button>
+      <button type="button" id="btnPopup" class="btn ghost" title="Open the toolbar popup on click instead of this sidebar.">Use popup instead</button>
+    </footer>
+
+    <p class="ftr-privacy">
+      <a href="../privacy/privacy.html" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+    </p>
+
+    <script src="../lib/ui-themes.js"></script>
+    <script src="sidebar.js" type="module"></script>
+  </body>
+</html>

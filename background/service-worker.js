@@ -283,6 +283,34 @@ async function saveSettings(patch) {
   return next;
 }
 
+/**
+ * Quick Sidebar Mode: route the toolbar action to the side panel instead of the popup.
+ * When ON, clear the action popup so `openPanelOnActionClick` can open the panel; when OFF,
+ * restore the popup exactly as declared in the manifest. The panel path is fixed by the
+ * manifest `side_panel.default_path`, so no per-tab setOptions is needed. Idempotent and
+ * safe to call on every service-worker wake.
+ */
+async function applyQuickSidebarMode(enabled) {
+  const on = enabled === true;
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: on });
+    await chrome.action.setPopup({ popup: on ? "" : "popup/popup.html" });
+    return { ok: true, quickSidebarMode: on };
+  } catch (e) {
+    console.error("[TubeStack] side panel mode error:", tubestackSafeErrorMessage(e));
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+async function initQuickSidebarModeFromSettings() {
+  try {
+    const s = await loadSettings();
+    await applyQuickSidebarMode(s.quickSidebarMode === true);
+  } catch {
+    /* keep default popup behavior on error */
+  }
+}
+
 /** YouTube category ID → TubeStack seed theme label (must match SEED_THEMES labels). */
 const CATEGORY_ID_TO_THEME_LABEL = {
   1: "Film & TV",
@@ -3539,6 +3567,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
         break;
       }
+      case "TUBESTACK_SET_QUICK_SIDEBAR_MODE": {
+        const on = msg.enabled === true;
+        await saveSettings({ quickSidebarMode: on });
+        const res = await applyQuickSidebarMode(on);
+        sendResponse({ ok: true, ...res });
+        break;
+      }
       case "TUBESTACK_TEST_OPENAI_CONNECTION": {
         sendResponse(await testOpenAiConnection(msg));
         break;
@@ -4002,6 +4037,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
   }
 
+  void initQuickSidebarModeFromSettings();
   rebuildTubeStackContextMenus();
 });
 
@@ -4011,6 +4047,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const newVal = changes.settings.newValue;
   const oldDone = oldVal && typeof oldVal === "object" ? oldVal.onboardingComplete : undefined;
   const newDone = newVal && typeof newVal === "object" ? newVal.onboardingComplete : undefined;
-  if (oldDone === newDone) return;
-  rebuildTubeStackContextMenus();
+  if (oldDone !== newDone) rebuildTubeStackContextMenus();
+
+  const oldQsm = oldVal && typeof oldVal === "object" ? oldVal.quickSidebarMode : undefined;
+  const newQsm = newVal && typeof newVal === "object" ? newVal.quickSidebarMode : undefined;
+  if (oldQsm !== newQsm) void applyQuickSidebarMode(newQsm === true);
 });
+
+void initQuickSidebarModeFromSettings();

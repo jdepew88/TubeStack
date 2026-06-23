@@ -130,37 +130,63 @@ body {
   letter-spacing: 0.01em;
 }
 
-.playback-bar {
-  display: grid;
-  grid-template-columns: 1fr auto;
+.playback-dock {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   gap: 6px;
-  align-items: stretch;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
 }
 
-.playback-main {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  padding-block: 7px;
-  text-align: left;
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--elevated);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease,
+    transform 0.12s ease;
 }
 
-.playback-label {
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
+.icon-btn-svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
-.playback-sub {
-  font-size: 10px;
-  font-weight: 600;
-  opacity: 0.82;
-  line-height: 1.2;
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
-.playback-shuffle {
-  min-width: 64px;
-  white-space: nowrap;
+.icon-btn:not(:disabled):hover {
+  border-color: var(--border-hover);
+  background: var(--row-hover);
+}
+
+.icon-btn:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.icon-btn--primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent-dim);
+}
+
+.icon-btn--primary:not(:disabled):hover {
+  background: var(--accent-dim);
 }
 
 .video-list {
@@ -218,6 +244,45 @@ body {
 
 .vrow-drag:active {
   cursor: grabbing;
+}
+
+.vrow--now {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 6px;
+  margin: 0 -4px;
+  padding-inline: 4px;
+}
+
+.vrow--now .vrow-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.vrow-now-label {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.vrow--done {
+  opacity: 0.5;
+}
+
+.vrow--done .vrow-title,
+.vrow--done .vrow-channel {
+  text-decoration: line-through;
+}
+
+.vrow--done .vrow-thumb {
+  filter: grayscale(0.65);
+}
+
+.icon-btn--active {
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .vrow-thumb {
@@ -339,7 +404,6 @@ body {
   background: var(--accent);
   color: var(--bg);
   border-color: var(--accent-dim);
-  display: inline-flex;
 }
 
 .btn.primary:not(:disabled):hover {

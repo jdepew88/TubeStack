@@ -59,6 +59,8 @@
     const videoId = getVideoId();
     if (!v || !videoId) return;
 
+    bindVideoEnded(v);
+
     const durationKnown = v.duration && !Number.isNaN(v.duration) && v.duration > 0;
     const now = performance.now();
     const t = v.currentTime || 0;
@@ -89,6 +91,19 @@
         visible: document.visibilityState === "visible",
       });
     }
+  }
+
+  function bindVideoEnded(v) {
+    if (!v || v.dataset.tubestackEndedBound === "1") return;
+    v.dataset.tubestackEndedBound = "1";
+    v.addEventListener("ended", () => {
+      const videoId = getVideoId();
+      if (!videoId) return;
+      sendProgressTick({
+        type: "TUBESTACK_VIDEO_ENDED",
+        videoId,
+      });
+    });
   }
 
   tickTimer = setInterval(tick, 2000);

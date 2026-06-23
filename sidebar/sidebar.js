@@ -24,6 +24,57 @@ let currentPlaylistId = null;
 let settingsCurrentPlaylistId = null;
 let tabCount = 0;
 let reorderDragId = null;
+let playbackSession = null;
+
+function isActivePlaybackForQueue() {
+  return Boolean(
+    playbackSession &&
+      playbackSession.playlistId === currentPlaylistId &&
+      playbackSession.status === "playing"
+  );
+}
+
+function rowPlaybackState(videoId) {
+  const vid = String(videoId || "").trim();
+  if (!playbackSession || playbackSession.playlistId !== currentPlaylistId) {
+    return { playing: false, done: false };
+  }
+  const done = (playbackSession.completedVideoIds || []).includes(vid);
+  const playing =
+    playbackSession.status === "playing" && playbackSession.currentVideoId === vid;
+  return { playing, done };
+}
+
+async function loadPlaybackSession() {
+  const r = await send("TUBESTACK_SIDEBAR_PLAYLIST_GET");
+  playbackSession = r?.session || null;
+}
+
+function updatePlaybackStatus() {
+  if (!playbackSession || playbackSession.playlistId !== currentPlaylistId) return;
+  const total = playbackSession.queueVideoIds?.length || 0;
+  if (playbackSession.status === "playing" && playbackSession.currentVideoId) {
+    const idx = (playbackSession.queueVideoIds || []).indexOf(playbackSession.currentVideoId);
+    const pos = idx >= 0 ? idx + 1 : "?";
+    status.textContent = `Playing ${pos} of ${total}…`;
+  } else if (playbackSession.status === "complete") {
+    status.textContent = `Finished all ${total} video${total === 1 ? "" : "s"}.`;
+  }
+}
+
+function syncPlaybackControls(pl) {
+  const hasItems = Boolean(pl?.items?.length);
+  const playing = isActivePlaybackForQueue();
+  playbackBar.hidden = !hasItems;
+  btnPlayAll.disabled = !hasItems;
+  btnShuffle.disabled = !hasItems;
+  btnPlayAll.classList.toggle("icon-btn--active", playing);
+  btnPlayAll.title = playing ? "Restart queue from the beginning" : "Play queue in order";
+  btnPlayAll.setAttribute(
+    "aria-label",
+    playing ? "Restart queue from the beginning" : "Play queue in order"
+  );
+}
 
 function send(type, payload = {}) {
   return new Promise((resolve) => {
@@ -58,13 +109,6 @@ function getPlaylistVideoIds(pl) {
   return (Array.isArray(pl?.items) ? pl.items : [])
     .map((snap) => String(snap?.videoId || "").trim())
     .filter(Boolean);
-}
-
-function syncPlaybackControls(pl) {
-  const hasItems = Boolean(pl?.items?.length);
-  playbackBar.hidden = !hasItems;
-  btnPlayAll.disabled = !hasItems;
-  btnShuffle.disabled = !hasItems;
 }
 
 async function persistPlaylistOrder(videoIds) {
@@ -198,15 +242,21 @@ function renderVideos(pl) {
     const title = escapeHtml(String(snap.title || "YouTube video")) || "YouTube video";
     const channel = escapeHtml(String(snap.channel || ""));
     const thumb = escapeHtml(String(snap.thumbnail || ""));
-    const vid = escapeHtml(String(snap.videoId || "").trim());
+    const vid = String(snap.videoId || "").trim();
+    const vidAttr = escapeHtml(vid);
+    const { playing, done } = rowPlaybackState(vid);
+    const rowClass = ["vrow", playing ? "vrow--now" : "", done ? "vrow--done" : ""]
+      .filter(Boolean)
+      .join(" ");
 
     return `
-      <li class="vrow" data-videoid="${vid}" draggable="false">
+      <li class="${rowClass}" data-videoid="${vidAttr}" draggable="false">
         <button type="button" class="vrow-drag" draggable="true" title="Drag to reorder" aria-label="Drag to reorder">⋮⋮</button>
         <img class="vrow-thumb" src="${thumb}" alt="" loading="lazy" />
         <div class="vrow-meta">
           <a class="vrow-title" href="${url}" target="_blank" rel="noopener noreferrer" title="${title}">${title}</a>
           ${channel ? `<span class="vrow-channel">${channel}</span>` : ""}
+          ${playing ? `<span class="vrow-now-label">Now playing</span>` : ""}
         </div>
         <button type="button" class="vrow-remove" title="Remove from queue" aria-label="Remove from queue">×</button>
       </li>`;
@@ -221,6 +271,7 @@ function renderVideos(pl) {
   emptyState.hidden = true;
   playlistName.textContent = `${snaps.length} video${snaps.length === 1 ? "" : "s"}`;
   wireVideoRowDrag();
+  updatePlaybackStatus();
 }
 
 videoList.addEventListener("click", (e) => {
@@ -282,31 +333,31 @@ async function playQueue({ shuffle }) {
 
   btnPlayAll.disabled = true;
   btnShuffle.disabled = true;
-  status.textContent = shuffle ? "Shuffling and opening…" : "Opening queue in order…";
+  status.textContent = shuffle ? "Shuffling queue…" : "Starting playback…";
 
-  const r = await send("TUBESTACK_RESTORE_LOCAL_PLAYLIST", {
+  const r = await send("TUBESTACK_SIDEBAR_PLAYLIST_START", {
     playlistId: currentPlaylistId,
     shuffle,
-    activeFirst: true,
   });
 
-  syncPlaybackControls(pl);
+  if (r?.playlists) playlists = r.playlists;
+  playbackSession = r?.session || null;
 
   if (!r?.ok) {
-    status.textContent = r?.message || r?.error || "Could not open queue.";
+    status.textContent = r?.message || r?.error || "Could not start playback.";
+    syncPlaybackControls(pl);
     return;
   }
 
-  const opened = r.opened ?? 0;
-  const requested = r.requested ?? n;
-  const name = pl?.name || "queue";
-  if (opened < requested) {
-    status.textContent = `Opened ${opened} of ${requested} from "${name}".`;
-  } else if (shuffle) {
-    status.textContent = `Shuffled ${opened} video${opened === 1 ? "" : "s"} from "${name}".`;
+  if (shuffle) {
+    refreshPlaylistOptions(currentPlaylistId);
+    await loadPlaylistIntoView(currentPlaylistId);
   } else {
-    status.textContent = `Playing ${opened} video${opened === 1 ? "" : "s"} from "${name}" in order.`;
+    renderVideos(findPlaylist(currentPlaylistId) || pl);
   }
+
+  syncPlaybackControls(pl);
+  updatePlaybackStatus();
 }
 
 async function onRemoveFromPlaylist(videoId) {
@@ -422,6 +473,16 @@ function bindStorageSync() {
   if (!chrome.storage?.onChanged) return;
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
+    if (changes.sidebarPlayback) {
+      playbackSession = changes.sidebarPlayback.newValue || null;
+      const pl = currentPlaylistId ? findPlaylist(currentPlaylistId) : null;
+      if (pl) {
+        renderVideos(pl);
+      } else {
+        updatePlaybackStatus();
+        syncPlaybackControls(pl);
+      }
+    }
     if (changes.localPlaylists || changes.items) void onLibraryChanged();
   });
 }
@@ -437,6 +498,7 @@ async function onLibraryChanged() {
 
 async function init() {
   await loadState();
+  await loadPlaybackSession();
   refreshPlaylistOptions();
   const initialId =
     currentPlaylistId ||

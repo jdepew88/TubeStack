@@ -32,27 +32,44 @@
 
       <p id="playlistName" class="queue-title" hidden></p>
 
-      <div id="playbackBar" class="playback-bar" hidden>
-        <button type="button" id="btnPlayAll" class="btn primary playback-main" disabled>
-          <span class="playback-label">Continue playing</span>
-          <span class="playback-sub">Play all in order</span>
-        </button>
-        <button
-          type="button"
-          id="btnShuffle"
-          class="btn playback-shuffle"
-          disabled
-          title="Shuffle and play"
-          aria-label="Shuffle and play"
-        >
-          Shuffle
-        </button>
-      </div>
-
       <ul id="videoList" class="video-list" hidden></ul>
       <p id="emptyState" class="empty">Select a queue or add tabs to get started.</p>
       <p id="status" class="status" role="status"></p>
     </section>
+
+    <div id="playbackBar" class="playback-dock" hidden>
+      <button
+        type="button"
+        id="btnPlayAll"
+        class="icon-btn icon-btn--primary"
+        disabled
+        title="Play queue in order"
+        aria-label="Play queue in order"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="icon-btn-svg">
+          <path d="M8 5v14l11-7L8 5z" fill="currentColor" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        id="btnShuffle"
+        class="icon-btn"
+        disabled
+        title="Shuffle and play"
+        aria-label="Shuffle and play"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="icon-btn-svg">
+          <path
+            d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
 
     <footer class="ftr">
       <button type="button" id="btnFull" class="btn linkish">Open full dashboard</button>

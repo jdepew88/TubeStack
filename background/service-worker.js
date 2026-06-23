@@ -2187,6 +2187,8 @@ async function handleProgressTick(msg) {
   });
   await saveVideoProgress(map);
 
+  void maybeCompleteSidebarFromProgress(videoId, playheadSec || 0, durationSec ?? null);
+
   if (addWatch > 0) {
     const days = await loadWatchByDay();
     const key = todayKey();
@@ -3450,6 +3452,187 @@ function shuffleArray(list) {
   return out;
 }
 
+/** Sidebar sequential queue playback — one tab, auto-advance on video end. */
+let sidebarPlaybackAdvanceLock = 0;
+
+async function loadSidebarPlayback() {
+  const { sidebarPlayback } = await chrome.storage.local.get("sidebarPlayback");
+  if (!sidebarPlayback || typeof sidebarPlayback !== "object") return null;
+  return sidebarPlayback;
+}
+
+async function saveSidebarPlayback(session) {
+  if (!session) {
+    await chrome.storage.local.remove("sidebarPlayback");
+    return null;
+  }
+  await chrome.storage.local.set({ sidebarPlayback: session });
+  return session;
+}
+
+function playlistSnapshotByVideoId(playlist, videoId) {
+  const vid = String(videoId || "").trim();
+  return (Array.isArray(playlist?.items) ? playlist.items : []).find(
+    (x) => String(x?.videoId || "").trim() === vid
+  );
+}
+
+async function snapshotWatchUrl(snap, progressMap) {
+  const vid = String(snap?.videoId || "").trim();
+  if (!vid) return snap?.url || null;
+  const pos = getPlayheadFromStorage(snap, progressMap);
+  return normalizeWatchUrl(vid, pos > 2 ? pos : snap.timestampSec ?? null);
+}
+
+async function openSidebarPlaybackVideo({ playlistId, videoId, tabId, active }) {
+  const lists = await loadLocalPlaylists();
+  const pl = lists.find((x) => x.id === playlistId);
+  const snap = playlistSnapshotByVideoId(pl, videoId);
+  const progressMap = await loadVideoProgress();
+  const url = await snapshotWatchUrl(snap, progressMap);
+  if (!url) return { ok: false, error: "no_url" };
+
+  if (tabId) {
+    try {
+      await chrome.tabs.update(tabId, { url, active: active !== false });
+      return { ok: true, tabId };
+    } catch {
+      /* tab gone — create below */
+    }
+  }
+  const tab = await chrome.tabs.create({ url, active: active !== false });
+  return { ok: true, tabId: tab.id };
+}
+
+function nextSidebarQueueVideoId(session) {
+  const completed = new Set(session.completedVideoIds || []);
+  const current = session.currentVideoId;
+  if (current) completed.add(current);
+  for (const vid of session.queueVideoIds || []) {
+    if (!completed.has(vid)) return vid;
+  }
+  return null;
+}
+
+async function advanceSidebarPlaylistPlayback() {
+  const now = Date.now();
+  if (now - sidebarPlaybackAdvanceLock < 1200) return { ok: false, skipped: "debounce" };
+  sidebarPlaybackAdvanceLock = now;
+
+  const session = await loadSidebarPlayback();
+  if (!session || session.status !== "playing") return { ok: false, error: "no_session" };
+
+  const cur = String(session.currentVideoId || "").trim();
+  if (cur && !(session.completedVideoIds || []).includes(cur)) {
+    session.completedVideoIds = [...(session.completedVideoIds || []), cur];
+  }
+
+  const nextId = nextSidebarQueueVideoId(session);
+  if (!nextId) {
+    session.status = "complete";
+    session.currentVideoId = null;
+    session.updatedAt = new Date().toISOString();
+    await saveSidebarPlayback(session);
+    return { ok: true, session, done: true };
+  }
+
+  const open = await openSidebarPlaybackVideo({
+    playlistId: session.playlistId,
+    videoId: nextId,
+    tabId: session.activeTabId,
+    active: true,
+  });
+  if (!open.ok) {
+    session.status = "complete";
+    session.updatedAt = new Date().toISOString();
+    await saveSidebarPlayback(session);
+    return { ok: false, error: open.error, session };
+  }
+
+  session.currentVideoId = nextId;
+  session.activeTabId = open.tabId;
+  session.updatedAt = new Date().toISOString();
+  await saveSidebarPlayback(session);
+  return { ok: true, session, nextVideoId: nextId };
+}
+
+async function handleSidebarVideoEnded(videoId) {
+  const vid = String(videoId || "").trim();
+  if (!vid) return { ok: false };
+  const session = await loadSidebarPlayback();
+  if (!session || session.status !== "playing") return { ok: false };
+  if (session.currentVideoId !== vid) return { ok: false };
+  return advanceSidebarPlaylistPlayback();
+}
+
+async function maybeCompleteSidebarFromProgress(videoId, playheadSec, durationSec) {
+  if (!durationSec || durationSec <= 0) return;
+  if (playheadSec < durationSec - 2) return;
+  const session = await loadSidebarPlayback();
+  if (!session || session.status !== "playing") return;
+  if (session.currentVideoId !== videoId) return;
+  await advanceSidebarPlaylistPlayback();
+}
+
+async function startSidebarPlaylistPlayback({ playlistId, shuffle }) {
+  const pid = String(playlistId || "").trim();
+  if (!pid) return { ok: false, error: "missing_id" };
+
+  let lists = await loadLocalPlaylists();
+  let pl = lists.find((x) => x.id === pid);
+  if (!pl?.items?.length) {
+    return { ok: false, error: "empty_playlist", message: "This queue is empty." };
+  }
+
+  let queueVideoIds = pl.items
+    .map((x) => String(x?.videoId || "").trim())
+    .filter(Boolean);
+  if (!queueVideoIds.length) {
+    return { ok: false, error: "empty_playlist", message: "No playable videos in this queue." };
+  }
+
+  if (shuffle && queueVideoIds.length > 1) {
+    queueVideoIds = shuffleArray(queueVideoIds);
+    const reorder = await reorderLocalPlaylistItems({ playlistId: pid, videoIds: queueVideoIds });
+    if (reorder?.ok) {
+      lists = reorder.playlists || lists;
+      storageCache.localPlaylists = null;
+    }
+    pl = lists.find((x) => x.id === pid) || pl;
+  }
+
+  const firstId = queueVideoIds[0];
+  const open = await openSidebarPlaybackVideo({
+    playlistId: pid,
+    videoId: firstId,
+    active: true,
+  });
+  if (!open.ok) return open;
+
+  const session = {
+    playlistId: pid,
+    queueVideoIds,
+    currentVideoId: firstId,
+    completedVideoIds: [],
+    activeTabId: open.tabId,
+    status: "playing",
+    shuffled: shuffle === true,
+    updatedAt: new Date().toISOString(),
+  };
+  await saveSidebarPlayback(session);
+  return { ok: true, session, playlists: lists };
+}
+
+async function getSidebarPlaylistPlayback() {
+  const session = await loadSidebarPlayback();
+  return { ok: true, session };
+}
+
+async function stopSidebarPlaylistPlayback() {
+  await saveSidebarPlayback(null);
+  return { ok: true, session: null };
+}
+
 /** Open saved snapshot rows (library items or local playlist entries) as YouTube tabs. */
 async function openSnapshotItemsAsTabs(items, progressMap, options = {}) {
   const { activeFirst = false, shuffle = false } = options;
@@ -3791,6 +3974,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
+      case "TUBESTACK_VIDEO_ENDED": {
+        sendResponse(await handleSidebarVideoEnded(msg.videoId));
+        break;
+      }
+      case "TUBESTACK_SIDEBAR_PLAYLIST_START": {
+        sendResponse(
+          await startSidebarPlaylistPlayback({
+            playlistId: msg.playlistId,
+            shuffle: msg.shuffle === true,
+          })
+        );
+        break;
+      }
+      case "TUBESTACK_SIDEBAR_PLAYLIST_GET": {
+        sendResponse(await getSidebarPlaylistPlayback());
+        break;
+      }
+      case "TUBESTACK_SIDEBAR_PLAYLIST_STOP": {
+        sendResponse(await stopSidebarPlaylistPlayback());
+        break;
+      }
       case "TUBESTACK_CYCLE_THEME": {
         sendResponse(await cycleTheme(msg.themeId));
         break;
@@ -4102,3 +4306,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 void ensureToolbarPopupBehavior();
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const session = await loadSidebarPlayback();
+  if (!session || session.activeTabId !== tabId) return;
+  session.activeTabId = null;
+  session.updatedAt = new Date().toISOString();
+  await saveSidebarPlayback(session);
+});

@@ -36,7 +36,7 @@ Depending on how you use TubeStack, the extension may store locally, among other
 - **Local playlists and organization data** — stack notes, research summaries, and decision logs.
 - **Categories, themes, tags, and similar labels** you use to organize your library.
 - **Locally tracked watch progress** — on open YouTube `/watch` tabs (`videoProgress` and daily totals in `watchByDay`). On `/shorts` tabs, progress tracking is **best-effort** (**saving Shorts still works**). TubeStack does **not** use the Chrome History API.
-- **Extension settings and UI preferences** — sidebar preferences, import options, and similar configuration.
+- **Extension settings and UI preferences** — dashboard sidebar visibility, selected queue, color theme, import options, and similar configuration.
 
 ### Credentials stay on your device
 
@@ -59,6 +59,21 @@ Depending on how you use TubeStack, the extension may store locally, among other
 **OpenAI API calls only happen when you configure an API key and run optional AI features** (AI-assisted categorization or **Test OpenAI connection** in Settings). Requests go **directly to OpenAI’s API** (`api.openai.com`), using your key only for user-initiated actions.
 
 AI categorization and AI Watch State suggestions may send **selected video metadata** from your saved library (titles, channels, tags, notes, current watch state). AI does not overwrite watch states unless you confirm an apply step.
+
+---
+
+## Chrome side panel (queue sidebar)
+
+TubeStack includes an **optional queue sidebar** in Chrome’s side panel (`sidebar/sidebar.html`). The toolbar icon **always** opens the save popup; the side panel opens only when you click **Open sidebar** in that popup.
+
+In the sidebar you can:
+
+- Select a **local queue** (playlist) and **add YouTube tabs** from the current window.
+- **Drag to reorder** videos in the queue (order is saved locally via `TUBESTACK_REORDER_LOCAL_PLAYLIST_ITEMS`).
+- **Continue playing** — open every video in saved queue order (first tab active; resume positions when TubeStack has tracked them).
+- **Shuffle** — open the queue in random playback order without changing the saved playlist order.
+
+The sidebar uses the same **local library and playlists** as the dashboard. It communicates with the extension service worker via `chrome.runtime` messaging and reads/writes `chrome.storage.local` through existing APIs. It does **not** add host permissions, content scripts, or network calls to a TubeStack server.
 
 ---
 
@@ -85,7 +100,7 @@ TubeStack does **not** reconstruct what you watched before install or on sites o
 
 ## Permissions and page access
 
-TubeStack declares **`contextMenus`**, **`identity`**, **`scripting`**, and **`storage`**, plus **YouTube host permissions** at install time. **Google APIs** and **OpenAI** are **optional host permissions** requested at runtime when you use those features.
+TubeStack declares **`contextMenus`**, **`identity`**, **`scripting`**, **`sidePanel`**, and **`storage`**, plus **YouTube host permissions** at install time. **Google APIs** and **OpenAI** are **optional host permissions** requested at runtime when you use those features.
 
 TubeStack does **not** request Chrome History, the broad **`tabs`** permission, or **`windows`**.
 

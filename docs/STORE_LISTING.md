@@ -36,6 +36,17 @@ If you need a shorter line, drop the last sentence or shorten “Optional” to 
 
 Inside the **dashboard**, you can organize saved videos with lists, themes/categories, tags, notes, and priority. Build local playlists, use focus-session tools, and work through queues without losing context.
 
+**Queue sidebar (Chrome side panel)**
+
+From the toolbar popup, click **Open sidebar** to dock a compact queue panel beside your tabs:
+
+- Select a local queue and **add YouTube tabs** from the current window
+- **Drag to reorder** videos (saved locally)
+- **Continue playing** — open the full queue in order (first video active; resume when tracked)
+- **Shuffle** — random playback order without changing the saved list
+
+The toolbar icon always opens the save popup first; the side panel is optional and user-initiated.
+
 ### Optional integrations (your choice)
 
 These are **advanced optional features**. Local save and organize works without them.
@@ -113,6 +124,18 @@ Paste into each **Permission justification** field in the Chrome Web Store dashb
 **Short:**
 
 > Fallback script injection on YouTube tabs for save/metadata when content scripts are not loaded.
+
+---
+
+### `sidePanel`
+
+**Standard:**
+
+> Opens TubeStack's **optional queue sidebar** in Chrome's side panel when the user clicks **Open sidebar** in the toolbar popup. The panel lets users pick a local queue, add window tabs, drag to reorder, and play the queue in order or shuffled. Data stays in local extension storage; the toolbar icon still opens the save popup.
+
+**Short:**
+
+> Optional queue sidebar (reorder, play all, shuffle) when user clicks Open sidebar in the popup.
 
 ---
 

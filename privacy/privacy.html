@@ -158,7 +158,7 @@
           <strong>best-effort</strong> (saving Shorts still works). TubeStack does <strong>not</strong> use the Chrome
           History API.
         </li>
-        <li>Extension settings and UI preferences.</li>
+        <li>Extension settings and UI preferences (including your selected queue and sidebar panel state).</li>
         <li>YouTube Data API keys and OpenAI API keys you paste (stored locally only).</li>
         <li>YouTube OAuth Web Client IDs you paste (public client identifiers, stored locally).</li>
         <li>
@@ -173,6 +173,25 @@
         </li>
       </ul>
 
+      <h2>Chrome side panel (queue sidebar)</h2>
+      <p>
+        TubeStack includes an <strong>optional queue sidebar</strong> in Chrome&rsquo;s side panel. The toolbar icon
+        always opens the save popup first; the sidebar opens only when you click <strong>Open sidebar</strong> in that
+        popup.
+      </p>
+      <p>In the sidebar you can:</p>
+      <ul>
+        <li>Pick a local queue (playlist) and add YouTube tabs from the current window.</li>
+        <li>Drag videos to reorder the queue (order is saved locally).</li>
+        <li>Use <strong>Continue playing</strong> to open every video in queue order (first video active, resume positions when tracked).</li>
+        <li>Use <strong>Shuffle</strong> to open the queue in random order without changing the saved list.</li>
+      </ul>
+      <p>
+        The sidebar reads and updates the same local library and playlists as the dashboard. It uses
+        <code>chrome.runtime</code> messaging and <code>chrome.storage.local</code> only&mdash;no TubeStack server, no
+        extra host permissions, and no content scripts in the side panel.
+      </p>
+
       <h2>Network requests and third parties</h2>
       <p>
         <strong>Google / YouTube</strong> — Optional API and OAuth calls happen only when you configure and use those
@@ -186,10 +205,10 @@
 
       <h2>Permissions and page access</h2>
       <p>
-        TubeStack declares <code>contextMenus</code>, <code>identity</code>, <code>scripting</code>, and
-        <code>storage</code>, plus YouTube host permissions. Google APIs and OpenAI are optional runtime host
-        permissions. TubeStack does <strong>not</strong> request Chrome History, the broad <code>tabs</code>
-        permission, or <code>windows</code>.
+        TubeStack declares <code>contextMenus</code>, <code>identity</code>, <code>scripting</code>,
+        <code>sidePanel</code>, and <code>storage</code>, plus YouTube host permissions. Google APIs and OpenAI are
+        optional runtime host permissions. TubeStack does <strong>not</strong> request Chrome History, the broad
+        <code>tabs</code> permission, or <code>windows</code>.
       </p>
       <p>
         Content scripts run on YouTube watch and Shorts pages (metadata on save; local progress on open tabs — full on

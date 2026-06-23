@@ -21,7 +21,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **Permissions reviewed**
   - `manifest.json` matches [PERMISSIONS.md](PERMISSIONS.md)
-  - Only: `contextMenus`, `identity`, `scripting`, `storage`
+  - Only: `contextMenus`, `identity`, `scripting`, `sidePanel`, `storage`
   - **No** `history`, `tabs`, `windows`, or `<all_urls>`
 
 - [ ] **Host permissions minimized**

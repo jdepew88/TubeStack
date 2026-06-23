@@ -127,10 +127,12 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | Field | Detail |
 |-------|--------|
 | Why declared | Required for the `chrome.sidePanel` API |
-| Where used | `popup/popup.js` — `chrome.sidePanel.open()` when the user clicks **Open sidebar** |
+| Where used | `popup/popup.js` — `chrome.sidePanel.open()` when the user clicks **Open sidebar**; `sidebar/sidebar.html` — bundled side panel UI |
 | User trigger | User opens the popup from the toolbar icon, then chooses **Open sidebar** |
-| Scope | Opens TubeStack's bundled sidebar page in Chrome's side panel for the current window. The toolbar icon always keeps the save-options popup |
-| If unused | No effect; the standard toolbar popup is unchanged |
+| Scope | Optional queue panel in Chrome's side bar for the current window. Toolbar icon always keeps the save-options popup (`setPanelBehavior({ openPanelOnActionClick: false })`) |
+| Features | Select local queue; add YouTube tabs from current window; drag reorder; **Continue playing** (play all in order, first tab active); **Shuffle** (random open order, list unchanged) |
+| Data | Reads/writes the same local playlists and library via service worker messages and `chrome.storage.local` — no new hosts or content scripts |
+| If unused | No effect; standard toolbar popup unchanged |
 
 **Chrome Web Store justification (short):**
 
@@ -138,7 +140,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 
 **Chrome Web Store justification (long):**
 
-> TubeStack uses chrome.sidePanel to show an optional queue panel (sidebar/sidebar.html) when the user explicitly requests it from the toolbar popup. Clicking the extension icon always opens the popup with save actions; the side panel does not replace that flow. The panel reuses local storage and runtime messaging only; it does not add host access or content scripts.
+> TubeStack uses chrome.sidePanel to show an optional queue panel (sidebar/sidebar.html) when the user explicitly requests it from the toolbar popup. Clicking the extension icon always opens the popup with save actions; the side panel does not replace that flow. In the panel, users manage local playlists: add window tabs, drag to reorder, play all in order (Continue playing), or shuffle playback. The panel uses extension runtime messaging and local storage only; it does not add host access or content scripts.
 
 ---
 
@@ -147,7 +149,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | Field | Detail |
 |-------|--------|
 | Why declared | Required for `chrome.storage.local` and `chrome.storage.onChanged` |
-| Where used | Service worker, dashboard, popup, library, home |
+| Where used | Service worker, dashboard, popup, **queue sidebar**, library, home |
 | User trigger | Any save, organize, settings, or progress feature |
 | What is stored | Library items, playlists, categories, notes, settings, `videoProgress`, `watchByDay`, optional API keys, UI preferences |
 | What is not stored remotely | No TubeStack-operated server receives this data by default |

@@ -128,11 +128,25 @@ btnLibrary?.addEventListener("click", async () => {
   await openExtensionInNewTabAndClose("dashboard/library.html");
 });
 
-btnSidebar?.addEventListener("click", async () => {
+btnSidebar?.addEventListener("click", () => {
   btnSidebar.disabled = true;
-  await send("TUBESTACK_SET_QUICK_SIDEBAR_MODE", { enabled: true });
-  status.textContent = "Minimal sidebar mode on. Click the toolbar icon to open the sidebar.";
-  setTimeout(() => window.close(), 1100);
+  // sidePanel.open() must run in the click gesture chain — not via service worker messaging.
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const windowId = tabs[0]?.windowId;
+    if (windowId == null) {
+      btnSidebar.disabled = false;
+      status.textContent = "Could not detect this window.";
+      return;
+    }
+    chrome.sidePanel.open({ windowId }, () => {
+      if (chrome.runtime.lastError) {
+        btnSidebar.disabled = false;
+        status.textContent = "Could not open sidebar — try again.";
+        return;
+      }
+      window.close();
+    });
+  });
 });
 
 async function initPopupTheme() {

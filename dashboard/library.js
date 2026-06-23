@@ -26,8 +26,17 @@ let libSettings = {};
 /** "recent" = tab/session saves only; "complete" = entire saved library including YouTube imports */
 let libLibraryScope = "recent";
 /** When set, library + browse columns only show videos in this local playlist snapshot. */
-let libActivePlaylistId = null;
+/** How many video rows to paint initially; more load on demand. */
+const LIB_PAGE_SIZE = 60;
+let libRenderLimit = LIB_PAGE_SIZE;
 
+function resetLibraryRenderLimit() {
+  libRenderLimit = LIB_PAGE_SIZE;
+}
+
+async function loadLibraryBootState() {
+  return send("TUBESTACK_GET_LIBRARY_BOOT");
+}
 /** Which library video row shows inline category / album / delete (one at a time). */
 let libVideoActionsId = "";
 
@@ -428,12 +437,13 @@ function updateVideosHeader(list) {
 }
 
 async function reloadLibraryFullState() {
-  const r = await send("TUBESTACK_GET_STATE");
+  const r = await loadLibraryBootState();
   if (r?.ok) {
     if (Array.isArray(r.items)) allItems = r.items;
     if (Array.isArray(r.localPlaylists)) localPlaylists = r.localPlaylists;
     if (r.settings && typeof r.settings === "object") libSettings = r.settings;
   }
+  resetLibraryRenderLimit();
   renderAll();
 }
 
@@ -588,7 +598,9 @@ function renderVideos() {
   host.classList.toggle("lib-view-grid", libViewMode === "grid");
   const albumChoices = distinctAlbumValuesForPicker();
 
-  for (const it of list) {
+  const visible = list.slice(0, libRenderLimit);
+
+  for (const it of visible) {
     const row = document.createElement("div");
     row.className = "video-row" + (libVideoActionsId === it.id ? " video-row--open" : "");
     row.dataset.id = it.id;
@@ -775,6 +787,23 @@ function renderVideos() {
     row.appendChild(main);
     host.appendChild(row);
   }
+
+  if (list.length > libRenderLimit) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "lib-load-more";
+    const remaining = list.length - libRenderLimit;
+    more.textContent =
+      remaining > LIB_PAGE_SIZE
+        ? `Show ${LIB_PAGE_SIZE} more (${remaining} remaining)`
+        : `Show ${remaining} more`;
+    more.addEventListener("click", () => {
+      libRenderLimit += LIB_PAGE_SIZE;
+      renderVideos();
+    });
+    host.appendChild(more);
+  }
+
   syncLibBulkUi(list);
 }
 
@@ -784,6 +813,7 @@ function sortRowsAlpha(rows, order = "asc") {
 }
 
 function renderAll() {
+  resetLibraryRenderLimit();
   const artistMap = new Map();
   const albumMap = new Map();
   const categoryMap = new Map();
@@ -1060,7 +1090,7 @@ async function boot() {
   document.getElementById("libScopeRecent")?.addEventListener("click", () => setLibLibraryScope("recent"));
   document.getElementById("libScopeComplete")?.addEventListener("click", () => setLibLibraryScope("complete"));
   await applyLibraryUiThemeFromSettings();
-  const r = await send("TUBESTACK_GET_STATE");
+  const r = await loadLibraryBootState();
   allItems = Array.isArray(r?.items) ? r.items : [];
   localPlaylists = Array.isArray(r?.localPlaylists) ? r.localPlaylists : [];
   libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
@@ -1076,13 +1106,14 @@ async function boot() {
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || (!changes.localPlaylists && !changes.settings)) return;
+  if (areaName !== "local" || (!changes.items && !changes.localPlaylists && !changes.settings)) return;
   void (async () => {
-    const r = await send("TUBESTACK_GET_STATE");
+    const r = await loadLibraryBootState();
     if (!r?.ok) return;
-    allItems = Array.isArray(r?.items) ? r.items : [];
-    localPlaylists = Array.isArray(r?.localPlaylists) ? r.localPlaylists : [];
+    allItems = Array.isArray(r.items) ? r.items : [];
+    localPlaylists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
     libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
+    resetLibraryRenderLimit();
     renderListFilterOptions();
     fillLibWatchStateFilterOptions();
     renderLibraryPriorityBar();

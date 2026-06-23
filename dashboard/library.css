@@ -1046,3 +1046,23 @@ body {
 .video-meta .watch-state-badge {
   margin-left: 0;
 }
+
+.lib-load-more {
+  display: block;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lib-load-more:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

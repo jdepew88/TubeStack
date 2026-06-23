@@ -1,43 +1,29 @@
 /**
- * TubeStack side panel — playlist viewer/editor.
- *
- * Shows the selected (or just-imported) playlist as a compact, editable list of videos.
- *   - Pick a playlist from the dropdown → it loads into the sidebar.
- *   - Import button → saves this window's YouTube tabs into a new playlist and shows it here.
- *   - Per-video: a category dropdown (basic categorization), remove-from-playlist, click to open.
- *
- * Playlist items are lightweight snapshots; editable fields (category) live on the matching
- * library item, joined by videoId. All operations reuse existing TUBESTACK_* messages —
- * no new permissions, no network, no service-worker changes.
+ * TubeStack side panel — compact queue view.
  */
 
 const playlistSelect = document.getElementById("playlistSelect");
 const playlistName = document.getElementById("playlistName");
 const countLine = document.getElementById("countLine");
-const btnImportTabs = document.getElementById("btnImportTabs");
+const tabBadge = document.getElementById("tabBadge");
+const btnAddTabs = document.getElementById("btnAddTabs");
+const btnNewQueue = document.getElementById("btnNewQueue");
 const videoList = document.getElementById("videoList");
 const emptyState = document.getElementById("emptyState");
 const status = document.getElementById("status");
 const btnFull = document.getElementById("btnFull");
-const btnPopup = document.getElementById("btnPopup");
+const playbackBar = document.getElementById("playbackBar");
+const btnPlayAll = document.getElementById("btnPlayAll");
+const btnShuffle = document.getElementById("btnShuffle");
 
-/** Render cap so a very large playlist never lays out hundreds of nodes at once. */
 const RENDER_CAP = 200;
 
-const CATEGORY_LABELS = {
-  watch_later: "Watch later",
-  long_play: "Long play",
-  shorts: "Shorts",
-  documentary: "Documentary",
-  music: "Music",
-  custom: "Custom",
-};
-
 let playlists = [];
-let categoryIds = Object.keys(CATEGORY_LABELS);
 let libraryByVideoId = new Map();
 let currentPlaylistId = null;
 let settingsCurrentPlaylistId = null;
+let tabCount = 0;
+let reorderDragId = null;
 
 function send(type, payload = {}) {
   return new Promise((resolve) => {
@@ -68,7 +54,47 @@ function findPlaylist(id) {
   return playlists.find((x) => x.id === id) || null;
 }
 
-/* ---------------- State load ---------------- */
+function getPlaylistVideoIds(pl) {
+  return (Array.isArray(pl?.items) ? pl.items : [])
+    .map((snap) => String(snap?.videoId || "").trim())
+    .filter(Boolean);
+}
+
+function syncPlaybackControls(pl) {
+  const hasItems = Boolean(pl?.items?.length);
+  playbackBar.hidden = !hasItems;
+  btnPlayAll.disabled = !hasItems;
+  btnShuffle.disabled = !hasItems;
+}
+
+async function persistPlaylistOrder(videoIds) {
+  if (!currentPlaylistId) return false;
+  const r = await send("TUBESTACK_REORDER_LOCAL_PLAYLIST_ITEMS", {
+    playlistId: currentPlaylistId,
+    videoIds,
+  });
+  if (!r?.ok) {
+    status.textContent = r?.error || "Could not reorder queue.";
+    return false;
+  }
+  playlists = Array.isArray(r.playlists) ? r.playlists : playlists;
+  return true;
+}
+
+async function applyRowReorder(dragId, targetId) {
+  const pl = findPlaylist(currentPlaylistId);
+  if (!pl) return;
+  const ids = getPlaylistVideoIds(pl);
+  const from = ids.indexOf(dragId);
+  const to = ids.indexOf(targetId);
+  if (from < 0 || to < 0 || from === to) return;
+  ids.splice(from, 1);
+  ids.splice(to, 0, dragId);
+  if (!(await persistPlaylistOrder(ids))) return;
+  await loadState();
+  await loadPlaylistIntoView(currentPlaylistId);
+  status.textContent = "Queue order updated.";
+}
 
 async function loadState() {
   const [state, itemsRes] = await Promise.all([
@@ -77,9 +103,6 @@ async function loadState() {
   ]);
   playlists = Array.isArray(state?.localPlaylists) ? state.localPlaylists : [];
   settingsCurrentPlaylistId = String(state?.settings?.currentPlaylistId || "").trim() || null;
-  if (Array.isArray(state?.categories) && state.categories.length) {
-    categoryIds = state.categories;
-  }
 
   const items = Array.isArray(itemsRes?.items) ? itemsRes.items : [];
   libraryByVideoId = new Map();
@@ -88,8 +111,6 @@ async function loadState() {
     if (vid && !libraryByVideoId.has(vid)) libraryByVideoId.set(vid, it);
   }
 }
-
-/* ---------------- Playlist dropdown ---------------- */
 
 function refreshPlaylistOptions(preferredId = null) {
   if (!playlists.length) {
@@ -114,117 +135,177 @@ function refreshPlaylistOptions(preferredId = null) {
     .map((pl) => {
       const n = Array.isArray(pl.items) ? pl.items.length : 0;
       const name = escapeHtml(String(pl.name || "Untitled").trim()) || "Untitled";
-      return `<option value="${escapeHtml(String(pl.id))}"${pl.id === want ? " selected" : ""}>${name} · ${n}</option>`;
+      return `<option value="${escapeHtml(String(pl.id))}"${pl.id === want ? " selected" : ""}>${name} (${n})</option>`;
     })
     .join("");
 }
 
+async function persistQueueSelection(id) {
+  const pl = findPlaylist(id);
+  if (!pl) return;
+  await send("TUBESTACK_PATCH_SETTINGS", {
+    patch: {
+      currentPlaylistId: pl.id,
+      currentPlaylistName: pl.name,
+    },
+  });
+}
+
 playlistSelect.addEventListener("change", () => {
   const id = playlistSelect.value;
-  if (id) void loadPlaylistIntoView(id);
+  if (id) void loadPlaylistIntoView(id, { persist: true });
 });
 
-/* ---------------- Playlist view ---------------- */
-
-async function loadPlaylistIntoView(id, { updateSelect = true } = {}) {
+async function loadPlaylistIntoView(id, { updateSelect = true, persist = false } = {}) {
   currentPlaylistId = id;
   const pl = findPlaylist(id);
   if (!pl) {
-    renderEmpty("Playlist not found.");
+    renderEmpty("Queue not found.");
+    playlistName.hidden = true;
+    syncPlaybackControls(null);
     return;
   }
   if (updateSelect && playlistSelect.value !== id) playlistSelect.value = id;
-  playlistName.textContent = String(pl.name || "Playlist");
+  playlistName.textContent = `${pl.items?.length || 0} videos`;
+  playlistName.hidden = false;
   renderVideos(pl);
+  if (persist) await persistQueueSelection(id);
 }
 
 function renderEmpty(message) {
   videoList.hidden = true;
   videoList.innerHTML = "";
   emptyState.hidden = false;
-  emptyState.textContent = message || "Pick a playlist above, or import this window's tabs.";
+  emptyState.textContent = message || "Select a queue or add tabs to get started.";
+  syncPlaybackControls(null);
 }
 
 function renderVideos(pl) {
   const snaps = Array.isArray(pl.items) ? pl.items : [];
   if (!snaps.length) {
-    renderEmpty("This playlist has no videos.");
+    renderEmpty("This queue is empty — add window tabs above.");
+    playlistName.textContent = "0 videos";
     return;
   }
+
+  syncPlaybackControls(pl);
 
   const shown = snaps.slice(0, RENDER_CAP);
   const overflow = snaps.length - shown.length;
 
   const rows = shown.map((snap) => {
-    const vid = String(snap.videoId || "").trim();
-    const lib = vid ? libraryByVideoId.get(vid) : null;
-    const itemId = lib?.id || "";
-    const category = String(lib?.category || "watch_later");
     const url = escapeHtml(String(snap.url || ""));
     const title = escapeHtml(String(snap.title || "YouTube video")) || "YouTube video";
     const channel = escapeHtml(String(snap.channel || ""));
     const thumb = escapeHtml(String(snap.thumbnail || ""));
-    const options = categoryIds
-      .map(
-        (c) =>
-          `<option value="${escapeHtml(String(c))}"${c === category ? " selected" : ""}>${
-            escapeHtml(CATEGORY_LABELS[c] || c)
-          }</option>`
-      )
-      .join("");
+    const vid = escapeHtml(String(snap.videoId || "").trim());
 
     return `
-      <li class="vrow" data-videoid="${escapeHtml(vid)}" data-itemid="${escapeHtml(itemId)}">
+      <li class="vrow" data-videoid="${vid}" draggable="false">
+        <button type="button" class="vrow-drag" draggable="true" title="Drag to reorder" aria-label="Drag to reorder">⋮⋮</button>
         <img class="vrow-thumb" src="${thumb}" alt="" loading="lazy" />
         <div class="vrow-meta">
           <a class="vrow-title" href="${url}" target="_blank" rel="noopener noreferrer" title="${title}">${title}</a>
           ${channel ? `<span class="vrow-channel">${channel}</span>` : ""}
-          <div class="vrow-controls">
-            <select class="vrow-cat" ${itemId ? "" : "disabled"} title="Category">${options}</select>
-            <button type="button" class="vrow-remove" title="Remove from this playlist" aria-label="Remove from this playlist">✕</button>
-          </div>
         </div>
+        <button type="button" class="vrow-remove" title="Remove from queue" aria-label="Remove from queue">×</button>
       </li>`;
   });
 
   if (overflow > 0) {
-    rows.push(`<li class="vrow-more">+${overflow} more — open the full dashboard to see all.</li>`);
+    rows.push(`<li class="vrow-more">+${overflow} more in full dashboard</li>`);
   }
 
   videoList.innerHTML = rows.join("");
   videoList.hidden = false;
   emptyState.hidden = true;
+  playlistName.textContent = `${snaps.length} video${snaps.length === 1 ? "" : "s"}`;
+  wireVideoRowDrag();
 }
-
-/* ---------------- Inline editing (delegated) ---------------- */
-
-videoList.addEventListener("change", (e) => {
-  const sel = e.target.closest(".vrow-cat");
-  if (!sel) return;
-  const li = sel.closest(".vrow");
-  if (!li) return;
-  void onCategoryChange(li.dataset.videoid, li.dataset.itemid, sel.value);
-});
 
 videoList.addEventListener("click", (e) => {
   const rm = e.target.closest(".vrow-remove");
-  if (!rm) return; // title is an <a target=_blank>; default opens it
+  if (!rm) return;
   const li = rm.closest(".vrow");
   if (li) void onRemoveFromPlaylist(li.dataset.videoid);
 });
 
-async function onCategoryChange(videoId, itemId, value) {
-  if (!itemId) {
-    status.textContent = "No library row to update for this video.";
+function wireVideoRowDrag() {
+  videoList.querySelectorAll(".vrow").forEach((row) => {
+    const handle = row.querySelector(".vrow-drag");
+    if (!handle || row.dataset.dragBound === "1") return;
+    row.dataset.dragBound = "1";
+    const vid = row.dataset.videoid;
+
+    handle.addEventListener("dragstart", (e) => {
+      reorderDragId = vid;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", vid);
+      row.classList.add("vrow--dragging");
+    });
+
+    handle.addEventListener("dragend", () => {
+      reorderDragId = null;
+      row.classList.remove("vrow--dragging", "vrow--over");
+      videoList.querySelectorAll(".vrow--over").forEach((el) => el.classList.remove("vrow--over"));
+    });
+
+    row.addEventListener("dragover", (e) => {
+      if (!reorderDragId || reorderDragId === vid) return;
+      e.preventDefault();
+      row.classList.add("vrow--over");
+    });
+
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("vrow--over");
+    });
+
+    row.addEventListener("drop", async (e) => {
+      if (!reorderDragId || reorderDragId === vid) return;
+      e.preventDefault();
+      row.classList.remove("vrow--over");
+      const dragId = reorderDragId;
+      reorderDragId = null;
+      await applyRowReorder(dragId, vid);
+    });
+  });
+}
+
+async function playQueue({ shuffle }) {
+  if (!currentPlaylistId) return;
+  const pl = findPlaylist(currentPlaylistId);
+  const n = pl?.items?.length || 0;
+  if (!n) {
+    status.textContent = "Queue is empty.";
     return;
   }
-  const r = await send("TUBESTACK_UPDATE_ITEM", { id: itemId, category: value });
-  if (r?.ok) {
-    const lib = libraryByVideoId.get(String(videoId || "").trim());
-    if (lib) lib.category = value;
-    status.textContent = `Category → ${CATEGORY_LABELS[value] || value}.`;
+
+  btnPlayAll.disabled = true;
+  btnShuffle.disabled = true;
+  status.textContent = shuffle ? "Shuffling and opening…" : "Opening queue in order…";
+
+  const r = await send("TUBESTACK_RESTORE_LOCAL_PLAYLIST", {
+    playlistId: currentPlaylistId,
+    shuffle,
+    activeFirst: true,
+  });
+
+  syncPlaybackControls(pl);
+
+  if (!r?.ok) {
+    status.textContent = r?.message || r?.error || "Could not open queue.";
+    return;
+  }
+
+  const opened = r.opened ?? 0;
+  const requested = r.requested ?? n;
+  const name = pl?.name || "queue";
+  if (opened < requested) {
+    status.textContent = `Opened ${opened} of ${requested} from "${name}".`;
+  } else if (shuffle) {
+    status.textContent = `Shuffled ${opened} video${opened === 1 ? "" : "s"} from "${name}".`;
   } else {
-    status.textContent = r?.error || "Could not update category.";
+    status.textContent = `Playing ${opened} video${opened === 1 ? "" : "s"} from "${name}" in order.`;
   }
 }
 
@@ -243,73 +324,93 @@ async function onRemoveFromPlaylist(videoId) {
   await loadState();
   refreshPlaylistOptions(currentPlaylistId);
   await loadPlaylistIntoView(currentPlaylistId);
-  status.textContent = "Removed from playlist.";
+  status.textContent = "Removed from queue.";
 }
-
-/* ---------------- Import current window's tabs ---------------- */
 
 async function refreshCount() {
   const r = await send("TUBESTACK_GET_SAVE_TAB_COUNTS");
   if (!r?.ok) {
+    tabCount = 0;
+    tabBadge.hidden = true;
     countLine.textContent =
-      r?.error === "No active tab." ? "Open this from a window with tabs." : "Could not read tabs.";
-    btnImportTabs.disabled = true;
+      r?.error === "No active tab." ? "Open from a window with YouTube tabs." : "Could not read tabs.";
+    btnAddTabs.disabled = true;
+    btnNewQueue.disabled = true;
     return;
   }
-  const n = r.all;
-  if (n) {
-    countLine.textContent = `${n} YouTube tab${n === 1 ? "" : "s"} here · import saves & closes them.`;
+  tabCount = r.all || 0;
+  if (tabCount) {
+    tabBadge.textContent = String(tabCount);
+    tabBadge.hidden = false;
+    countLine.textContent = `${tabCount} YouTube tab${tabCount === 1 ? "" : "s"} in this window · saved tabs close.`;
   } else {
+    tabBadge.hidden = true;
     countLine.textContent = "No YouTube tabs in this window.";
   }
-  btnImportTabs.disabled = n === 0;
+  const canAdd = tabCount > 0;
+  btnAddTabs.disabled = !canAdd;
+  btnNewQueue.disabled = !canAdd;
 }
 
-btnImportTabs.addEventListener("click", async () => {
-  btnImportTabs.disabled = true;
-  status.textContent = "Importing…";
+async function saveWindowTabs({ createNew }) {
+  btnAddTabs.disabled = true;
+  btnNewQueue.disabled = true;
+  status.textContent = "Saving tabs…";
+
   const r = await send("TUBESTACK_SAVE_YT_TABS", { mode: "all" });
   if (!r?.ok || !r.savedCount) {
-    status.textContent = !r?.ok ? r?.error || "Something went wrong." : "No YouTube tabs to import.";
+    status.textContent = !r?.ok ? r?.error || "Something went wrong." : "No YouTube tabs to save.";
     await refreshCount();
     return;
   }
-  const savePl = await send("TUBESTACK_LOCAL_PLAYLIST_SAVE", {
-    name: "",
-    items: r.saved,
-    playlistSource: "session",
-  });
-  if (!savePl?.ok) {
-    status.textContent = savePl?.error || "Saved tabs, but playlist creation failed.";
+
+  let playlistId = currentPlaylistId;
+  let addRes;
+
+  if (createNew || !playlistId || !findPlaylist(playlistId)) {
+    addRes = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", {
+      items: r.saved,
+      createNew: true,
+    });
+    playlistId = addRes?.playlistId || addRes?.playlists?.[0]?.id;
+  } else {
+    addRes = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", {
+      playlistId,
+      items: r.saved,
+      createNew: false,
+    });
+  }
+
+  if (!addRes?.ok) {
+    status.textContent = addRes?.error || "Saved tabs, but queue update failed.";
     await refreshCount();
     return;
   }
-  const playlistId = savePl.playlistId || savePl.playlists?.[0]?.id;
-  const created =
-    (Array.isArray(savePl.playlists) && savePl.playlists.find((p) => p.id === playlistId)?.name) ||
-    "a new playlist";
-  status.textContent = `Imported ${r.savedCount} tab${r.savedCount === 1 ? "" : "s"} into "${created}".`;
+
+  const pl = findPlaylist(playlistId) || addRes.playlists?.find((p) => p.id === playlistId);
+  const name = pl?.name || "queue";
+  const added = addRes.addedCount ?? r.savedCount;
+
+  if (createNew) {
+    status.textContent = `Created "${name}" with ${r.savedCount} tab${r.savedCount === 1 ? "" : "s"}.`;
+  } else if (added < r.savedCount) {
+    status.textContent = `Added ${added} to "${name}" (${r.savedCount - added} already in queue).`;
+  } else {
+    status.textContent = `Added ${added} tab${added === 1 ? "" : "s"} to "${name}".`;
+  }
 
   await loadState();
   refreshPlaylistOptions(playlistId);
-  await loadPlaylistIntoView(playlistId);
+  await loadPlaylistIntoView(playlistId, { persist: true });
   await refreshCount();
-});
+}
 
-/* ---------------- Footer ---------------- */
+btnAddTabs.addEventListener("click", () => saveWindowTabs({ createNew: false }));
+btnNewQueue.addEventListener("click", () => saveWindowTabs({ createNew: true }));
+btnPlayAll.addEventListener("click", () => playQueue({ shuffle: false }));
+btnShuffle.addEventListener("click", () => playQueue({ shuffle: true }));
 
 btnFull.addEventListener("click", () => openExtensionInNewTab(dashboardPlaylistPath(currentPlaylistId)));
-
-btnPopup.addEventListener("click", async () => {
-  btnPopup.disabled = true;
-  const r = await send("TUBESTACK_SET_QUICK_SIDEBAR_MODE", { enabled: false });
-  btnPopup.disabled = false;
-  status.textContent = r?.ok
-    ? "Switched to popup mode. Click the toolbar icon to open the popup."
-    : "Could not switch modes — try again.";
-});
-
-/* ---------------- Theme + live updates ---------------- */
 
 async function initSidebarTheme() {
   const data = await chrome.storage.local.get("settings");
@@ -334,12 +435,9 @@ async function onLibraryChanged() {
   }
 }
 
-/* ---------------- Init ---------------- */
-
 async function init() {
   await loadState();
   refreshPlaylistOptions();
-  // Show the most recent (or last-used) playlist immediately so the list is visible on open.
   const initialId =
     currentPlaylistId ||
     (settingsCurrentPlaylistId && findPlaylist(settingsCurrentPlaylistId)?.id) ||
@@ -349,9 +447,11 @@ async function init() {
   if (initialId) {
     await loadPlaylistIntoView(initialId);
   } else {
+    playlistName.hidden = true;
     renderEmpty();
+    playbackBar.hidden = true;
   }
-  refreshCount();
+  await refreshCount();
 }
 
 void initSidebarTheme();

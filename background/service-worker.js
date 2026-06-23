@@ -18,6 +18,12 @@ delete globalThis.TUBESTACK_BROAD_GENRES;
 const MAX_FAVORITE_THEMES = 8;
 const MAX_PLAYLIST_THEMES = 5;
 
+/** In-memory cache for large library blobs — cleared when storage keys change. */
+const storageCache = {
+  items: null,
+  localPlaylists: null,
+};
+
 const SEED_THEMES = [
   { label: "Gaming", keywords: ["gaming", "gameplay", "gamer", "speedrun", "esports", "walkthrough", "lets play"] },
   { label: "Emulation", keywords: ["emulator", "emulation", "retroarch", "dolphin", "pcsx2", "cemu", "rom hack", "mame"] },
@@ -120,6 +126,10 @@ const OPTIONAL_ORIGINS_OPENAI = ["https://api.openai.com/*"];
 function tubestackSafeErrorMessage(err) {
   const msg = err?.message != null ? String(err.message) : String(err || "unknown error");
   return msg.replace(/\s+/g, " ").trim().slice(0, 240);
+}
+
+function tubestackFail(err) {
+  return { ok: false, error: tubestackSafeErrorMessage(err) };
 }
 
 async function saveYouTubeTabsAsNewPlaylistAndOpen(mode) {
@@ -247,7 +257,12 @@ function uuid() {
   return crypto.randomUUID();
 }
 
-async function loadItems() {
+async function loadItems(options = {}) {
+  const force = options.force === true;
+  if (!force && storageCache.items !== null) {
+    return storageCache.items;
+  }
+
   const { items = [] } = await chrome.storage.local.get("items");
   const arr = Array.isArray(items) ? items : [];
   const progressMap = await loadVideoProgress();
@@ -255,12 +270,17 @@ async function loadItems() {
   for (const it of arr) {
     if (TS_WATCH.normalizeLibraryItemFields(it, progressMap)) changed = true;
   }
-  if (changed) await saveItems(arr);
+  if (changed) await saveItems(arr, { skipCacheUpdate: true });
+  if (migrateLibraryListAndPriority(arr)) {
+    await saveItems(arr, { skipCacheUpdate: true });
+  }
+  storageCache.items = arr;
   return arr;
 }
 
-async function saveItems(items) {
+async function saveItems(items, options = {}) {
   await chrome.storage.local.set({ items });
+  if (!options.skipCacheUpdate) storageCache.items = items;
 }
 
 /**
@@ -284,30 +304,17 @@ async function saveSettings(patch) {
 }
 
 /**
- * Quick Sidebar Mode: route the toolbar action to the side panel instead of the popup.
- * When ON, clear the action popup so `openPanelOnActionClick` can open the panel; when OFF,
- * restore the popup exactly as declared in the manifest. The panel path is fixed by the
- * manifest `side_panel.default_path`, so no per-tab setOptions is needed. Idempotent and
- * safe to call on every service-worker wake.
+ * Keep the toolbar popup on icon click. The side panel opens only when the user chooses
+ * "Open sidebar" from the popup (or another explicit action) — never hijacks the toolbar.
  */
-async function applyQuickSidebarMode(enabled) {
-  const on = enabled === true;
+async function ensureToolbarPopupBehavior() {
   try {
-    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: on });
-    await chrome.action.setPopup({ popup: on ? "" : "popup/popup.html" });
-    return { ok: true, quickSidebarMode: on };
-  } catch (e) {
-    console.error("[TubeStack] side panel mode error:", tubestackSafeErrorMessage(e));
-    return { ok: false, error: String(e?.message || e) };
-  }
-}
-
-async function initQuickSidebarModeFromSettings() {
-  try {
-    const s = await loadSettings();
-    await applyQuickSidebarMode(s.quickSidebarMode === true);
-  } catch {
-    /* keep default popup behavior on error */
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+    await chrome.action.setPopup({ popup: "popup/popup.html" });
+    return { ok: true };
+  } catch (err) {
+    console.error("[TubeStack] side panel setup error:", tubestackSafeErrorMessage(err));
+    return tubestackFail(err);
   }
 }
 
@@ -1115,7 +1122,12 @@ async function loadWatchByDay() {
   return watchByDay && typeof watchByDay === "object" ? watchByDay : {};
 }
 
-async function loadLocalPlaylists() {
+async function loadLocalPlaylists(options = {}) {
+  const force = options.force === true;
+  if (!force && storageCache.localPlaylists !== null) {
+    return storageCache.localPlaylists;
+  }
+
   const { localPlaylists = [] } = await chrome.storage.local.get("localPlaylists");
   const arr = Array.isArray(localPlaylists) ? localPlaylists : [];
   let changed = false;
@@ -1123,12 +1135,14 @@ async function loadLocalPlaylists() {
     if (TS_WATCH.normalizeLocalPlaylistFields(pl)) changed = true;
     if (dedupeLocalPlaylistItems(pl)) changed = true;
   }
-  if (changed) await saveLocalPlaylists(arr);
+  if (changed) await saveLocalPlaylists(arr, { skipCacheUpdate: true });
+  storageCache.localPlaylists = arr;
   return arr;
 }
 
-async function saveLocalPlaylists(lists) {
+async function saveLocalPlaylists(lists, options = {}) {
   await chrome.storage.local.set({ localPlaylists: lists });
+  if (!options.skipCacheUpdate) storageCache.localPlaylists = lists;
 }
 
 async function loadSubscriptionChannels() {
@@ -3427,11 +3441,23 @@ async function deleteItems(ids) {
   return { ok: true };
 }
 
+function shuffleArray(list) {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 /** Open saved snapshot rows (library items or local playlist entries) as YouTube tabs. */
-async function openSnapshotItemsAsTabs(items, progressMap) {
-  const list = Array.isArray(items) ? items : [];
+async function openSnapshotItemsAsTabs(items, progressMap, options = {}) {
+  const { activeFirst = false, shuffle = false } = options;
+  let list = Array.isArray(items) ? items : [];
+  if (shuffle && list.length > 1) list = shuffleArray(list);
   let opened = 0;
-  for (const it of list) {
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i];
     const vid = it.videoId;
     const pos = getPlayheadFromStorage(it, progressMap);
     const url =
@@ -3439,7 +3465,7 @@ async function openSnapshotItemsAsTabs(items, progressMap) {
         ? normalizeWatchUrl(vid, pos > 2 ? pos : it.timestampSec ?? null)
         : it.url || null;
     if (!url) continue;
-    await chrome.tabs.create({ url, active: false });
+    await chrome.tabs.create({ url, active: activeFirst && opened === 0 });
     opened++;
   }
   return { ok: true, opened, requested: list.length };
@@ -3454,7 +3480,7 @@ async function restoreItems(ids) {
 }
 
 /** Restore session: open every video in a saved local playlist as tabs. */
-async function restoreLocalPlaylistSession(playlistId) {
+async function restoreLocalPlaylistSession(playlistId, options = {}) {
   const id = String(playlistId || "").trim();
   if (!id) return { ok: false, error: "missing_id" };
   const lists = await loadLocalPlaylists();
@@ -3465,7 +3491,7 @@ async function restoreLocalPlaylistSession(playlistId) {
     return { ok: false, error: "empty_playlist", message: "This playlist has no videos." };
   }
   const progressMap = await loadVideoProgress();
-  const r = await openSnapshotItemsAsTabs(items, progressMap);
+  const r = await openSnapshotItemsAsTabs(items, progressMap, options);
   return { ...r, playlistName: pl.name || "" };
 }
 
@@ -3490,11 +3516,23 @@ async function searchItems(query) {
   return items.filter((x) => matchesSearch(x, query));
 }
 
+async function getLibraryBootState() {
+  const [items, localPlaylists, rawSettings] = await Promise.all([
+    loadItems(),
+    loadLocalPlaylists(),
+    loadSettings(),
+  ]);
+  return {
+    ok: true,
+    items,
+    localPlaylists,
+    settings: sanitizeSettingsForClient(rawSettings),
+    categories: DEFAULT_CATEGORIES,
+  };
+}
+
 async function getFullState() {
-  let items = await loadItems();
-  if (migrateLibraryListAndPriority(items)) {
-    await saveItems(items);
-  }
+  const items = await loadItems();
   const [themes, rawSettings, videoProgress, watchByDay, localPlaylists, subscriptionChannels] =
     await Promise.all([
       loadThemes(),
@@ -3549,6 +3587,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true, items, categories: DEFAULT_CATEGORIES });
         break;
       }
+      case "TUBESTACK_GET_LIBRARY_BOOT": {
+        sendResponse(await getLibraryBootState());
+        break;
+      }
       case "TUBESTACK_GET_STATE": {
         sendResponse(await getFullState());
         break;
@@ -3567,11 +3609,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
         break;
       }
-      case "TUBESTACK_SET_QUICK_SIDEBAR_MODE": {
-        const on = msg.enabled === true;
-        await saveSettings({ quickSidebarMode: on });
-        const res = await applyQuickSidebarMode(on);
-        sendResponse({ ok: true, ...res });
+      case "TUBESTACK_OPEN_SIDEBAR": {
+        sendResponse({
+          ok: false,
+          error: "use_popup",
+          message: "Open sidebar from the toolbar popup (sidePanel.open requires a user gesture).",
+        });
         break;
       }
       case "TUBESTACK_TEST_OPENAI_CONNECTION": {
@@ -3721,7 +3764,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_RESTORE_LOCAL_PLAYLIST": {
-        sendResponse(await restoreLocalPlaylistSession(msg.playlistId));
+        sendResponse(
+          await restoreLocalPlaylistSession(msg.playlistId, {
+            shuffle: msg.shuffle === true,
+            activeFirst: msg.activeFirst === true,
+          })
+        );
         break;
       }
       case "TUBESTACK_SEARCH": {
@@ -3848,10 +3896,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       default:
         sendResponse({ ok: false, error: "Unknown message" });
       }
-    } catch (e) {
-      console.error("[TubeStack] onMessage error:", msg?.type, tubestackSafeErrorMessage(e));
+    } catch (err) {
+      console.error("[TubeStack] onMessage error:", msg?.type, tubestackSafeErrorMessage(err));
       try {
-        sendResponse({ ok: false, error: String(e?.message || e) });
+        sendResponse(tubestackFail(err));
       } catch {
         /* response port already closed */
       }
@@ -4037,21 +4085,20 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
   }
 
-  void initQuickSidebarModeFromSettings();
+  void ensureToolbarPopupBehavior();
   rebuildTubeStackContextMenus();
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !changes.settings) return;
+  if (areaName !== "local") return;
+  if (changes.items) storageCache.items = null;
+  if (changes.localPlaylists) storageCache.localPlaylists = null;
+  if (!changes.settings) return;
   const oldVal = changes.settings.oldValue;
   const newVal = changes.settings.newValue;
   const oldDone = oldVal && typeof oldVal === "object" ? oldVal.onboardingComplete : undefined;
   const newDone = newVal && typeof newVal === "object" ? newVal.onboardingComplete : undefined;
   if (oldDone !== newDone) rebuildTubeStackContextMenus();
-
-  const oldQsm = oldVal && typeof oldVal === "object" ? oldVal.quickSidebarMode : undefined;
-  const newQsm = newVal && typeof newVal === "object" ? newVal.quickSidebarMode : undefined;
-  if (oldQsm !== newQsm) void applyQuickSidebarMode(newQsm === true);
 });
 
-void initQuickSidebarModeFromSettings();
+void ensureToolbarPopupBehavior();

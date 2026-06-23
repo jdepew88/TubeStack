@@ -9,34 +9,57 @@
   </head>
   <body>
     <header class="hdr">
-      <div class="hdr-top">
-        <img src="../icons/logo.png" alt="" class="hdr-logo" width="28" height="28" />
-        <h1>TubeStack</h1>
-        <span class="mode-pill" title="Minimal sidebar mode is on — click the toolbar icon to reopen this panel.">Sidebar</span>
+      <div class="hdr-row">
+        <img src="../icons/logo.png" alt="" class="hdr-logo" width="22" height="22" />
+        <span class="brand">TubeStack</span>
+        <span id="tabBadge" class="badge" hidden>0</span>
       </div>
-      <p id="playlistName" class="sub">Loading…</p>
     </header>
 
     <section class="panel">
-      <div class="bar">
-        <select id="playlistSelect" class="select" disabled aria-label="Playlist"></select>
-        <button type="button" id="btnImportTabs" class="btn primary" disabled title="Save this window's YouTube tabs into a new playlist. The saved tabs are closed (OneTab-style).">Import</button>
+      <label class="field-label" for="playlistSelect">Queue</label>
+      <select id="playlistSelect" class="select" disabled aria-label="Queue"></select>
+
+      <div class="actions">
+        <button type="button" id="btnAddTabs" class="btn primary" disabled>
+          Add window tabs
+        </button>
+        <button type="button" id="btnNewQueue" class="btn subtle" disabled title="Save tabs into a new queue">
+          New queue
+        </button>
       </div>
       <p id="countLine" class="hint">Checking tabs…</p>
 
+      <p id="playlistName" class="queue-title" hidden></p>
+
+      <div id="playbackBar" class="playback-bar" hidden>
+        <button type="button" id="btnPlayAll" class="btn primary playback-main" disabled>
+          <span class="playback-label">Continue playing</span>
+          <span class="playback-sub">Play all in order</span>
+        </button>
+        <button
+          type="button"
+          id="btnShuffle"
+          class="btn playback-shuffle"
+          disabled
+          title="Shuffle and play"
+          aria-label="Shuffle and play"
+        >
+          Shuffle
+        </button>
+      </div>
+
       <ul id="videoList" class="video-list" hidden></ul>
-      <p id="emptyState" class="empty">Pick a playlist above, or import this window's tabs.</p>
+      <p id="emptyState" class="empty">Select a queue or add tabs to get started.</p>
       <p id="status" class="status" role="status"></p>
     </section>
 
     <footer class="ftr">
-      <button type="button" id="btnFull" class="btn ghost">Open full TubeStack</button>
-      <button type="button" id="btnPopup" class="btn ghost" title="Open the toolbar popup on click instead of this sidebar.">Use popup instead</button>
+      <button type="button" id="btnFull" class="btn linkish">Open full dashboard</button>
+      <p class="ftr-privacy">
+        <a href="../privacy/privacy.html" target="_blank" rel="noopener noreferrer">Privacy</a>
+      </p>
     </footer>
-
-    <p class="ftr-privacy">
-      <a href="../privacy/privacy.html" target="_blank" rel="noopener noreferrer">Privacy policy</a>
-    </p>
 
     <script src="../lib/ui-themes.js"></script>
     <script src="sidebar.js" type="module"></script>

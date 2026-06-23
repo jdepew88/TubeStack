@@ -126,19 +126,19 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 
 | Field | Detail |
 |-------|--------|
-| Why declared | Required for the `chrome.sidePanel` API (Quick Sidebar Mode) |
-| Where used | `background/service-worker.js` — `applyQuickSidebarMode()` calls `chrome.sidePanel.setPanelBehavior`; the panel page is `sidebar/sidebar.html` |
-| User trigger | User enables Quick Sidebar Mode from the popup ("Pin as sidebar") or disables it from the sidebar ("Use popup instead") |
-| Scope | Opens TubeStack's own bundled sidebar page in Chrome's side panel. No new host access, no new content scripts, no extra tab reading beyond what the popup already does |
-| If unused | Defaults off; the toolbar popup works exactly as before |
+| Why declared | Required for the `chrome.sidePanel` API |
+| Where used | `popup/popup.js` — `chrome.sidePanel.open()` when the user clicks **Open sidebar** |
+| User trigger | User opens the popup from the toolbar icon, then chooses **Open sidebar** |
+| Scope | Opens TubeStack's bundled sidebar page in Chrome's side panel for the current window. The toolbar icon always keeps the save-options popup |
+| If unused | No effect; the standard toolbar popup is unchanged |
 
 **Chrome Web Store justification (short):**
 
-> Optional Quick Sidebar Mode that opens TubeStack's bundled save/queue panel in Chrome's side panel instead of the toolbar popup.
+> Opens TubeStack's optional queue sidebar when the user clicks Open sidebar in the popup.
 
 **Chrome Web Store justification (long):**
 
-> When a user enables Quick Sidebar Mode, TubeStack uses chrome.sidePanel to open its own bundled page (sidebar/sidebar.html) inside Chrome's built-in side panel. The panel reuses the same local storage and runtime messaging as the popup; it does not read additional sites, add content scripts, or change host access. The mode defaults off, so the standard toolbar popup is unchanged.
+> TubeStack uses chrome.sidePanel to show an optional queue panel (sidebar/sidebar.html) when the user explicitly requests it from the toolbar popup. Clicking the extension icon always opens the popup with save actions; the side panel does not replace that flow. The panel reuses local storage and runtime messaging only; it does not add host access or content scripts.
 
 ---
 

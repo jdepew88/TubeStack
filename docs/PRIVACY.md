@@ -64,14 +64,14 @@ AI categorization and AI Watch State suggestions may send **selected video metad
 
 ## Chrome side panel (queue sidebar)
 
-TubeStack includes an **optional queue sidebar** in Chrome’s side panel (`sidebar/sidebar.html`). The toolbar icon **always** opens the save popup; the side panel opens only when you click **Open sidebar** in that popup.
+TubeStack includes an **optional queue sidebar** in Chrome’s side panel (`sidebar/sidebar.html`). The toolbar icon **always** opens the save popup; the side panel opens only when you click **Open queue sidebar** in that popup.
 
 In the sidebar you can:
 
 - Select a **local queue** (playlist) and **add YouTube tabs** from the current window.
 - **Drag to reorder** videos in the queue (order is saved locally via `TUBESTACK_REORDER_LOCAL_PLAYLIST_ITEMS`).
-- **Continue playing** — open every video in saved queue order (first tab active; resume positions when TubeStack has tracked them).
-- **Shuffle** — open the queue in random playback order without changing the saved playlist order.
+- **Play** — open the queue **one video at a time** in a single tab; when a video finishes, the next opens automatically (resume on `/watch` when TubeStack has tracked it; best-effort on Shorts).
+- **Shuffle** — reorder the queue locally, then play through one video at a time the same way.
 
 The sidebar uses the same **local library and playlists** as the dashboard. It communicates with the extension service worker via `chrome.runtime` messaging and reads/writes `chrome.storage.local` through existing APIs. It does **not** add host permissions, content scripts, or network calls to a TubeStack server.
 
@@ -102,7 +102,7 @@ TubeStack does **not** reconstruct what you watched before install or on sites o
 
 TubeStack declares **`contextMenus`**, **`identity`**, **`scripting`**, **`sidePanel`**, and **`storage`**, plus **YouTube host permissions** at install time. **Google APIs** and **OpenAI** are **optional host permissions** requested at runtime when you use those features.
 
-TubeStack does **not** request Chrome History, the broad **`tabs`** permission, or **`windows`**.
+TubeStack does **not** request Chrome History, the broad **`tabs`** permission, **`windows`**, or **`<all_urls>`**.
 
 | Page type | What runs | User control |
 |-----------|-----------|--------------|
@@ -118,6 +118,7 @@ For a permission-by-permission breakdown, see **[PERMISSIONS.md](PERMISSIONS.md)
 
 - Does **not** request Chrome History permission.
 - Does **not** request the broad **`tabs`** permission (YouTube tab access is scoped via YouTube host permissions only).
+- Does **not** request **`windows`** or **`<all_urls>`**.
 - Does **not** scan unrelated browsing history.
 - Does **not** sell user data.
 

@@ -47,7 +47,7 @@ async function refreshLibraryLine() {
   const data = await chrome.storage.local.get("items");
   const n = Array.isArray(data.items) ? data.items.length : 0;
   libraryLine.textContent =
-    n === 0 ? "Library: empty" : `Library: ${n} saved video${n === 1 ? "" : "s"}`;
+    n === 0 ? "Local library: empty" : `Local library: ${n} saved video${n === 1 ? "" : "s"}`;
 }
 
 async function refreshCount() {
@@ -70,11 +70,11 @@ async function refreshCount() {
 
 function labelForMode(mode, n) {
   const word = n === 1 ? "tab" : "tabs";
-  if (mode === "left") return `Saved ${n} ${word} to the left into a new playlist.`;
-  if (mode === "right") return `Saved ${n} ${word} to the right into a new playlist.`;
-  if (mode === "all") return `Saved ${n} video ${word} into a new playlist.`;
-  if (mode === "except_current") return `Saved ${n} ${word} (except current) into a new playlist.`;
-  return `Saved ${n} ${word} into a new playlist.`;
+  if (mode === "left") return `Saved ${n} ${word} to the left into your local library.`;
+  if (mode === "right") return `Saved ${n} ${word} to the right into your local library.`;
+  if (mode === "all") return `Saved ${n} video ${word} to your local library.`;
+  if (mode === "except_current") return `Saved ${n} ${word} (except current) to your local library.`;
+  return `Saved ${n} ${word} to your local library.`;
 }
 
 function attachSaveHandler(btn, mode) {

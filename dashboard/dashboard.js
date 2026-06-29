@@ -2264,7 +2264,7 @@ async function restoreLocalPlaylistSessionById(playlistId) {
   const label = pl?.name || "this playlist";
   if (
     !confirm(
-      `Open ${n} YouTube tab${n === 1 ? "" : "s"} for “${label}”? Tabs open in the background; resume positions apply when TubeStack has tracked them.`
+      `Open ${n} YouTube tab${n === 1 ? "" : "s"} for “${label}”? Tabs open in the background. Resume position applies on /watch pages when TubeStack has tracked them (best-effort on Shorts).`
     )
   ) {
     return false;
@@ -2388,7 +2388,7 @@ function renderSubscriptionDirectory() {
   if (!subscriptionChannels.length) {
     const p = document.createElement("p");
     p.className = "panel-hint";
-    p.textContent = "No channels yet — click “Sync from YouTube” and complete Google sign-in.";
+    p.textContent = "Optional — click “Sync from YouTube” and complete Google sign-in to refresh subscription counts.";
     host.appendChild(p);
     return;
   }
@@ -3999,7 +3999,7 @@ function buildLocalPlaylistRow(pl) {
   btnSession.className = "btn small primary";
   btnSession.textContent = "Restore session";
   btnSession.dataset.action = "restore-session";
-  btnSession.title = "Open every video in this playlist as YouTube tabs (background tabs)";
+  btnSession.title = "Open every video in this playlist as YouTube tabs at once (background tabs)";
   const btnView = document.createElement("button");
   btnView.type = "button";
   btnView.className = "btn small";

@@ -26,7 +26,7 @@ Inspired by **OneTab**, built for **YouTube power users**. Instead of leaving do
 **Core workflows**
 
 - **Save** open YouTube watch and Shorts tabs from the toolbar or context menu; optionally close tabs after save to cut clutter and RAM use.
-- **Queue sidebar** — open Chrome's side panel from the popup to pick a queue, drag-reorder videos, add window tabs, **Continue playing** in order, or **Shuffle** playback.
+- **Queue sidebar** — optional Chrome side panel from the popup (**Open queue sidebar**): pick a queue, drag-reorder videos, add window tabs, **Play** one video at a time with auto-advance, or **Shuffle** the queue order locally then play the same way.
 - **Library** view with an iTunes-style **Artist · Album · Category** browser, compact session picker, and searchable video list.
 - **Restore** individual videos or whole saved sessions; **focus sessions** and queue tools for intentional watching.
 - **Organize** with **Watch States** (workflow status), user-defined **tags**, themes/categories, video and stack notes, timestamp notes, decision logs, priority tiers, and local playlist snapshots.
@@ -71,7 +71,7 @@ Features include:
 - Save tabs instead of leaving them open indefinitely
 - Close saved YouTube tabs to reduce browser RAM usage
 - OneTab-style YouTube queue management
-- **Queue sidebar** in Chrome's side panel (reorder, play all in order, shuffle)
+- **Queue sidebar** in Chrome's side panel (reorder, play one at a time, shuffle queue order)
 - Focus sessions
 - Queue management
 - Prioritization systems

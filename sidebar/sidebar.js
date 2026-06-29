@@ -69,10 +69,10 @@ function syncPlaybackControls(pl) {
   btnPlayAll.disabled = !hasItems;
   btnShuffle.disabled = !hasItems;
   btnPlayAll.classList.toggle("icon-btn--active", playing);
-  btnPlayAll.title = playing ? "Restart queue from the beginning" : "Play queue in order";
+  btnPlayAll.title = playing ? "Restart queue from the beginning" : "Play queue one video at a time";
   btnPlayAll.setAttribute(
     "aria-label",
-    playing ? "Restart queue from the beginning" : "Play queue in order"
+    playing ? "Restart queue from the beginning" : "Play queue one video at a time"
   );
 }
 
@@ -220,7 +220,7 @@ function renderEmpty(message) {
   videoList.hidden = true;
   videoList.innerHTML = "";
   emptyState.hidden = false;
-  emptyState.textContent = message || "Select a queue or add tabs to get started.";
+  emptyState.textContent = message || "Select a local queue or add YouTube tabs to get started.";
   syncPlaybackControls(null);
 }
 

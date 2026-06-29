@@ -21,8 +21,9 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **Permissions reviewed**
   - `manifest.json` matches [PERMISSIONS.md](PERMISSIONS.md)
-  - Only: `contextMenus`, `identity`, `scripting`, `sidePanel`, `storage`
-  - **No** `history`, `tabs`, `windows`, or `<all_urls>`
+  - **Approved install-time permissions (manifest only):** `contextMenus`, `identity`, `scripting`, `sidePanel`, `storage`
+  - **Forbidden:** `history`, `tabs`, `windows`, `<all_urls>` — must not appear in `manifest.json`
+  - Store dashboard justification for `sidePanel` pasted from [PERMISSIONS.md](PERMISSIONS.md) / [STORE_LISTING.md](STORE_LISTING.md)
 
 - [ ] **Host permissions minimized**
   - Required: `youtube.com`, `m.youtube.com` only
@@ -123,6 +124,16 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
   - Confirm library items and correct watch/Shorts URLs on restore
   - Full progress on `/watch`; best-effort on Shorts
 
+- [ ] **Sidebar (side panel) queue**
+  - Toolbar icon opens the **popup first** (save actions); side panel does not replace it
+  - **Open queue sidebar** in the popup opens the side panel
+  - Sidebar loads and shows the queue dropdown
+  - Queue selection switches the visible video list
+  - **Add window tabs** appends YouTube tabs from the current window to the selected queue
+  - **Drag reorder** updates and persists queue order
+  - **Play** (continue playing) opens one video at a time; sidebar shows now playing and strikethrough for finished videos; next video auto-advances when the current one ends
+  - **Shuffle** reorders the queue locally, then plays through one video at a time with the same sidebar progress UI
+
 - [ ] **AI categorization (small batch)**
   - Test with a small set and test OpenAI key; confirm metadata sent matches disclosure
 
@@ -135,7 +146,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **Version bumped** — `manifest.json` `version` incremented appropriately
 - [ ] **Zip matches repo** — Packaged folder is the same tree you tested
-- [ ] **Store justification fields** — Paste from [STORE_LISTING.md](STORE_LISTING.md) and [PERMISSIONS.md](PERMISSIONS.md)
+- [ ] **Store justification fields** — Paste from [STORE_LISTING.md](STORE_LISTING.md) and [PERMISSIONS.md](PERMISSIONS.md), including `sidePanel`
 - [ ] **Privacy policy URL** — `privacy/privacy.html` on HTTPS, not `docs/PRIVACY.md`
 
 ---

@@ -16,7 +16,7 @@
           <img src="../icons/logo.png" alt="" class="oobe-brand-logo" width="48" height="48" />
           <div class="oobe-brand" id="obBrand">TubeStack</div>
         </div>
-        <p class="oobe-tagline">Triage YouTube like streaming — pick your lanes, then we sort the noise.</p>
+        <p class="oobe-tagline">Save YouTube tabs and Shorts into a local library, organize videos, and reopen them later.</p>
         <div class="oobe-progress" id="oobeProgress" aria-hidden="true">
           <span class="oobe-dot active" data-i="0"></span>
           <span class="oobe-dot" data-i="1"></span>
@@ -28,7 +28,7 @@
         </div>
         <p class="oobe-wizard-guide">
           <button type="button" class="oobe-guide-btn" id="obOpenSetupGuide">
-            Setup guide: Google Cloud &amp; OpenAI
+            Setup guide: optional YouTube API, Google &amp; OpenAI
             <span class="oobe-guide-hint"> — opens in a new window</span>
           </button>
         </p>
@@ -36,8 +36,9 @@
         <div id="obStep0" class="ob-step">
           <h2 class="oobe-step-title">Welcome</h2>
           <p class="oobe-lead">
-            Install TubeStack and start immediately with local features: save tabs, queues, tags, priority, search,
-            watch-time tracking, and local trends. Google connection is optional and can be added later.
+            Install TubeStack and start with local features: save YouTube tabs and Shorts, organize playlists, and reopen
+            videos later. Resume position on <code>/watch</code> pages (best-effort on Shorts). Google sign-in and API keys
+            are optional.
           </p>
           <button type="button" class="btn oobe-cta primary" id="obNext0">Get started</button>
         </div>
@@ -50,8 +51,8 @@
           </p>
           <ul class="oobe-unlock-list">
             <li>
-              <strong>Local only</strong> — Save and close YouTube tabs, queues, tags, priorities, search, watch-time,
-              and local playlists. No Google APIs required.
+              <strong>Local only</strong> — Save YouTube watch and Shorts tabs, queues, tags, priorities, search, watch
+              progress on <code>/watch</code> (best-effort on Shorts), and local playlists. No Google APIs required.
             </li>
             <li>
               <strong>YouTube Data API key</strong> — Channel profile scans (handle or URL), recent uploads, and richer
@@ -72,13 +73,13 @@
               class="btn primary"
               href="connect-youtube.html?from=onboarding"
               id="obOpenConnectYoutube"
-              >Connect YouTube (easy setup)</a
+              >Optional: Connect YouTube (easy setup)</a
             >
             <a
               class="btn ghost"
               href="setup-integrations.html?from=onboarding"
               id="obOpenSetupIntegrations"
-              >Advanced: API keys &amp; OpenAI</a
+              >Optional: API keys &amp; OpenAI (advanced)</a
             >
             <button type="button" class="btn oobe-cta primary" id="obNextFromIntro">Continue</button>
           </div>
@@ -246,7 +247,7 @@
               <div id="sidebarFavoriteCategories" class="theme-grid compact"></div>
             </div>
           </div>
-          <button type="button" class="sidebar-win-btn" data-window-target="aiCategorize">AI categorize</button>
+          <button type="button" class="sidebar-win-btn" data-window-target="aiCategorize">AI categorize (optional)</button>
           <button type="button" class="sidebar-win-btn" data-window-target="subscriptions">Subbed Channels</button>
           <button type="button" class="sidebar-win-btn" data-window-target="localPlaylists">Playlist Manager</button>
           <button type="button" class="sidebar-win-btn" data-window-target="usage">Usage Graphs</button>
@@ -266,7 +267,7 @@
 
         <section class="panel-block" data-sidebar-section="watchAnalytics">
           <span class="label">Locally tracked watch time</span>
-          <p class="panel-hint">Open <strong>Usage Graphs</strong> for in-player time on videos you watch while TubeStack is installed.</p>
+          <p class="panel-hint">Open <strong>Usage Graphs</strong> for in-player time on YouTube you watch while TubeStack is installed. Progress on <code>/watch</code> pages; best-effort on Shorts.</p>
           <button type="button" id="btnWatchAnalytics" class="btn small">Open watch-time window</button>
         </section>
 
@@ -284,7 +285,7 @@
         <section class="panel-block" data-sidebar-section="subscriptions">
           <span class="label">Subbed Channels</span>
           <p class="panel-hint">
-            Click <strong>Sync from YouTube</strong> when you want to refresh — Google’s sign-in window opens only from
+            Optional. Click <strong>Sync from YouTube</strong> when you want to refresh — Google’s sign-in window opens only from
             that button (no background OAuth). Uses the same OAuth Client ID as playlist tools and the
             <code>https://www.googleapis.com/auth/youtube</code> scope so TubeStack can read your subscriptions and
             “new” counts. “New” counts come from YouTube’s API (<code>newItemCount</code>) and can lag until you use
@@ -335,9 +336,9 @@
         </section>
 
         <section class="panel-block ai-categorize-panel" data-sidebar-section="aiCategorize">
-          <span class="label">AI categorize</span>
+          <span class="label">AI categorize (optional)</span>
           <p class="panel-hint">
-            Uses your <strong>OpenAI API key</strong> from Settings (or paste below). Runs only when you click
+            Optional OpenAI tool. Uses your <strong>OpenAI API key</strong> from Settings (or paste below). Runs only when you click
             <strong>Run AI categorize</strong> — nothing is sent to OpenAI in the background.
           </p>
           <p class="panel-hint ob-muted">
@@ -452,7 +453,7 @@
           <p class="panel-hint playlist-manager-lead">
             Saved on this device only. Use <strong>Save playlist…</strong> → <em>Save locally only</em> for
             <strong>recent browser-tab sessions</strong>. <strong>Restore session</strong> reopens every saved video as
-            YouTube tabs. <strong>View</strong> opens the list in the dashboard. Import
+            YouTube tabs at once (not the optional queue sidebar, which plays one at a time). <strong>View</strong> opens the list in the dashboard. Import
             playlists from YouTube in <strong>Settings</strong> — those get a <strong>YouTube import</strong> badge.
             Uncheck “Show imported back catalog” in Settings to hide imports here and on Playlist home.
             <strong>Create YouTube playlist</strong> needs OAuth Client ID + sign-in. Default session names look like
@@ -522,7 +523,7 @@
             type="button"
             id="btnRestorePlaylistSession"
             class="btn small"
-            title="Open every video in the current playlist snapshot as YouTube tabs"
+            title="Open every video in this playlist snapshot as YouTube tabs at once (background tabs)"
           >
             Restore session
           </button>
@@ -533,7 +534,7 @@
 
         <section id="settingsPanelBlock" class="panel-block" data-sidebar-section="settings">
           <span class="label">Settings</span>
-          <p class="panel-hint">Tune the sidebar and external connections. “Library” is the aggregate 3-column browser page.</p>
+          <p class="panel-hint">Tune dashboard sidebar sections and optional cloud connections. “Library” is the aggregate 3-column browser page.</p>
 
           <div class="settings-section-card">
             <h3 class="settings-section-title">Layout</h3>
@@ -543,9 +544,9 @@
           </div>
 
           <div class="settings-section-card settings-section-integrations">
-            <h3 class="settings-section-title">Integrations</h3>
+            <h3 class="settings-section-title">Optional integrations</h3>
             <p class="panel-hint settings-section-lead">
-              Connect your own cloud projects here. Keys and Client IDs stay in <strong>Chrome extension storage on this
+              Not required for saving tabs or organizing your local library. Connect your own cloud projects here. Keys and Client IDs stay in <strong>Chrome extension storage on this
               device</strong>; requests go <strong>directly</strong> from the browser to Google or OpenAI when you use a
               feature that needs them — not through a TubeStack backend.
             </p>
@@ -752,14 +753,14 @@
                 href="setup-guide.html"
                 target="_blank"
                 rel="noopener noreferrer"
-                >Setup guide (Google &amp; OpenAI)</a
+                >Optional setup guide (YouTube API, Google &amp; OpenAI)</a
               >
             </div>
             <p class="panel-hint ob-muted">Re-opens onboarding without deleting your library. Finish or skip to return.</p>
           </div>
         </section>
 
-        <p class="hint">Tip: Pin this tab while triaging a long session.</p>
+        <p class="hint">Tip: Pin this tab while organizing a long session.</p>
       </aside>
       <main class="main">
         <div id="smartPlaylistModal" class="modal-overlay hidden" role="presentation">
@@ -946,7 +947,7 @@
           <div id="windowCurrentSectionsMount" class="window-sections-mount"></div>
           <p id="currentPlaylistGridHint" class="current-playlist-grid-hint hidden" aria-live="polite"></p>
           <div id="grid" class="grid"></div>
-          <p id="empty" class="empty hidden">No saved videos yet. Use the extension popup on a YouTube tab.</p>
+          <p id="empty" class="empty hidden">No saved videos yet. Open the extension popup while you have YouTube watch or Shorts tabs open.</p>
         </section>
 
         <section id="windowUsage" class="window-panel hidden" data-window="usage">
@@ -1017,7 +1018,7 @@
         </section>
 
         <section id="windowAiCategorize" class="window-panel hidden" data-window="aiCategorize">
-          <h3 class="window-title">AI categorize</h3>
+          <h3 class="window-title">AI categorize (optional)</h3>
           <div id="windowAiCategorizeMount" class="window-sections-mount"></div>
         </section>
 

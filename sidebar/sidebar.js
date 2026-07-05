@@ -15,6 +15,8 @@ const btnFull = document.getElementById("btnFull");
 const playbackBar = document.getElementById("playbackBar");
 const btnPlayAll = document.getElementById("btnPlayAll");
 const btnShuffle = document.getElementById("btnShuffle");
+const pipLinkWrap = document.getElementById("pipLinkWrap");
+const btnPip = document.getElementById("btnPip");
 
 const RENDER_CAP = 200;
 
@@ -74,12 +76,36 @@ function syncPlaybackControls(pl) {
     "aria-label",
     playing ? "Restart queue from the beginning" : "Play queue one video at a time"
   );
+  const showPip = playing && Boolean(playbackSession?.currentVideoId);
+  if (pipLinkWrap) pipLinkWrap.hidden = !showPip;
+  if (btnPip) btnPip.disabled = !showPip;
 }
 
 function send(type, payload = {}) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type, ...payload }, resolve);
   });
+}
+
+function isWeakYouTubeTitle(title) {
+  const t = String(title || "").trim().toLowerCase();
+  return !t || t === "youtube" || t === "youtube video" || t === "- youtube";
+}
+
+function displayTitleForSnap(snap) {
+  const vid = String(snap?.videoId || "").trim();
+  const lib = vid ? libraryByVideoId.get(vid) : null;
+  const raw = String(lib?.title || snap?.title || "").trim();
+  if (raw && !isWeakYouTubeTitle(raw)) return raw;
+  return "YouTube video";
+}
+
+function displayThumbForSnap(snap) {
+  const vid = String(snap?.videoId || "").trim();
+  const lib = vid ? libraryByVideoId.get(vid) : null;
+  const raw = String(lib?.thumbnail || snap?.thumbnail || "").trim();
+  if (raw) return raw;
+  return vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "";
 }
 
 function escapeHtml(s) {
@@ -239,10 +265,11 @@ function renderVideos(pl) {
 
   const rows = shown.map((snap) => {
     const url = escapeHtml(String(snap.url || ""));
-    const title = escapeHtml(String(snap.title || "YouTube video")) || "YouTube video";
-    const channel = escapeHtml(String(snap.channel || ""));
-    const thumb = escapeHtml(String(snap.thumbnail || ""));
     const vid = String(snap.videoId || "").trim();
+    const lib = vid ? libraryByVideoId.get(vid) : null;
+    const title = escapeHtml(displayTitleForSnap(snap)) || "YouTube video";
+    const channel = escapeHtml(String(lib?.channel || snap.channel || ""));
+    const thumb = escapeHtml(displayThumbForSnap(snap));
     const vidAttr = escapeHtml(vid);
     const { playing, done } = rowPlaybackState(vid);
     const rowClass = ["vrow", playing ? "vrow--now" : "", done ? "vrow--done" : ""]
@@ -360,6 +387,24 @@ async function playQueue({ shuffle }) {
   updatePlaybackStatus();
 }
 
+async function openNowPlayingPictureInPicture() {
+  if (!isActivePlaybackForQueue()) {
+    status.textContent = "Start queue playback first.";
+    return;
+  }
+  if (btnPip) btnPip.disabled = true;
+  status.textContent = "Opening Picture-in-Picture…";
+  const r = await send("TUBESTACK_SIDEBAR_PLAYLIST_PIP", { playlistId: currentPlaylistId });
+  if (r?.ok) {
+    status.textContent = r.already
+      ? "Already in Picture-in-Picture."
+      : "Picture-in-Picture opened for the now playing video.";
+  } else {
+    status.textContent = r?.message || r?.error || "Could not open Picture-in-Picture.";
+  }
+  syncPlaybackControls(findPlaylist(currentPlaylistId));
+}
+
 async function onRemoveFromPlaylist(videoId) {
   if (!currentPlaylistId) return;
   const vid = String(videoId || "").trim();
@@ -460,6 +505,7 @@ btnAddTabs.addEventListener("click", () => saveWindowTabs({ createNew: false }))
 btnNewQueue.addEventListener("click", () => saveWindowTabs({ createNew: true }));
 btnPlayAll.addEventListener("click", () => playQueue({ shuffle: false }));
 btnShuffle.addEventListener("click", () => playQueue({ shuffle: true }));
+btnPip?.addEventListener("click", () => openNowPlayingPictureInPicture());
 
 btnFull.addEventListener("click", () => openExtensionInNewTab(dashboardPlaylistPath(currentPlaylistId)));
 

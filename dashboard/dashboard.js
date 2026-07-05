@@ -157,6 +157,19 @@ function playlistVideoIdSet(pl) {
   return ids;
 }
 
+function isWeakYouTubeTitle(title) {
+  const t = String(title || "").trim().toLowerCase();
+  return !t || t === "youtube" || t === "youtube video" || t === "- youtube";
+}
+
+function pickDisplayTitle(...candidates) {
+  for (const candidate of candidates) {
+    const t = String(candidate || "").trim();
+    if (t && !isWeakYouTubeTitle(t)) return t;
+  }
+  return "Untitled";
+}
+
 function mergeLibraryWithSnapshot(lib, snap) {
   const vid = itemVideoId(snap) || itemVideoId(lib);
   let url = String(lib?.url || "").trim() || String(snap?.url || "").trim();
@@ -166,7 +179,7 @@ function mergeLibraryWithSnapshot(lib, snap) {
       ? YT_URL.canonicalYouTubeVideoUrl(vid, { shorts: true })
       : YT_URL.canonicalYouTubeVideoUrl(vid, { shorts: false });
   }
-  const title = String(lib?.title || snap?.title || "").trim() || "Untitled";
+  const title = pickDisplayTitle(lib?.title, snap?.title);
   const channel = String(lib?.channel || snap?.channel || "").trim() || "Unknown creator";
   const thumbnail =
     String(lib?.thumbnail || snap?.thumbnail || "").trim() ||

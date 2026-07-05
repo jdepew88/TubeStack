@@ -18,9 +18,7 @@ Keep wording aligned with **`manifest.json`**, **[PRIVACY.md](PRIVACY.md)**, and
 
 ## Short description (≤ 132 characters)
 
-**Use this line:**
-
-> Save YouTube tabs and Shorts into a local library, organize videos, and reopen them later.
+Save YouTube tabs and Shorts into a local library, organize videos, and reopen them later.
 
 (108 characters — within the 132-character limit.)
 
@@ -28,20 +26,27 @@ Keep wording aligned with **`manifest.json`**, **[PRIVACY.md](PRIVACY.md)**, and
 
 ## Detailed description
 
-### Opening (paste into store listing)
+Paste the sections below into the store listing. Lead with local-first core features; optional cloud tools come later.
 
-**TubeStack** is a **local-first** Chrome extension for saving **YouTube watch tabs** and **YouTube Shorts tabs** into a **local library** on your device. Organize videos with playlists, categories, tags, and notes, then **reopen them later** when you are ready. Your library, playlists, and settings stay in **Chrome extension storage** on your machine — not on a TubeStack server.
+### Opening
 
-Core workflow:
+**TubeStack** is a **local-first** Chrome extension. Save **YouTube watch tabs** and **YouTube Shorts tabs** into a **local library** on your device. Organize videos with playlists, categories, tags, and notes, then **reopen them later** when you are ready.
+
+Your library, playlists, and settings stay in **Chrome extension storage** on your machine — not on a TubeStack server.
+
+### Core workflow
 
 - **Save** open YouTube watch and Shorts tabs from the toolbar popup or right-click menu
 - **Organize** saved videos in the dashboard and library
 - **Reopen** individual videos or playlists later
 - **Close tabs** after saving to free browser memory (optional)
 
-**Watch progress:** Resume position is tracked on open YouTube **`/watch`** tabs while TubeStack is installed. On **Shorts**, progress tracking is **best-effort** — **saving Shorts tabs works** and captures title, channel, URL, and thumbnail when the page allows.
+### Watch progress
 
-### Queue sidebar (Chrome side panel)
+- **`/watch` tabs** — resume position is tracked on open YouTube watch pages while TubeStack is installed
+- **Shorts** — progress tracking is **best-effort**; **saving Shorts tabs works** and captures title, channel, URL, and thumbnail when the page allows
+
+### Optional queue sidebar (Chrome side panel)
 
 TubeStack includes an **optional queue sidebar** — a compact panel for working through a local playlist. It is **not** the main headline feature; it uses the **same local library and playlists** as the dashboard.
 
@@ -55,23 +60,41 @@ TubeStack includes an **optional queue sidebar** — a compact panel for working
 
 These are **optional**. TubeStack works without them. Nothing below is required to save, organize, or reopen videos locally.
 
-**YouTube Data API key (optional)**
+#### YouTube Data API key (optional)
 
 If you add your own API key, TubeStack can import public metadata from Google (for example channel scans and playlist previews).
 
-**Google OAuth (optional)**
+#### Google OAuth (optional)
 
-If you add a Google OAuth Web application Client ID, you can sign in for account features such as **playlist export/sync** and **subscription sync**. Sign-in is interactive. OAuth access tokens stay in the **service worker’s memory only** — not written to `chrome.storage.local`. Requests go directly between your browser and Google; TubeStack has **no backend server** that stores credentials.
+If you add a Google OAuth Web application Client ID, you can sign in for account features such as:
 
-**OpenAI tools (optional)**
+- **Playlist export/sync** — create or update playlists on your YouTube account from saved local queues
+- **Subscription sync** — refresh subscription counts and channel helpers when you choose
+
+Sign-in is interactive. OAuth access tokens stay in the **service worker’s memory only** — not written to `chrome.storage.local`. Requests go directly between your browser and Google; TubeStack has **no backend server** that stores credentials.
+
+#### OpenAI tools (optional)
 
 If you add an OpenAI API key, AI-assisted organization tools run **only when you trigger them**. Requests go directly to OpenAI and may include selected video metadata (titles, channels, tags) from your saved library — not a log of all sites you visit.
 
-### Privacy in one line
+You can remove the key and clear local AI cache from Settings.
 
-TubeStack is **local-first**. Your library, playlists, progress, and settings live in extension storage on your device. TubeStack does **not** request Chrome **History** permission, does **not** use the broad **`tabs`** permission or **`windows`** permission, does **not** request **`<all_urls>`**, does **not** scan unrelated browsing history, and does **not** sell your data. TubeStack has **no central backend** that collects your library.
+### Privacy summary
 
-**Privacy policy URL (store dashboard):** `https://jdepew88.github.io/TubeStack/privacy/privacy.html`  
+TubeStack is **local-first**. Your library, playlists, progress, and settings live in extension storage on your device.
+
+TubeStack does **not**:
+
+- Request Chrome **History** permission
+- Use the broad **`tabs`** permission or **`windows`** permission
+- Request **`<all_urls>`**
+- Scan unrelated browsing history
+- Sell your data
+
+TubeStack has **no central backend** that collects your library.
+
+**Privacy policy URL (store dashboard):** `https://jdepew88.github.io/TubeStack/privacy/privacy.html`
+
 **Do not** use `docs/PRIVACY.md` as the store URL (GitHub Pages serves it as raw Markdown).
 
 ### Disclaimers
@@ -102,7 +125,7 @@ It is **not** a general-purpose web monitor, ad blocker, or unrelated browsing t
 
 **For the “single purpose” / “narrow use case” field:**
 
-> Save YouTube tabs and Shorts into a local library, organize videos, and reopen them later.
+Save YouTube tabs and Shorts into a local library, organize videos, and reopen them later.
 
 ---
 
@@ -110,7 +133,13 @@ It is **not** a general-purpose web monitor, ad blocker, or unrelated browsing t
 
 Paste into each **Permission justification** field in the Chrome Web Store dashboard. Shorter variants are provided where character limits are tight.
 
-Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `scripting`, `sidePanel`, `storage`.
+**Install-time permissions in `manifest.json`:**
+
+- `contextMenus`
+- `identity`
+- `scripting`
+- `sidePanel`
+- `storage`
 
 ### `contextMenus`
 
@@ -122,8 +151,6 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 
 > YouTube-only save actions via right-click; open dashboard from the extension icon.
 
----
-
 ### `identity`
 
 **Standard:**
@@ -133,8 +160,6 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 **Short:**
 
 > Optional Google OAuth sign-in for user-enabled YouTube account features.
-
----
 
 ### `scripting`
 
@@ -146,8 +171,6 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 
 > Fallback script injection on YouTube tabs for save/metadata when content scripts are not loaded.
 
----
-
 ### `sidePanel`
 
 **Standard:**
@@ -158,8 +181,6 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 
 > Optional queue sidebar (reorder, sequential play, shuffle) when user clicks Open queue sidebar in the popup.
 
----
-
 ### `storage`
 
 **Standard:**
@@ -169,8 +190,6 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 **Short:**
 
 > Local library, playlists, settings, and progress on the user’s device.
-
----
 
 ### Permissions TubeStack does not request
 
@@ -183,7 +202,7 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 ### Required host permissions
 
 | Host pattern | Dashboard justification |
-|--------------|-------------------------|
+| --- | --- |
 | `https://www.youtube.com/*` | Save YouTube watch and Shorts tabs; content scripts on watch/Shorts/subscription pages; read tab metadata when saving; open saved videos |
 | `https://m.youtube.com/*` | Same as desktop YouTube for mobile YouTube URLs Chrome may use |
 
@@ -191,12 +210,10 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 
 > Limited to YouTube only. Required for saving/organizing YouTube watch and Shorts tabs, local progress on open tabs (full on `/watch`, best-effort on Shorts; saving Shorts works), and user-initiated channel import on subscription pages. No access to other websites at install time.
 
----
-
 ### Optional host permissions
 
 | Host pattern | Dashboard justification |
-|--------------|-------------------------|
+| --- | --- |
 | `https://www.googleapis.com/*` | Runtime grant when user runs optional YouTube Data API or Google OAuth features they configured |
 | `https://api.openai.com/*` | Runtime grant when user adds OpenAI API key and runs optional AI features |
 
@@ -211,7 +228,7 @@ Install-time permissions in `manifest.json`: `contextMenus`, `identity`, `script
 TubeStack declares two content-script entries in `manifest.json`:
 
 | Pages | Behavior | User control |
-|-------|----------|--------------|
+| --- | --- | --- |
 | `/watch*` and `/shorts/*` on youtube.com / m.youtube.com | Metadata on save; progress heartbeats while tab is open (local only; full on `/watch`, best-effort on Shorts) | Saving is explicit; progress only on open tabs |
 | `/feed/channels*` and `/feed/subscriptions*` on youtube.com | Reads visible channel names when user runs import/sync | User-initiated; may scroll feed to load rows |
 
@@ -232,7 +249,7 @@ TubeStack declares two content-script entries in `manifest.json`:
 ## Data usage explanation
 
 | Topic | Answer |
-|-------|--------|
+| --- | --- |
 | What is collected | TubeStack does **not** send your full library to a TubeStack-operated server. Data you generate is stored **locally** unless **you** trigger optional Google or OpenAI features |
 | What may leave the device | **Google** — when you use optional API/OAuth features. **OpenAI** — when you run optional AI tools (selected metadata, your API key) |
 | Selling / ads | TubeStack does **not** sell personal data |
@@ -246,50 +263,6 @@ TubeStack declares two content-script entries in `manifest.json`:
 - [x] No TubeStack backend server for the library
 - [x] Third-party network use only for optional user-configured Google/OpenAI features
 - [x] User can delete local data from Settings or uninstall
-
----
-
-## OAuth explanation
-
-TubeStack supports **optional Google OAuth** for YouTube-related actions **at your request** (playlist export/sync, subscription sync).
-
-- You provide a **Google OAuth 2.0 Web application Client ID** in settings
-- **Sign-in is interactive** (Google consent screen)
-- **Access tokens** stay in service worker memory and between your browser and Google’s APIs — **not** in `chrome.storage.local`
-- **Revocation:** sign out in Settings, remove Client ID, or revoke in Google Account security settings
-
-**Scope note:** Describe only what your published build actually uses on your Google OAuth consent screen.
-
----
-
-## OpenAI explanation
-
-OpenAI is **optional**. If you paste an OpenAI API key:
-
-- The key is stored **locally** in extension storage
-- Network calls go to **`https://api.openai.com`** when **you** run a feature that needs a model
-- **AI categorization** may send selected fields from videos in your library (title, channel, tags/notes)
-
-You can remove the key and clear local AI cache from Settings.
-
----
-
-## Local-first privacy summary
-
-- **Default posture:** Library and organization data stay **on-device**
-- **No TubeStack backend** for your library
-- **Third parties only when you opt in:** Google and OpenAI when you enable those optional features
-
-**Store listing URL:** [`privacy/privacy.html`](../privacy/privacy.html) (host at `https://jdepew88.github.io/TubeStack/privacy/privacy.html`)
-
----
-
-## Disclaimers (YouTube / Google / OpenAI)
-
-- TubeStack is **not affiliated with, endorsed by, or sponsored by** YouTube, Google LLC, or OpenAI
-- **YouTube** and **Google** are trademarks of Google LLC
-- **OpenAI** is a trademark of OpenAI, L.P. (or affiliates), used here to describe optional integration
-- Users must comply with **YouTube Terms of Service**, **Google API Services User Data Policy**, and **OpenAI** usage policies
 
 ---
 

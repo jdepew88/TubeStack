@@ -234,23 +234,207 @@ async function getSaveYouTubeTabCounts() {
 }
 
 async function requestMetadataFromTab(tabId) {
+  const readFromTab = async () => {
+    try {
+      const res = await chrome.tabs.sendMessage(tabId, { type: "TUBESTACK_GET_METADATA" });
+      if (res?.ok && res.data) return res.data;
+    } catch {
+      /* */
+    }
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["lib/youtube-url.js", "content/youtube-metadata.js"],
+      });
+      const res = await chrome.tabs.sendMessage(tabId, { type: "TUBESTACK_GET_METADATA" });
+      if (res?.ok && res.data) return res.data;
+    } catch {
+      /* */
+    }
+    return null;
+  };
+
+  let tab = null;
   try {
-    const res = await chrome.tabs.sendMessage(tabId, { type: "TUBESTACK_GET_METADATA" });
-    if (res && res.ok) return res.data;
+    tab = await chrome.tabs.get(tabId);
   } catch {
     /* */
   }
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["lib/youtube-url.js", "content/youtube-metadata.js"],
+  const tabUrl = tab?.url || "";
+
+  let data = await readFromTab();
+  let videoId = extractYouTubeVideoId(tabUrl) || data?.videoId || null;
+
+  const needsRetry =
+    videoId &&
+    (!data || isWeakYouTubeTitle(data.title) || !effectiveVideoThumbnail(data.thumbnail, videoId));
+  if (needsRetry) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const retryData = await readFromTab();
+    if (retryData) data = { ...(data || {}), ...retryData };
+    videoId = extractYouTubeVideoId(tabUrl) || data?.videoId || videoId;
+  }
+
+  if (videoId) {
+    const enriched = await enrichVideoMetadata({
+      videoId,
+      url: tabUrl,
+      title: data?.title || tab?.title,
+      channel: data?.channel,
+      thumbnail: data?.thumbnail,
+      durationSec: data?.durationSec,
     });
-    const res = await chrome.tabs.sendMessage(tabId, { type: "TUBESTACK_GET_METADATA" });
-    if (res && res.ok) return res.data;
-  } catch {
-    /* */
+    return {
+      ...(data || {}),
+      videoId: enriched.videoId || videoId,
+      title: enriched.title,
+      channel: enriched.channel ?? data?.channel ?? null,
+      thumbnail: enriched.thumbnail,
+      durationSec: data?.durationSec ?? enriched.durationSec ?? null,
+      timestampSec: data?.timestampSec,
+      progressCapture: data?.progressCapture,
+      pageUrl: data?.pageUrl || tabUrl,
+    };
+  }
+
+  return data;
+}
+
+function isWeakYouTubeTitle(title) {
+  const t = String(title || "").trim();
+  if (!t) return true;
+  const lower = t.toLowerCase();
+  return lower === "youtube" || lower === "youtube video" || lower === "- youtube";
+}
+
+function effectiveVideoThumbnail(thumbnail, videoId) {
+  const thumb = String(thumbnail || "").trim();
+  if (thumb) return thumb;
+  const vid = String(videoId || "").trim();
+  if (YT_URL.isValidYouTubeVideoId(vid)) {
+    return `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
   }
   return null;
+}
+
+function pickVideoTitle(...candidates) {
+  for (const candidate of candidates) {
+    const t = String(candidate || "").trim();
+    if (t && !isWeakYouTubeTitle(t)) return t;
+  }
+  return "YouTube video";
+}
+
+async function fetchYouTubeOembedMetadata(videoId, pageUrl) {
+  const vid = String(videoId || "").trim();
+  if (!YT_URL.isValidYouTubeVideoId(vid)) return null;
+  const candidates = [];
+  const page = String(pageUrl || "").trim();
+  if (page && isSupportedYouTubeVideoUrl(page)) candidates.push(page);
+  candidates.push(`https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`);
+  candidates.push(`https://www.youtube.com/shorts/${encodeURIComponent(vid)}`);
+
+  for (const target of candidates) {
+    try {
+      const res = await fetch(
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`,
+        { method: "GET" }
+      );
+      if (!res.ok) continue;
+      const json = await res.json();
+      const title = String(json.title || "").trim();
+      const thumbnail = String(json.thumbnail_url || "").trim();
+      const channel = String(json.author_name || "").trim();
+      if (!title && !thumbnail) continue;
+      return {
+        title: title || null,
+        thumbnail: thumbnail || null,
+        channel: channel || null,
+      };
+    } catch {
+      /* try next URL shape */
+    }
+  }
+  return null;
+}
+
+async function enrichVideoMetadata({ videoId, url, title, channel, thumbnail, durationSec }) {
+  const vid =
+    (videoId && YT_URL.isValidYouTubeVideoId(videoId) ? String(videoId).trim() : null) ||
+    extractYouTubeVideoId(url);
+  let nextTitle = pickVideoTitle(title);
+  let nextChannel = channel ?? null;
+  let nextThumb = effectiveVideoThumbnail(thumbnail, vid);
+
+  if (vid && (isWeakYouTubeTitle(title) || !String(thumbnail || "").trim())) {
+    const oembed = await fetchYouTubeOembedMetadata(vid, url);
+    if (oembed) {
+      if (isWeakYouTubeTitle(title) && oembed.title) nextTitle = oembed.title;
+      if (!String(thumbnail || "").trim() && oembed.thumbnail) nextThumb = oembed.thumbnail;
+      if (!nextChannel && oembed.channel) nextChannel = oembed.channel;
+    }
+  }
+
+  return {
+    videoId: vid,
+    title: pickVideoTitle(nextTitle),
+    channel: nextChannel,
+    thumbnail: effectiveVideoThumbnail(nextThumb, vid),
+    durationSec: durationSec ?? null,
+  };
+}
+
+function itemNeedsMetadataRepair(it) {
+  const vid = videoIdFromPlaylistItem(it);
+  if (!vid) return false;
+  return isWeakYouTubeTitle(it.title) || !effectiveVideoThumbnail(it.thumbnail, vid);
+}
+
+async function repairWeakStoredVideoMetadata() {
+  const items = await loadItems({ force: true });
+  const lists = await loadLocalPlaylists({ force: true });
+  const repairByVid = new Map();
+
+  const noteRepair = (obj) => {
+    if (!obj || typeof obj !== "object") return;
+    if (!itemNeedsMetadataRepair(obj)) return;
+    const vid = videoIdFromPlaylistItem(obj);
+    if (!vid) return;
+    if (!repairByVid.has(vid)) {
+      repairByVid.set(vid, { url: String(obj.url || "").trim(), objs: [] });
+    }
+    repairByVid.get(vid).objs.push(obj);
+  };
+
+  for (const it of items) noteRepair(it);
+  for (const pl of lists) {
+    for (const snap of pl.items || []) noteRepair(snap);
+  }
+  if (!repairByVid.size) return;
+
+  for (const [vid, bucket] of repairByVid) {
+    const sample = bucket.objs[0];
+    const enriched = await enrichVideoMetadata({
+      videoId: vid,
+      url: bucket.url || sample?.url,
+      title: sample?.title,
+      channel: sample?.channel,
+      thumbnail: sample?.thumbnail,
+      durationSec: sample?.durationSec,
+    });
+    for (const obj of bucket.objs) {
+      if (isWeakYouTubeTitle(obj.title) && enriched.title) obj.title = enriched.title;
+      if (!effectiveVideoThumbnail(obj.thumbnail, vid) && enriched.thumbnail) {
+        obj.thumbnail = enriched.thumbnail;
+      }
+      if (!obj.channel && enriched.channel) obj.channel = enriched.channel;
+      if (!obj.videoId) obj.videoId = vid;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+
+  await saveItems(items);
+  await saveLocalPlaylists(lists);
 }
 
 function uuid() {
@@ -3154,9 +3338,9 @@ function buildItemFromTab(tab, meta) {
     }
   }
 
-  const title = meta?.title || tab.title || "YouTube video";
+  const title = pickVideoTitle(meta?.title, tab.title);
   const channel = meta?.channel ?? null;
-  const thumbnail = meta?.thumbnail ?? (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null);
+  const thumbnail = effectiveVideoThumbnail(meta?.thumbnail, videoId);
   const durationSec = meta?.durationSec ?? null;
 
   const canonicalUrl =
@@ -3633,6 +3817,74 @@ async function stopSidebarPlaylistPlayback() {
   return { ok: true, session: null };
 }
 
+async function requestPictureInPictureFromTab(tabId, videoId) {
+  const payload = { type: "TUBESTACK_REQUEST_PIP", videoId: String(videoId || "").trim() || null };
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, payload);
+    if (res?.ok) return res;
+  } catch {
+    /* content script may not be loaded */
+  }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["lib/youtube-url.js", "content/youtube-metadata.js"],
+    });
+    return (await chrome.tabs.sendMessage(tabId, payload)) || {
+      ok: false,
+      error: "pip_failed",
+      message: "Could not enter Picture-in-Picture.",
+    };
+  } catch {
+    return {
+      ok: false,
+      error: "tab_unavailable",
+      message: "Playback tab is not available.",
+    };
+  }
+}
+
+async function requestSidebarPlaybackPictureInPicture({ playlistId } = {}) {
+  const session = await loadSidebarPlayback();
+  if (!session || session.status !== "playing") {
+    return {
+      ok: false,
+      error: "not_playing",
+      message: "Nothing is playing from this queue.",
+    };
+  }
+  const pid = String(playlistId || "").trim();
+  if (pid && session.playlistId !== pid) {
+    return {
+      ok: false,
+      error: "wrong_queue",
+      message: "Playback is from a different queue.",
+    };
+  }
+  const tabId = session.activeTabId;
+  const videoId = String(session.currentVideoId || "").trim();
+  if (!tabId || !videoId) {
+    return {
+      ok: false,
+      error: "no_active_tab",
+      message: "No active playback tab.",
+    };
+  }
+
+  try {
+    await chrome.tabs.update(tabId, { active: true });
+  } catch {
+    return {
+      ok: false,
+      error: "tab_unavailable",
+      message: "Playback tab is not available.",
+    };
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  return requestPictureInPictureFromTab(tabId, videoId);
+}
+
 /** Open saved snapshot rows (library items or local playlist entries) as YouTube tabs. */
 async function openSnapshotItemsAsTabs(items, progressMap, options = {}) {
   const { activeFirst = false, shuffle = false } = options;
@@ -3995,6 +4247,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse(await stopSidebarPlaylistPlayback());
         break;
       }
+      case "TUBESTACK_SIDEBAR_PLAYLIST_PIP": {
+        sendResponse(await requestSidebarPlaybackPictureInPicture({ playlistId: msg.playlistId }));
+        break;
+      }
       case "TUBESTACK_CYCLE_THEME": {
         sendResponse(await cycleTheme(msg.themeId));
         break;
@@ -4291,6 +4547,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   void ensureToolbarPopupBehavior();
   rebuildTubeStackContextMenus();
+  void repairWeakStoredVideoMetadata().catch((err) => {
+    console.error("[TubeStack] metadata repair error:", tubestackSafeErrorMessage(err));
+  });
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -4306,6 +4565,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 void ensureToolbarPopupBehavior();
+void repairWeakStoredVideoMetadata().catch((err) => {
+  console.error("[TubeStack] metadata repair error:", tubestackSafeErrorMessage(err));
+});
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const session = await loadSidebarPlayback();

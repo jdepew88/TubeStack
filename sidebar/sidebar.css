@@ -373,6 +373,17 @@ body {
   line-height: 1.35;
 }
 
+.pip-link-wrap {
+  flex-shrink: 0;
+  margin: 0;
+  text-align: center;
+}
+
+.pip-link-wrap .btn.linkish {
+  font-size: 11px;
+  padding: 2px 0;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

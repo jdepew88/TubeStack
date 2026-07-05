@@ -142,15 +142,21 @@
     }
     const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
     const ogImage = document.querySelector('meta[property="og:image"]')?.content;
-    const title =
+    let title =
       base.title ||
       ogTitle ||
-      document.title?.replace(/\s*-\s*YouTube\s*$/i, "") ||
-      "YouTube";
+      document.title?.replace(/\s*-\s*YouTube\s*$/i, "").trim() ||
+      null;
+    if (title && /^youtube$/i.test(title.trim())) title = null;
     const thumbnail =
       base.thumbnail ||
       ogImage ||
       (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null);
+    if (!title) {
+      title = ogTitle?.replace(/\s*-\s*YouTube\s*$/i, "").trim() || null;
+      if (title && /^youtube$/i.test(title.trim())) title = null;
+    }
+    if (!title) title = "YouTube video";
 
     return {
       videoId,
@@ -165,13 +171,66 @@
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg?.type !== "TUBESTACK_GET_METADATA") return;
-    try {
-      const data = collect();
-      sendResponse({ ok: true, data });
-    } catch (e) {
-      sendResponse({ ok: false, error: String(e) });
+    if (msg?.type === "TUBESTACK_GET_METADATA") {
+      try {
+        const data = collect();
+        sendResponse({ ok: true, data });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
+      return true;
     }
-    return true;
+    if (msg?.type === "TUBESTACK_REQUEST_PIP") {
+      void requestPictureInPicture(msg.videoId).then(sendResponse);
+      return true;
+    }
   });
+
+  async function requestPictureInPicture(expectedVideoId) {
+    const v = document.querySelector("video");
+    if (!v) {
+      return { ok: false, error: "no_video", message: "No video player on this page." };
+    }
+
+    const pageVideoId = YT?.extractYouTubeVideoId(window.location.href) || null;
+    const expected = String(expectedVideoId || "").trim();
+    if (expected && pageVideoId && expected !== pageVideoId) {
+      return {
+        ok: false,
+        error: "video_mismatch",
+        message: "Playback tab is on a different video.",
+      };
+    }
+
+    if (document.pictureInPictureElement === v) {
+      return { ok: true, already: true };
+    }
+
+    if (typeof v.requestPictureInPicture === "function") {
+      try {
+        await v.requestPictureInPicture();
+        return { ok: true };
+      } catch {
+        /* try YouTube control */
+      }
+    }
+
+    const btn =
+      document.querySelector("button.ytp-pip-button") ||
+      document.querySelector('button[aria-label*="Picture-in-Picture"]') ||
+      document.querySelector('button[aria-label*="picture-in-picture"]');
+    if (btn) {
+      btn.click();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      if (document.pictureInPictureElement) {
+        return { ok: true, via: "button" };
+      }
+    }
+
+    return {
+      ok: false,
+      error: "pip_failed",
+      message: "Picture-in-Picture is not available for this video right now.",
+    };
+  }
 })();

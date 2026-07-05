@@ -2,7 +2,41 @@
 
 Use this before uploading a build to the Chrome Web Store or tagging a release. Check boxes as you complete each item.
 
-**Related docs:** [PRIVACY.md](PRIVACY.md) · [PERMISSIONS.md](PERMISSIONS.md) · [STORE_LISTING.md](STORE_LISTING.md) · [README.md](../README.md)
+**Related docs:**
+
+- [PRIVACY.md](PRIVACY.md)
+- [PERMISSIONS.md](PERMISSIONS.md)
+- [STORE_LISTING.md](STORE_LISTING.md)
+- [README.md](../README.md)
+
+---
+
+## Permission summary
+
+**Approved install-time permissions (`manifest.json` only):**
+
+- `contextMenus`
+- `identity`
+- `scripting`
+- `sidePanel`
+- `storage`
+
+**Forbidden — must not appear in `manifest.json`:**
+
+- `history`
+- `tabs`
+- `windows`
+- `<all_urls>`
+
+**Required host permissions:**
+
+- `https://www.youtube.com/*`
+- `https://m.youtube.com/*`
+
+**Optional host permissions (runtime grant):**
+
+- `https://www.googleapis.com/*`
+- `https://api.openai.com/*`
 
 ---
 
@@ -21,8 +55,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **Permissions reviewed**
   - `manifest.json` matches [PERMISSIONS.md](PERMISSIONS.md)
-  - **Approved install-time permissions (manifest only):** `contextMenus`, `identity`, `scripting`, `sidePanel`, `storage`
-  - **Forbidden:** `history`, `tabs`, `windows`, `<all_urls>` — must not appear in `manifest.json`
+  - Approved and forbidden permission lists above are satisfied
   - Store dashboard justification for `sidePanel` pasted from [PERMISSIONS.md](PERMISSIONS.md) / [STORE_LISTING.md](STORE_LISTING.md)
 
 - [ ] **Host permissions minimized**
@@ -119,20 +152,28 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 ## Functional QA (manual)
 
-- [ ] **Core save / restore flow**
-  - Save watch and Shorts tabs (popup, context menu, dashboard)
-  - Confirm library items and correct watch/Shorts URLs on restore
-  - Full progress on `/watch`; best-effort on Shorts
+### Core save / restore flow
 
-- [ ] **Sidebar (side panel) queue**
-  - Toolbar icon opens the **popup first** (save actions); side panel does not replace it
-  - **Open queue sidebar** in the popup opens the side panel
-  - Sidebar loads and shows the queue dropdown
-  - Queue selection switches the visible video list
-  - **Add window tabs** appends YouTube tabs from the current window to the selected queue
-  - **Drag reorder** updates and persists queue order
-  - **Play** (continue playing) opens one video at a time; sidebar shows now playing and strikethrough for finished videos; next video auto-advances when the current one ends
-  - **Shuffle** reorders the queue locally, then plays through one video at a time with the same sidebar progress UI
+- [ ] Save watch and Shorts tabs (popup, context menu, dashboard)
+- [ ] Confirm library items and correct watch/Shorts URLs on restore
+- [ ] **Saving Shorts works**
+- [ ] **Full progress on `/watch`**
+- [ ] **Best-effort progress on Shorts**
+
+### Sidebar (side panel) queue
+
+- [ ] Toolbar icon opens the **popup first** (save actions); side panel does not replace it
+- [ ] **Open queue sidebar** in the popup opens the side panel
+- [ ] Sidebar loads and shows the queue dropdown
+- [ ] Queue selection switches the visible video list
+- [ ] **Add window tabs** appends YouTube tabs from the current window to the selected queue
+- [ ] **Drag reorder** updates and persists queue order
+- [ ] **Play** opens one video at a time
+  - Sidebar shows now playing and strikethrough for finished videos
+  - Next video auto-advances when the current one ends
+- [ ] **Shuffle** reorders the queue locally, then plays through one video at a time with the same sidebar progress UI
+
+### Optional integrations
 
 - [ ] **AI categorization (small batch)**
   - Test with a small set and test OpenAI key; confirm metadata sent matches disclosure
@@ -154,6 +195,6 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 ## Sign-off
 
 | Role | Name | Date |
-|------|------|------|
+| --- | --- | --- |
 | Prepared by | | |
 | Reviewed by | | |

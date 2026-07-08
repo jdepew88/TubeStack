@@ -423,6 +423,28 @@ async function onRemoveFromPlaylist(videoId) {
   status.textContent = "Removed from queue.";
 }
 
+function getSidebarSaveExcludes() {
+  if (!isActivePlaybackForQueue()) {
+    return { excludeTabIds: [], excludeVideoIds: [], includeHeld: false };
+  }
+  const tabId = playbackSession?.activeTabId;
+  const videoId = String(playbackSession?.currentVideoId || "").trim();
+  if (!tabId || !videoId) {
+    return { excludeTabIds: [], excludeVideoIds: [], includeHeld: false };
+  }
+  const pending = playbackSession?.pendingAddHold;
+  if (pending?.tabId === tabId && pending?.videoId === videoId) {
+    return { excludeTabIds: [], excludeVideoIds: [], includeHeld: true };
+  }
+  return { excludeTabIds: [tabId], excludeVideoIds: [videoId], includeHeld: false };
+}
+
+function sidebarAddableTabCount(total) {
+  const { excludeTabIds } = getSidebarSaveExcludes();
+  if (!excludeTabIds.length) return total;
+  return Math.max(0, total - 1);
+}
+
 async function refreshCount() {
   const r = await send("TUBESTACK_GET_SAVE_TAB_COUNTS");
   if (!r?.ok) {
@@ -435,17 +457,24 @@ async function refreshCount() {
     return;
   }
   tabCount = r.all || 0;
+  const addable = sidebarAddableTabCount(tabCount);
+  const holdingPlayback = addable < tabCount;
   if (tabCount) {
-    tabBadge.textContent = String(tabCount);
+    tabBadge.textContent = String(addable || tabCount);
     tabBadge.hidden = false;
-    countLine.textContent = `${tabCount} YouTube tab${tabCount === 1 ? "" : "s"} in this window · saved tabs close.`;
+    if (holdingPlayback && addable > 0) {
+      countLine.textContent = `${addable} tab${addable === 1 ? "" : "s"} to add · now playing stays open · tap again to include it`;
+    } else if (holdingPlayback && addable === 0) {
+      countLine.textContent = "Tap Add window tabs again to include the now playing video";
+    } else {
+      countLine.textContent = `${tabCount} YouTube tab${tabCount === 1 ? "" : "s"} in this window · left tabs go to top · saved tabs close`;
+    }
   } else {
     tabBadge.hidden = true;
     countLine.textContent = "No YouTube tabs in this window.";
   }
-  const canAdd = tabCount > 0;
-  btnAddTabs.disabled = !canAdd;
-  btnNewQueue.disabled = !canAdd;
+  btnAddTabs.disabled = tabCount === 0;
+  btnNewQueue.disabled = tabCount === 0;
 }
 
 async function saveWindowTabs({ createNew }) {
@@ -453,9 +482,27 @@ async function saveWindowTabs({ createNew }) {
   btnNewQueue.disabled = true;
   status.textContent = "Saving tabs…";
 
-  const r = await send("TUBESTACK_SAVE_YT_TABS", { mode: "all" });
-  if (!r?.ok || !r.savedCount) {
-    status.textContent = !r?.ok ? r?.error || "Something went wrong." : "No YouTube tabs to save.";
+  const { excludeTabIds, excludeVideoIds, includeHeld } = getSidebarSaveExcludes();
+  const r = await send("TUBESTACK_SAVE_YT_TABS", {
+    mode: "all",
+    excludeTabIds,
+    excludeVideoIds,
+    tabOrder: "window_left",
+    updateSidebarHold: true,
+    includeHeldPlayback: includeHeld,
+  });
+
+  await loadPlaybackSession();
+
+  if (!r?.ok) {
+    status.textContent = r?.error || "Something went wrong.";
+    await refreshCount();
+    return;
+  }
+  if (!r.savedCount) {
+    status.textContent = r.heldPlayback
+      ? "Now playing kept open — tap Add window tabs again to include it."
+      : "No YouTube tabs to save.";
     await refreshCount();
     return;
   }
@@ -474,6 +521,7 @@ async function saveWindowTabs({ createNew }) {
       playlistId,
       items: r.saved,
       createNew: false,
+      prepend: true,
     });
   }
 
@@ -487,10 +535,14 @@ async function saveWindowTabs({ createNew }) {
   const name = pl?.name || "queue";
   const added = addRes.addedCount ?? r.savedCount;
 
-  if (createNew) {
+  if (includeHeld) {
+    status.textContent = `Added now playing to "${name}".`;
+  } else if (createNew) {
     status.textContent = `Created "${name}" with ${r.savedCount} tab${r.savedCount === 1 ? "" : "s"}.`;
   } else if (added < r.savedCount) {
     status.textContent = `Added ${added} to "${name}" (${r.savedCount - added} already in queue).`;
+  } else if (r.heldPlayback) {
+    status.textContent = `Added ${added} tab${added === 1 ? "" : "s"} to "${name}" · now playing kept open · tap Add again to include it`;
   } else {
     status.textContent = `Added ${added} tab${added === 1 ? "" : "s"} to "${name}".`;
   }
@@ -528,6 +580,7 @@ function bindStorageSync() {
         updatePlaybackStatus();
         syncPlaybackControls(pl);
       }
+      void refreshCount();
     }
     if (changes.localPlaylists || changes.items) void onLibraryChanged();
   });

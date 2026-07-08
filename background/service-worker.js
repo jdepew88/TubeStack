@@ -1987,7 +1987,7 @@ function dedupeLocalPlaylistItems(pl) {
   return true;
 }
 
-async function addItemsToLocalPlaylistEntry({ playlistId, items, createNew, name }) {
+async function addItemsToLocalPlaylistEntry({ playlistId, items, createNew, name, prepend = false }) {
   const incoming = Array.isArray(items) ? items.filter((x) => x && (x.videoId || x.url)) : [];
   if (!incoming.length) return { ok: false, error: "no_items" };
   const lists = await loadLocalPlaylists();
@@ -2007,16 +2007,17 @@ async function addItemsToLocalPlaylistEntry({ playlistId, items, createNew, name
   const curItems = dedupePlaylistItems(Array.isArray(target.items) ? target.items : []);
   const seen = new Set(curItems.map(playlistItemKey));
   let addedCount = 0;
+  const batch = [];
   for (const raw of incoming) {
     const it = normalizePlaylistItem(raw);
     if (!it) continue;
     const k = playlistItemKey(it);
     if (seen.has(k)) continue;
-    curItems.push(it);
+    batch.push(it);
     seen.add(k);
     addedCount++;
   }
-  target.items = curItems;
+  target.items = prepend ? [...batch, ...curItems] : [...curItems, ...batch];
   await saveLocalPlaylists(lists);
   return { ok: true, playlists: lists, addedCount };
 }
@@ -3373,14 +3374,21 @@ function buildItemFromTab(tab, meta) {
   return item;
 }
 
-async function saveYouTubeTabsByMode(mode) {
+async function saveYouTubeTabsByMode(mode, options = {}) {
   if (!SAVE_YT_TAB_MODES.has(mode)) {
     return { ok: false, error: "invalid_mode", saved: [] };
   }
   const { tabs, error, currentTabId } = await getYouTubeWatchTabsForMode(mode);
   if (error) return { ok: false, error, saved: [] };
 
+  const excludeTabIds = new Set((options.excludeTabIds || []).map((id) => Number(id)).filter(Boolean));
+  const excludeVideoIds = new Set(
+    (options.excludeVideoIds || []).map((id) => String(id || "").trim()).filter(Boolean)
+  );
+  const tabOrder = options.tabOrder === "window_left" ? "window_left" : "default";
+
   const ordered = [...tabs].sort((a, b) => {
+    if (tabOrder === "window_left") return (a.index ?? 0) - (b.index ?? 0);
     if (a.id === currentTabId) return 1;
     if (b.id === currentTabId) return -1;
     return (a.index ?? 0) - (b.index ?? 0);
@@ -3392,9 +3400,19 @@ async function saveYouTubeTabsByMode(mode) {
   const tabIdsToClose = [];
   const progressMap = await loadVideoProgress();
   let progressDirty = false;
+  let heldPlayback = false;
 
   for (const tab of ordered) {
     if (!tab.id || !tab.url) continue;
+    if (excludeTabIds.has(tab.id)) {
+      heldPlayback = true;
+      continue;
+    }
+    const tabVideoId = extractYouTubeVideoId(tab.url);
+    if (tabVideoId && excludeVideoIds.has(tabVideoId)) {
+      heldPlayback = true;
+      continue;
+    }
     const meta = await requestMetadataFromTab(tab.id);
     const item = buildItemFromTab(tab, meta);
     item.importBatchId = importBatchId;
@@ -3438,7 +3456,29 @@ async function saveYouTubeTabsByMode(mode) {
     }
   }
 
-  return { ok: true, savedCount: saved.length, saved, mode };
+  if (options.updateSidebarHold) {
+    const session = await loadSidebarPlayback();
+    if (session?.status === "playing") {
+      if (heldPlayback) {
+        session.pendingAddHold = {
+          tabId: session.activeTabId ?? null,
+          videoId: String(session.currentVideoId || "").trim() || null,
+        };
+      } else if (options.includeHeldPlayback && session.pendingAddHold) {
+        delete session.pendingAddHold;
+      }
+      session.updatedAt = new Date().toISOString();
+      await saveSidebarPlayback(session);
+    }
+  }
+
+  return {
+    ok: true,
+    savedCount: saved.length,
+    saved,
+    mode,
+    heldPlayback,
+  };
 }
 
 function sanitizeItemPatch(fields) {
@@ -4014,7 +4054,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_SAVE_YT_TABS": {
-        sendResponse(await saveYouTubeTabsByMode(msg.mode));
+        sendResponse(
+          await saveYouTubeTabsByMode(msg.mode, {
+            excludeTabIds: msg.excludeTabIds,
+            excludeVideoIds: msg.excludeVideoIds,
+            tabOrder: msg.tabOrder,
+            updateSidebarHold: msg.updateSidebarHold === true,
+            includeHeldPlayback: msg.includeHeldPlayback === true,
+          })
+        );
         break;
       }
       case "TUBESTACK_GET_ITEMS": {
@@ -4148,6 +4196,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             items: msg.items,
             createNew: msg.createNew === true,
             name: msg.name,
+            prepend: msg.prepend === true,
           })
         );
         break;

@@ -9,13 +9,15 @@
 
 ### Your YouTube library in Chrome—save tabs, organize like iTunes, resume where you left off.
 
+**[GitHub repository](https://github.com/jdepew88/TubeStack)** — source, issues, and updates
+
    </td>
   </tr>
 </table>
 
 TubeStack is a **Chrome extension** (Manifest V3) for people who keep many **YouTube** tabs open. It helps you **save watch and Shorts tabs into a local library**, **close them to free RAM**, and **come back later**—with optional hooks to **YouTube** and **OpenAI** only when you turn them on.
 
-**Local-first:** your library, playlists, and settings stay **on your device** in Chrome extension storage—not on a TubeStack server. TubeStack does **not** request Chrome History permission or scan unrelated browsing history. **[Privacy ↓](#privacy)** · **[Full privacy policy →](docs/PRIVACY.md)**
+**Local-first:** your library, playlists, and settings stay **on your device** in Chrome extension storage—not on a TubeStack server. TubeStack does **not** request Chrome History permission or scan unrelated browsing history. **[Privacy ↓](#privacy)** · **[Full privacy policy →](docs/PRIVACY.md)** · **[GitHub →](https://github.com/jdepew88/TubeStack)**
 
 ---
 

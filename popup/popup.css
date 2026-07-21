@@ -225,6 +225,34 @@ body {
   color: var(--text);
 }
 
+.privacy-consent {
+  flex-shrink: 0;
+  margin: 0 12px 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.privacy-consent[hidden] {
+  display: none !important;
+}
+
+.privacy-consent p {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.privacy-consent a {
+  color: var(--text);
+}
+
+.privacy-consent .btn {
+  width: 100%;
+}
+
 .ftr-privacy {
   flex-shrink: 0;
   margin: 0;

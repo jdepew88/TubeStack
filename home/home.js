@@ -23,13 +23,9 @@ function thumbUrl(item) {
   return "";
 }
 
-function pickFourRandom(items) {
-  const copy = [...(items || [])];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy.slice(0, 4);
+/** Stable first-four covers — avoids reshuffling (and reloading) thumbs on every filter/sort. */
+function pickFourStable(items) {
+  return (items || []).slice(0, 4);
 }
 
 /** First ordered snapshot with a usable thumb — playlist “cover” for small lists. */
@@ -159,6 +155,7 @@ function renderPlaylists(playlists) {
   const dash = chrome.runtime.getURL("dashboard/dashboard.html");
   const placeholder =
     "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  const frag = document.createDocumentFragment();
 
   for (const pl of playlists) {
     const items = pl.items || [];
@@ -178,15 +175,17 @@ function renderPlaylists(playlists) {
       img.className = "home-thumb home-thumb--solo";
       img.alt = "";
       img.loading = "lazy";
+      img.decoding = "async";
       img.src = pickSingleCoverThumb(items) || placeholder;
       thumbs.appendChild(img);
     } else {
-      const previewItems = pickFourRandom(items);
+      const previewItems = pickFourStable(items);
       for (let i = 0; i < 4; i++) {
         const img = document.createElement("img");
         img.className = "home-thumb";
         img.alt = "";
         img.loading = "lazy";
+        img.decoding = "async";
         const u = thumbUrl(previewItems[i]);
         img.src = u || placeholder;
         thumbs.appendChild(img);
@@ -203,7 +202,11 @@ function renderPlaylists(playlists) {
     const kind = pl.kind === "smart" ? "Smart · " : "";
     const gb = pl.groupBy ? `${pl.groupBy} · ` : "";
     const origin =
-      pl.playlistSource === "youtube_import" ? "Historical (YouTube) · " : "Recent session · ";
+      pl.playlistSource === "youtube_import"
+        ? "Historical (YouTube) · "
+        : pl.playlistSource === "pasted_url"
+          ? "Pasted URL · "
+          : "Recent session · ";
     meta.textContent = `${origin}${kind}${gb}${n} video${n === 1 ? "" : "s"}`;
     body.appendChild(title);
     body.appendChild(meta);
@@ -213,8 +216,9 @@ function renderPlaylists(playlists) {
       const url = `${dash}?playlist=${encodeURIComponent(pl.id)}`;
       window.location.href = url;
     });
-    grid.appendChild(btn);
+    frag.appendChild(btn);
   }
+  grid.appendChild(frag);
 }
 
 function renderHomePlaylists() {
@@ -224,7 +228,7 @@ function renderHomePlaylists() {
 async function refresh() {
   const status = document.getElementById("homeStatus");
   if (status) status.textContent = "Loading…";
-  const r = await send("TUBESTACK_GET_STATE");
+  const r = await send("TUBESTACK_GET_HOME_STATE");
   globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(r?.settings?.uiThemePreset);
   if (!r?.ok) {
     if (status) status.textContent = "Could not load playlists.";
@@ -360,9 +364,11 @@ wireHomeToolbar();
 syncHomeToolbarUi();
 globalThis.TUBESTACK_UI_THEMES?.bindUiThemeStorageSync();
 
+let homeStorageSyncTimer;
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || (!changes.localPlaylists && !changes.settings)) return;
-  void refresh();
+  clearTimeout(homeStorageSyncTimer);
+  homeStorageSyncTimer = setTimeout(() => void refresh(), 160);
 });
 
 void refresh();

@@ -20,6 +20,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 - `scripting`
 - `sidePanel`
 - `storage`
+- `unlimitedStorage`
 
 **Forbidden — must not appear in `manifest.json`:**
 
@@ -117,6 +118,10 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **Privacy link in extension**
   - Popup footer and Settings → Data & privacy link to bundled policy page
+
+- [ ] **In-product privacy consent**
+  - Fresh install: popup notice and/or setup wizard checkbox required before save/progress
+  - Hosted privacy policy includes Limited Use + `unlimitedStorage` disclosures
 
 - [ ] **Data deletion controls tested**
   - Delete library, clear API keys, OAuth sign-out, OpenAI key removal, AI cache clear

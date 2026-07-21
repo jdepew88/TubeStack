@@ -9,8 +9,11 @@ const btnDash = document.getElementById("btnDash");
 const btnHome = document.getElementById("btnHome");
 const btnLibrary = document.getElementById("btnLibrary");
 const btnSidebar = document.getElementById("btnSidebar");
+const privacyConsentBanner = document.getElementById("privacyConsentBanner");
+const btnPrivacyConsent = document.getElementById("btnPrivacyConsent");
 
 const saveButtons = [btnSaveLeft, btnSaveRight, btnSaveAll, btnSaveExcept].filter(Boolean);
+let privacyConsentAccepted = false;
 
 function send(type, payload = {}) {
   return new Promise((resolve) => {
@@ -50,8 +53,27 @@ async function refreshLibraryLine() {
     n === 0 ? "Local library: empty" : `Local library: ${n} saved video${n === 1 ? "" : "s"}`;
 }
 
+function setSaveButtonsEnabled(enabled) {
+  if (!enabled) {
+    for (const b of saveButtons) b.disabled = true;
+    return;
+  }
+}
+
+async function refreshPrivacyConsentUi() {
+  const data = await chrome.storage.local.get("settings");
+  privacyConsentAccepted = data.settings?.privacyConsentAccepted === true;
+  if (privacyConsentBanner) privacyConsentBanner.hidden = privacyConsentAccepted;
+  if (!privacyConsentAccepted) {
+    setSaveButtonsEnabled(false);
+    countLine.textContent = "Accept the privacy notice above to save tabs.";
+  }
+}
+
 async function refreshCount() {
   await refreshLibraryLine();
+  await refreshPrivacyConsentUi();
+  if (!privacyConsentAccepted) return;
   const r = await send("TUBESTACK_GET_SAVE_TAB_COUNTS");
   if (!r?.ok) {
     countLine.textContent =
@@ -80,6 +102,11 @@ function labelForMode(mode, n) {
 function attachSaveHandler(btn, mode) {
   if (!btn) return;
   btn.addEventListener("click", async () => {
+    if (!privacyConsentAccepted) {
+      status.textContent = "Accept the privacy notice above first.";
+      await refreshPrivacyConsentUi();
+      return;
+    }
     status.textContent = "Saving…";
     for (const b of saveButtons) b.disabled = true;
     const r = await send("TUBESTACK_SAVE_YT_TABS", { mode });
@@ -103,12 +130,29 @@ function attachSaveHandler(btn, mode) {
           }
         }
       }
+    } else if (r?.error === "privacy_consent_required") {
+      status.textContent = r.message || "Accept the privacy notice above first.";
+      await refreshPrivacyConsentUi();
     } else {
       status.textContent = r?.error || "Something went wrong.";
     }
     await refreshCount();
   });
 }
+
+btnPrivacyConsent?.addEventListener("click", async () => {
+  btnPrivacyConsent.disabled = true;
+  const r = await send("TUBESTACK_ACCEPT_PRIVACY_CONSENT");
+  if (!r?.ok) {
+    btnPrivacyConsent.disabled = false;
+    status.textContent = r?.message || r?.error || "Could not save consent.";
+    return;
+  }
+  privacyConsentAccepted = true;
+  if (privacyConsentBanner) privacyConsentBanner.hidden = true;
+  status.textContent = "Thanks — you can save tabs now.";
+  await refreshCount();
+});
 
 attachSaveHandler(btnSaveLeft, "left");
 attachSaveHandler(btnSaveRight, "right");

@@ -40,7 +40,25 @@
             videos later. Resume position on <code>/watch</code> pages (best-effort on Shorts). Google sign-in and API keys
             are optional.
           </p>
-          <button type="button" class="btn oobe-cta primary" id="obNext0">Get started</button>
+          <div class="oobe-privacy-box" role="note">
+            <p>
+              <strong>Before you continue:</strong> TubeStack stores your YouTube library, playlists, settings, and
+              <strong>local watch progress</strong> from open YouTube watch/Shorts tabs in Chrome extension storage on
+              <strong>this device</strong>. It does not use Chrome History or scan unrelated sites. Optional Google or
+              OpenAI features only contact those services when you enable and run them.
+            </p>
+            <p class="ob-muted">
+              Full details:
+              <a href="../privacy/privacy.html" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+            </p>
+          </div>
+          <label class="oobe-check-row">
+            <input type="checkbox" id="obPrivacyConsent" />
+            <span
+              >I understand how TubeStack handles my data on this device, and I agree to continue.</span
+            >
+          </label>
+          <button type="button" class="btn oobe-cta primary" id="obNext0" disabled>Get started</button>
         </div>
 
         <div id="obStep1" class="ob-step hidden">
@@ -459,6 +477,26 @@
             <strong>Create YouTube playlist</strong> needs OAuth Client ID + sign-in. Default session names look like
             <code>yt_tabgroup_2026-05-10_14-30-05</code>.
           </p>
+          <div class="playlist-paste-import">
+            <label class="ob-label" for="playlistPasteUrl">Add a playlist from YouTube</label>
+            <p class="panel-hint">
+              Paste a YouTube playlist URL to save it directly as a local TubeStack playlist. Public playlists use your
+              optional YouTube Data API key; private playlists require Google OAuth.
+            </p>
+            <div class="playlist-paste-import-row">
+              <input
+                type="url"
+                id="playlistPasteUrl"
+                class="oobe-input"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://www.youtube.com/playlist?list=…"
+              />
+              <button type="button" id="btnAddPastedPlaylist" class="btn small primary">Add playlist</button>
+            </div>
+            <p id="playlistPasteStatus" class="stat-line small" role="status"></p>
+          </div>
           <div id="localPlaylistList" class="local-pl-list"></div>
         </section>
 
@@ -468,6 +506,8 @@
             type="search"
             id="search"
             placeholder="Search title, creator, playlist, category, tag…"
+            data-placeholder-library="Search title, creator, playlist, category, tag…"
+            data-placeholder-playlist="Search this playlist — title, channel, tags, Watch State, notes…"
             autocomplete="off"
           />
         </label>
@@ -526,6 +566,15 @@
             title="Open every video in this playlist snapshot as YouTube tabs at once (background tabs)"
           >
             Restore session
+          </button>
+          <button type="button" id="btnExportPlaylistJson" class="btn small">Export JSON</button>
+          <button
+            type="button"
+            id="btnSavePlaylistSearch"
+            class="btn small hidden"
+            title="Save matching videos as a new local playlist named after your search"
+          >
+            Save search as playlist
           </button>
           <button type="button" id="btnExportYouTube" class="btn small primary">Save to YouTube…</button>
           <button type="button" id="btnSmartPlaylist" class="btn small ghost">Smart playlist…</button>
@@ -947,6 +996,9 @@
           <div id="windowCurrentSectionsMount" class="window-sections-mount"></div>
           <p id="currentPlaylistGridHint" class="current-playlist-grid-hint hidden" aria-live="polite"></p>
           <div id="grid" class="grid"></div>
+          <div id="dashLoadMoreWrap" class="dash-load-more-wrap hidden">
+            <button type="button" id="btnDashLoadMore" class="btn small">Show more</button>
+          </div>
           <p id="empty" class="empty hidden">No saved videos yet. Open the extension popup while you have YouTube watch or Shorts tabs open.</p>
         </section>
 

@@ -85,9 +85,43 @@ let subsRemoveMode = false;
 let sidebarFavExpanded = false;
 const tagFetchInFlight = new Set();
 const tagFetchFailed = new Set();
+const TAG_FETCH_MAX_CONCURRENT = 3;
+let tagFetchActive = 0;
+const tagFetchQueue = [];
+const DASH_PAGE_SIZE = 80;
+let dashRenderLimit = DASH_PAGE_SIZE;
 let viewMode = localStorage.getItem("ts_view_mode") || "details";
 let gridTileSize = clampGridTileSize(localStorage.getItem("ts_grid_tile_size") || GRID_TILE_DEFAULT);
 let sidebarHidden = localStorage.getItem("ts_sidebar_hidden") === "1";
+/** Cached theme id → label for search/filter (rebuilt when themes change). */
+let themeLabelById = new Map();
+/** Fast library lookups — rebuilt when allItems changes. */
+let itemsById = new Map();
+let itemsByVideoId = new Map();
+
+function rebuildThemeLabelMap() {
+  themeLabelById = new Map(themes.map((t) => [t.id, t.label || ""]));
+}
+
+function rebuildItemIndexMaps() {
+  itemsById = new Map();
+  itemsByVideoId = new Map();
+  for (const it of allItems) {
+    if (it?.id) itemsById.set(it.id, it);
+    const vid = itemVideoId(it);
+    if (vid && !itemsByVideoId.has(vid)) itemsByVideoId.set(vid, it);
+  }
+}
+
+function resetDashRenderLimit() {
+  dashRenderLimit = DASH_PAGE_SIZE;
+}
+
+function collectExistingAlbums() {
+  return [...new Set(allItems.map((x) => (x.libraryAlbum || "").trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
 function getEditingPlaylistId() {
   return playlistViewMeta?.id || activeLocalPlaylistId || null;
 }
@@ -183,7 +217,7 @@ function mergeLibraryWithSnapshot(lib, snap) {
   const channel = String(lib?.channel || snap?.channel || "").trim() || "Unknown creator";
   const thumbnail =
     String(lib?.thumbnail || snap?.thumbnail || "").trim() ||
-    (vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "");
+    (vid ? `https://i.ytimg.com/vi/${vid}/mqdefault.jpg` : "");
   if (lib) {
     return {
       ...lib,
@@ -258,7 +292,7 @@ async function persistPlaylistOrderFromLibraryIds(orderedLibraryIds) {
   if (!plId) return false;
   const videoIds = orderedLibraryIds
     .map((id) => {
-      const fromLib = allItems.find((x) => x.id === id);
+      const fromLib = itemsById.get(id);
       if (fromLib) return normalizeVideoId(fromLib.videoId);
       if (String(id).startsWith("snap:")) return normalizeVideoId(String(id).slice(5));
       return "";
@@ -717,6 +751,22 @@ async function deleteOneFromLibrary(it) {
   render();
 }
 
+function makeCardDeleteButton(it) {
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "card-video-del";
+  del.title = "Remove from library";
+  del.setAttribute("aria-label", "Remove from library");
+  del.textContent = "×";
+  del.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void deleteOneFromLibrary(it);
+  });
+  del.addEventListener("mousedown", (e) => e.stopPropagation());
+  return del;
+}
+
 function buildRowActionsDropdown(it, { align = "right" } = {}) {
   ensureRowPopoverGlobalClose();
   const wrap = document.createElement("div");
@@ -736,7 +786,7 @@ function buildRowActionsDropdown(it, { align = "right" } = {}) {
 
   panel.appendChild(
     rowDropdownItem("Open on YouTube", () => {
-      chrome.tabs.create({ url: buildOpenUrl(it), active: true });
+      openItemOnYouTube(it, { active: true });
     })
   );
 
@@ -818,20 +868,65 @@ function itemThumbnailUrl(it) {
   const thumb = String(it?.thumbnail || "").trim();
   if (thumb) return thumb;
   const vid = itemVideoId(it);
-  return vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : "";
+  // mqdefault is enough for dense grids; avoids hqdefault → mqdefault double-fetch on miss.
+  return vid ? `https://i.ytimg.com/vi/${vid}/mqdefault.jpg` : "";
 }
 
 function buildOpenUrl(it) {
   const vid = itemVideoId(it);
   const url = String(it?.url || "").trim();
-  if (!vid) return url || "#";
+  if (!vid) {
+    if (!url || url === "#") return "";
+    return url;
+  }
   if (itemIsShort(it)) {
-    return YT_URL?.canonicalYouTubeVideoUrl(vid, { shorts: true }) || url || "#";
+    return YT_URL?.canonicalYouTubeVideoUrl(vid, { shorts: true }) || url || "";
   }
   const pos = getPlayhead(it);
-  const base = YT_URL?.canonicalYouTubeVideoUrl(vid, { shorts: false }) || `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`;
-  if (pos > 2) return `${base}&t=${Math.floor(pos)}s`;
-  return url || base;
+  const timestampSec = pos > 2 ? Math.floor(pos) : null;
+  const canonical =
+    YT_URL?.canonicalYouTubeVideoUrl(vid, { shorts: false, timestampSec }) ||
+    `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}${timestampSec ? `&t=${timestampSec}s` : ""}`;
+  // Prefer a clean watch URL; fall back to stored url only if canonical is unavailable.
+  return canonical || url || "";
+}
+
+/** Open a video in a new tab — more reliable than target=_blank inside draggable playlist cards. */
+function openItemOnYouTube(it, { active = true } = {}) {
+  const href = buildOpenUrl(it);
+  if (!href || href === "#") return false;
+  try {
+    chrome.tabs.create({ url: href, active: Boolean(active) });
+    return true;
+  } catch {
+    window.open(href, "_blank", "noopener,noreferrer");
+    return true;
+  }
+}
+
+function wireVideoOpenLink(el, it) {
+  if (!el) return el;
+  const href = buildOpenUrl(it);
+  if (!href) {
+    el.removeAttribute("href");
+    el.setAttribute("aria-disabled", "true");
+    el.addEventListener("click", (e) => e.preventDefault());
+    return el;
+  }
+  el.href = href;
+  el.target = "_blank";
+  el.rel = "noopener noreferrer";
+  el.removeAttribute("aria-disabled");
+  el.addEventListener("click", (e) => {
+    // Let modified clicks use the browser default (new window / background tab).
+    if (e.defaultPrevented) return;
+    if (e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openItemOnYouTube(it, { active: true });
+  });
+  return el;
 }
 
 function makeThumbWrap(it, { square = false, linked = true } = {}) {
@@ -840,6 +935,8 @@ function makeThumbWrap(it, { square = false, linked = true } = {}) {
   const img = document.createElement("img");
   img.alt = "";
   img.loading = "lazy";
+  img.decoding = "async";
+  img.draggable = false;
   const vid = itemVideoId(it);
   img.src = itemThumbnailUrl(it);
   if (vid) {
@@ -859,20 +956,19 @@ function makeThumbWrap(it, { square = false, linked = true } = {}) {
   }
   if (!linked) return thumb;
   const href = buildOpenUrl(it);
-  if (!href || href === "#") return thumb;
+  if (!href) return thumb;
   const link = document.createElement("a");
   link.className = "thumb-link";
-  link.href = href;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
   link.title = `Open: ${it.title || "video"}`;
+  link.setAttribute("aria-label", `Open video: ${it.title || "Untitled"}`);
+  wireVideoOpenLink(link, it);
   link.appendChild(thumb);
   return link;
 }
 
 function wireCardDrag(card, it, playlistReorder) {
   const noDragSel =
-    ".card-pick, .grid-tile-pick, button, input, select, textarea, a, label, .row-popover, .row-actions-dropdown, .row-notes-dropdown, .card-note-toggle, .card-note-panel, .card-thumb-notes, .card-priority-stack, .card-priority-inline, .pri-btn, .thumb-link";
+    ".card-pick, .grid-tile-pick, button, input, select, textarea, a, label, .row-popover, .row-actions-dropdown, .row-notes-dropdown, .card-note-toggle, .card-note-panel, .card-thumb-notes, .card-priority-stack, .card-priority-inline, .pri-btn, .thumb-link, .thumb-wrap, .title-row, .list-row-title, .list-row-media, .grid-tile-media, .grid-tile-title, .grid-tile-text";
 
   const setDraggable = (on) => {
     card.draggable = Boolean(on);
@@ -882,6 +978,7 @@ function wireCardDrag(card, it, playlistReorder) {
 
   card.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
+    // Never arm drag from openable media/title — otherwise Chromium cancels the click.
     if (e.target?.closest(noDragSel)) {
       setDraggable(false);
       return;
@@ -889,12 +986,18 @@ function wireCardDrag(card, it, playlistReorder) {
     setDraggable(true);
   });
   card.addEventListener("mouseup", () => setDraggable(false));
-  card.addEventListener("mouseleave", () => setDraggable(false));
+  card.addEventListener("mouseleave", () => {
+    if (!card.classList.contains("card--dragging")) setDraggable(false);
+  });
 
   card.addEventListener("dragstart", (e) => {
     if (e.target?.closest(noDragSel)) {
       e.preventDefault();
       setDraggable(false);
+      return;
+    }
+    if (!card.draggable) {
+      e.preventDefault();
       return;
     }
     if (playlistReorder) {
@@ -912,6 +1015,7 @@ function wireCardDrag(card, it, playlistReorder) {
   card.addEventListener("dragend", () => {
     playlistReorderDragId = null;
     draggingPlaylistItemIds = [];
+    setDraggable(false);
     card.classList.remove("card--dragging", "card--reorder-over");
     document.querySelectorAll(".playlist-drop-target.drop-active").forEach((x) => x.classList.remove("drop-active"));
     document.querySelectorAll(".card.card--reorder-over").forEach((x) => x.classList.remove("card--reorder-over"));
@@ -955,11 +1059,9 @@ function renderListCard(it) {
   const content = document.createElement("div");
   content.className = "list-row-content";
   const title = document.createElement("a");
-  title.href = itemOpenUrl(it);
-  title.target = "_blank";
-  title.rel = "noopener noreferrer";
   title.className = "list-row-title";
   title.textContent = it.title || "Untitled";
+  wireVideoOpenLink(title, it);
 
   const meta = document.createElement("div");
   meta.className = "list-row-meta";
@@ -984,6 +1086,7 @@ function renderListCard(it) {
   const aside = document.createElement("div");
   aside.className = "list-row-aside";
   aside.appendChild(buildPriorityControl(it, { inline: true }));
+  aside.appendChild(makeCardDeleteButton(it));
   aside.appendChild(buildRowActionsDropdown(it));
   const notesBtn = buildPlaylistNotesButton(it);
   if (notesBtn) aside.appendChild(notesBtn);
@@ -1006,9 +1109,8 @@ function renderGridCard(it) {
 
   const link = document.createElement("a");
   link.className = "grid-tile-media";
-  link.href = buildOpenUrl(it);
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
+  link.setAttribute("aria-label", `Open video: ${it.title || "Untitled"}`);
+  wireVideoOpenLink(link, it);
 
   const thumb = makeThumbWrap(it, { square: true, linked: false });
   thumb.classList.add("grid-tile-thumb");
@@ -1026,10 +1128,11 @@ function renderGridCard(it) {
   foot.className = "grid-tile-foot";
   const textBlock = document.createElement("div");
   textBlock.className = "grid-tile-text";
-  const title = document.createElement("div");
+  const title = document.createElement("a");
   title.className = "grid-tile-title";
   title.textContent = it.title || "Untitled";
   title.title = title.textContent;
+  wireVideoOpenLink(title, it);
   const channel = document.createElement("div");
   channel.className = "grid-tile-channel";
   channel.textContent = it.channel || "Unknown creator";
@@ -1145,24 +1248,27 @@ function send(type, payload = {}) {
 function findLibraryItemForUpdate(it) {
   if (!it) return null;
   const id = String(it.id || "").trim();
-  if (id && !id.startsWith("snap:")) {
-    const direct = allItems.find((x) => x.id === id);
-    if (direct) return direct;
-  }
+  if (id && !id.startsWith("snap:") && itemsById.has(id)) return itemsById.get(id);
   const vid = itemVideoId(it);
-  if (vid) {
-    const byVid = allItems.find((x) => itemVideoId(x) === vid);
-    if (byVid) return byVid;
-  }
-  if (id && !id.startsWith("snap:")) return allItems.find((x) => x.id === id) || null;
+  if (vid && itemsByVideoId.has(vid)) return itemsByVideoId.get(vid);
+  if (id && !id.startsWith("snap:")) return itemsById.get(id) || null;
   return null;
 }
 
 function applyServerItemToLibrary(serverItem) {
   if (!serverItem?.id) return;
-  const idx = allItems.findIndex((x) => x.id === serverItem.id);
-  if (idx >= 0) allItems[idx] = serverItem;
-  else allItems.push(serverItem);
+  const existing = itemsById.get(serverItem.id);
+  if (existing) {
+    const idx = allItems.indexOf(existing);
+    if (idx >= 0) allItems[idx] = serverItem;
+    else allItems.push(serverItem);
+  } else {
+    allItems.push(serverItem);
+  }
+  itemsById.set(serverItem.id, serverItem);
+  const vid = itemVideoId(serverItem);
+  if (vid) itemsByVideoId.set(vid, serverItem);
+  delete serverItem._searchHay;
 }
 
 async function applyDashboardItemUpdate(it, patch) {
@@ -2260,6 +2366,7 @@ function activatePlaylistView(playlistId, { replaceUrl = true } = {}) {
     const qp = `?playlist=${encodeURIComponent(pl.id)}`;
     history.replaceState({}, "", `dashboard.html${qp}`);
   }
+  resetDashRenderLimit();
   syncSidebarCurrentPlaylistUi();
   renderSidebarRecentTablists();
   setActiveWindow("current");
@@ -2649,10 +2756,16 @@ function sortCopy(list, mode) {
 }
 
 function matchesSearch(item, q) {
-  if (!q.trim()) return true;
-  const s = q.toLowerCase();
-  const themeLab = themes.find((t) => t.id === item.themeId)?.label || "";
+  const needle = String(q || "")
+    .trim()
+    .toLowerCase();
+  if (!needle) return true;
+  if (item._searchHay) return item._searchHay.includes(needle);
+  const themeLab = themeLabelById.get(item.themeId) || "";
   const listLab = LIST_LABELS[item.category] || item.category || "";
+  const tsNotes = (item.timestampNotes || []).map((x) => `${x.label || ""} ${x.note || ""}`).join(" ");
+  // Use a short description snippet — full descriptions are expensive in live filter passes.
+  const descSnippet = String(item.description || "").slice(0, 200);
   const blob = [
     item.title,
     item.channel,
@@ -2662,16 +2775,129 @@ function matchesSearch(item, q) {
     item.topic,
     item.libraryAlbum,
     item.notes,
+    item.note,
+    descSnippet,
     item.category,
     listLab,
     themeLab,
     item.granularGenre,
+    TS_WATCH ? TS_WATCH.watchStateLabel(itemWatchState(item)) : "",
     ...(item.tags || []),
+    ...(item.suggestedTags || []),
+    tsNotes,
   ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  return blob.includes(s);
+  item._searchHay = blob;
+  return blob.includes(needle);
+}
+
+function playlistSearchQuery() {
+  return String(searchEl?.value || "").trim();
+}
+
+function countPlaylistItems(pl) {
+  const seen = new Set();
+  let n = 0;
+  for (const snap of pl?.items || []) {
+    const key = playlistItemDisplayKey(snap) || (itemVideoId(snap) ? `v:${itemVideoId(snap)}` : "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    n += 1;
+  }
+  return n;
+}
+
+function playlistNameFromSearchQuery(q) {
+  return (
+    String(q || "")
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+      .replace(/\s+/g, " ")
+      .slice(0, 200)
+      .trim() || "Search results"
+  );
+}
+
+function syncPlaylistSearchUi(list) {
+  const onPlaylist = Boolean(playlistViewMeta?.id);
+  const q = playlistSearchQuery();
+  const pl = onPlaylist ? localPlaylists.find((x) => x.id === playlistViewMeta.id) : null;
+  const total = pl ? countPlaylistItems(pl) : 0;
+  const shown = Array.isArray(list) ? list.length : 0;
+  const searchActive = Boolean(q);
+
+  if (searchEl) {
+    const libPh = searchEl.dataset.placeholderLibrary || "Search title, creator, playlist, category, tag…";
+    const plPh =
+      searchEl.dataset.placeholderPlaylist || "Search this playlist — title, channel, tags, Watch State, notes…";
+    searchEl.placeholder = onPlaylist ? plPh : libPh;
+  }
+
+  const statusEl = document.getElementById("playlistSearchStatus");
+  if (statusEl) {
+    if (onPlaylist && searchActive) {
+      statusEl.classList.remove("hidden");
+      statusEl.textContent = "";
+      statusEl.appendChild(document.createTextNode(`${shown} of ${total} video${total === 1 ? "" : "s"} match `));
+      const strong = document.createElement("strong");
+      strong.textContent = `“${q}”`;
+      statusEl.appendChild(strong);
+    } else {
+      statusEl.classList.add("hidden");
+      statusEl.textContent = "";
+    }
+  }
+
+  const saveBtn = document.getElementById("btnSavePlaylistSearch");
+  if (saveBtn) {
+    const canSave = onPlaylist && searchActive && shown > 0;
+    saveBtn.classList.toggle("hidden", !canSave);
+    saveBtn.disabled = !canSave;
+    if (canSave) {
+      const name = playlistNameFromSearchQuery(q);
+      saveBtn.title = `Save ${shown} matching video${shown === 1 ? "" : "s"} as “${name}”`;
+    }
+  }
+}
+
+async function savePlaylistSearchAsNew() {
+  const q = playlistSearchQuery();
+  if (!q || !playlistViewMeta?.id) return;
+  const items = visibleItems();
+  if (!items.length) {
+    alert("No videos match your search.");
+    return;
+  }
+  const snapshots = items.map(snapshotPlaylistItem).filter((x) => x.videoId || x.url);
+  if (!snapshots.length) {
+    alert("No videos to save.");
+    return;
+  }
+  const name = playlistNameFromSearchQuery(q);
+  const saveBtn = document.getElementById("btnSavePlaylistSearch");
+  if (saveBtn) saveBtn.disabled = true;
+  const r = await send("TUBESTACK_LOCAL_PLAYLIST_SAVE", {
+    name,
+    items: snapshots,
+    playlistSource: "session",
+    smartSummary: `Search: ${name}`,
+  });
+  if (saveBtn) saveBtn.disabled = false;
+  if (!r?.ok) {
+    alert(r?.error === "no_items" ? "No videos to save." : "Could not save playlist.");
+    return;
+  }
+  localPlaylists = r.playlists || localPlaylists;
+  renderLocalPlaylists();
+  renderSidebarRecentTablists();
+  const newId = r.playlistId || localPlaylists.find((x) => x.name === name)?.id;
+  if (newId) {
+    activatePlaylistView(newId, { replaceUrl: true });
+  } else {
+    render();
+  }
 }
 
 function getSortedThemeGroups() {
@@ -2717,13 +2943,29 @@ function fillThemeSelectOptions(sel, selectedThemeId) {
   }
 }
 
+function pumpTagFetchQueue() {
+  while (tagFetchActive < TAG_FETCH_MAX_CONCURRENT && tagFetchQueue.length) {
+    const job = tagFetchQueue.shift();
+    if (!job) break;
+    tagFetchActive += 1;
+    void (async () => {
+      try {
+        await job();
+      } finally {
+        tagFetchActive -= 1;
+        pumpTagFetchQueue();
+      }
+    })();
+  }
+}
+
 function ensureVideoTagsForItem(it, onUpdate) {
   if (!it?.id || !it.videoId) return;
   if (Array.isArray(it.tags) && it.tags.length) return;
   if (tagFetchFailed.has(it.id)) return;
   if (tagFetchInFlight.has(it.id)) return;
   tagFetchInFlight.add(it.id);
-  void (async () => {
+  tagFetchQueue.push(async () => {
     const r = await send("TUBESTACK_FETCH_VIDEO_TAGS", { id: it.id, videoId: it.videoId, max: 6 });
     tagFetchInFlight.delete(it.id);
     if (!r?.ok || !Array.isArray(r.tags)) {
@@ -2731,8 +2973,10 @@ function ensureVideoTagsForItem(it, onUpdate) {
       return;
     }
     it.tags = r.tags;
+    delete it._searchHay;
     if (typeof onUpdate === "function") onUpdate(r.tags);
-  })();
+  });
+  pumpTagFetchQueue();
 }
 
 const grid = document.getElementById("grid");
@@ -2768,6 +3012,7 @@ const playlistBudget = document.getElementById("playlistBudget");
 const playlistSort = document.getElementById("playlistSort");
 const btnBuildPlaylist = document.getElementById("btnBuildPlaylist");
 const playlistOut = document.getElementById("playlistOut");
+const btnExportPlaylistJson = document.getElementById("btnExportPlaylistJson");
 const btnExportYouTube = document.getElementById("btnExportYouTube");
 const ytExportModal = document.getElementById("ytExportModal");
 let ytImportPlaylistsCache = [];
@@ -3180,7 +3425,9 @@ async function loadState() {
     return;
   }
   allItems = r.items || [];
+  rebuildItemIndexMaps();
   themes = r.themes || [];
+  rebuildThemeLabelMap();
   settings = r.settings || {};
   globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(settings.uiThemePreset);
   videoProgress = r.videoProgress || {};
@@ -3191,6 +3438,7 @@ async function loadState() {
   hasYoutubeApiKey = Boolean(r.hasYoutubeApiKey);
   hasOpenaiKey = Boolean(r.hasOpenaiKey);
   oauthRedirectUri = r.oauthRedirectUri || "";
+  resetDashRenderLimit();
   renderIntegrationHealth(r.integrationHealth);
   updateConnectYoutubeHint(r);
   const rdUri = oauthRedirectUri || "—";
@@ -3261,6 +3509,12 @@ async function loadState() {
     populateOobeFields();
     clearScanUi();
     showObStep(0);
+    const consentEl = document.getElementById("obPrivacyConsent");
+    const nextEl = document.getElementById("obNext0");
+    if (settings.privacyConsentAccepted === true && consentEl) {
+      consentEl.checked = true;
+      if (nextEl) nextEl.disabled = false;
+    }
     refreshTabsSelect();
     renderObGenreTiles();
   } else {
@@ -3368,7 +3622,256 @@ function visibleItems() {
   return sortCopy(filtered, quickSort.value);
 }
 
+function fillAlbumSelectOptions(albumSelect, existingAlbums, selectedAlbum) {
+  const customSentinel = "__custom__";
+  albumSelect.replaceChildren();
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "Unassigned";
+  albumSelect.appendChild(noneOpt);
+  for (const alb of existingAlbums) {
+    const o = document.createElement("option");
+    o.value = alb;
+    o.textContent = alb;
+    albumSelect.appendChild(o);
+  }
+  const customOpt = document.createElement("option");
+  customOpt.value = customSentinel;
+  customOpt.textContent = "Custom…";
+  albumSelect.appendChild(customOpt);
+  const hasExisting = selectedAlbum && existingAlbums.includes(selectedAlbum);
+  albumSelect.value = hasExisting ? selectedAlbum : selectedAlbum ? customSentinel : "";
+  return customSentinel;
+}
+
+function renderDetailsCard(it, existingAlbums) {
+  const card = document.createElement("article");
+  card.className = "card";
+  card.dataset.id = it.id;
+  const playlistReorder = isPlaylistEditMode();
+  wireCardDrag(card, it, playlistReorder);
+
+  const pick = makePickCheckbox(it);
+  const thumb = makeThumbWrap(it);
+  const priStack = buildPriorityControl(it, { inline: false });
+
+  const mediaRow = document.createElement("div");
+  mediaRow.className = "card-media-row";
+  mediaRow.appendChild(priStack);
+  mediaRow.appendChild(thumb);
+
+  const rowCat = document.createElement("div");
+  rowCat.className = "row row-list-under-thumb";
+  const labCat = document.createElement("label");
+  labCat.textContent = "List";
+  const selCat = document.createElement("select");
+  for (const c of Object.keys(LIST_LABELS)) {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = LIST_LABELS[c];
+    if (it.category === c) opt.selected = true;
+    selCat.appendChild(opt);
+  }
+  selCat.addEventListener("change", async () => {
+    const ok = await applyDashboardItemUpdate(it, { category: selCat.value });
+    if (ok) {
+      it.category = selCat.value;
+      delete it._searchHay;
+    }
+  });
+  rowCat.appendChild(labCat);
+  rowCat.appendChild(selCat);
+
+  const thumbCol = document.createElement("div");
+  thumbCol.className = "card-thumb-col";
+  thumbCol.appendChild(mediaRow);
+
+  const detailsInner = document.createElement("div");
+  detailsInner.className = "card-details-inner";
+
+  const main = document.createElement("div");
+  main.className = "card-details-main";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
+  const a = document.createElement("a");
+  a.textContent = it.title || "Untitled";
+  wireVideoOpenLink(a, it);
+  titleRow.appendChild(a);
+  titleRow.appendChild(makeWatchStateBadge(it));
+  if (it.granularGenre) {
+    const pill = document.createElement("span");
+    pill.className = "granular-genre-pill";
+    pill.textContent = it.granularGenre;
+    pill.title = "Inferred niche (title keywords from your library)";
+    titleRow.appendChild(pill);
+  }
+  titleRow.appendChild(makeCardDeleteButton(it));
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const tl = timeLeft(it);
+  const comp = completion(it);
+  const parts = [];
+  if (it.channel) parts.push(it.channel);
+  parts.push(`Time left: ${tl != null ? formatDuration(tl) : "—"}`);
+  parts.push(`Watched: ${pct(comp)}`);
+  parts.push(`Interest: ${Math.round(interestScore(it))}`);
+  meta.textContent = parts.join(" · ");
+
+  const detailsSide = document.createElement("div");
+  detailsSide.className = "card-details-fields";
+
+  const rowTheme = document.createElement("div");
+  rowTheme.className = "row card-details-field";
+  const labTh = document.createElement("label");
+  labTh.textContent = "Category";
+  const selTh = document.createElement("select");
+  fillThemeSelectOptions(selTh, it.themeId);
+  selTh.addEventListener("change", async () => {
+    const themeId = selTh.value || null;
+    const ok = await applyDashboardItemUpdate(it, { themeId });
+    if (ok) {
+      it.themeId = themeId;
+      delete it._searchHay;
+    }
+  });
+  rowTheme.appendChild(labTh);
+  rowTheme.appendChild(selTh);
+
+  const rowAlbum = document.createElement("div");
+  rowAlbum.className = "row card-details-field row-album-field";
+  const labAl = document.createElement("label");
+  labAl.textContent = "Album";
+  labAl.title = "Album / series";
+  const albumSelect = document.createElement("select");
+  const customSentinel = fillAlbumSelectOptions(albumSelect, existingAlbums, it.libraryAlbum || "");
+  const inpAl = document.createElement("input");
+  inpAl.type = "text";
+  inpAl.className = "oobe-input";
+  inpAl.placeholder = "Type album / series";
+  inpAl.maxLength = 120;
+  inpAl.value = it.libraryAlbum || "";
+  inpAl.classList.toggle("hidden", albumSelect.value !== customSentinel);
+  let albumTimer;
+  const commitAlbum = (v) => {
+    clearTimeout(albumTimer);
+    albumTimer = setTimeout(async () => {
+      const val = String(v || "").trim();
+      const ok = await applyDashboardItemUpdate(it, { libraryAlbum: val || null });
+      if (ok) {
+        it.libraryAlbum = val || null;
+        delete it._searchHay;
+      }
+    }, 450);
+  };
+  albumSelect.addEventListener("change", () => {
+    const isCustom = albumSelect.value === customSentinel;
+    inpAl.classList.toggle("hidden", !isCustom);
+    if (!isCustom) commitAlbum(albumSelect.value);
+  });
+  inpAl.addEventListener("input", () => commitAlbum(inpAl.value));
+  rowAlbum.appendChild(labAl);
+  rowAlbum.appendChild(albumSelect);
+  rowAlbum.appendChild(inpAl);
+
+  const rowTags = document.createElement("div");
+  rowTags.className = "row tags-row";
+  const labTags = document.createElement("label");
+  labTags.textContent = "Tags";
+  const tagsHost = document.createElement("div");
+  tagsHost.className = "tag-chip-list";
+  const renderTagChips = (tags) => {
+    tagsHost.replaceChildren();
+    const cleaned = (tags || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 6);
+    if (!cleaned.length) {
+      const m = document.createElement("span");
+      m.className = "ob-muted";
+      m.textContent = "No tags yet.";
+      tagsHost.appendChild(m);
+      return;
+    }
+    for (const tag of cleaned) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tag-chip-link";
+      b.textContent = tag;
+      b.title = `Filter library by tag: ${tag}`;
+      b.addEventListener("click", () => {
+        searchEl.value = tag;
+        resetDashRenderLimit();
+        setActiveWindow("current");
+        render();
+      });
+      tagsHost.appendChild(b);
+    }
+  };
+  renderTagChips(it.tags || []);
+  ensureVideoTagsForItem(it, (tags) => {
+    // Update this card only — avoid full-grid re-render storms.
+    renderTagChips(tags);
+  });
+  rowTags.appendChild(labTags);
+  rowTags.appendChild(tagsHost);
+
+  const sug = document.createElement("div");
+  sug.className = "suggested";
+  const sugTags = it.suggestedTags?.length
+    ? it.suggestedTags.join(", ")
+    : "Suggested tags arrive in a later AI phase.";
+  sug.innerHTML = `<span>Suggested:</span> ${escapeHtml(sugTags)}`;
+
+  const rowWatchState = buildWatchStateRow(it, (ws) => {
+    const badge = titleRow.querySelector(".watch-state-badge");
+    if (badge && TS_WATCH) {
+      badge.textContent = TS_WATCH.watchStateLabel(ws);
+      badge.className = `watch-state-badge watch-state-badge--${ws}`;
+    }
+  });
+  rowWatchState.classList.add("card-details-field");
+  const watchLab = rowWatchState.querySelector("label");
+  if (watchLab) {
+    watchLab.textContent = "Watch";
+    watchLab.title = "Watch State";
+  }
+
+  detailsSide.appendChild(rowAlbum);
+  detailsSide.appendChild(rowTheme);
+  detailsSide.appendChild(rowWatchState);
+
+  main.appendChild(titleRow);
+  main.appendChild(meta);
+  main.appendChild(detailsSide);
+  main.appendChild(rowTags);
+  main.appendChild(sug);
+  main.appendChild(buildCardThumbNotesBlock(it));
+
+  detailsInner.appendChild(main);
+  thumbCol.appendChild(rowCat);
+
+  card.appendChild(pick);
+  card.appendChild(thumbCol);
+  card.appendChild(detailsInner);
+  return card;
+}
+
+function syncDashLoadMoreUi(totalMatched, shown) {
+  const wrap = document.getElementById("dashLoadMoreWrap");
+  const btn = document.getElementById("btnDashLoadMore");
+  if (!wrap || !btn) return;
+  const remaining = Math.max(0, totalMatched - shown);
+  const show = remaining > 0;
+  wrap.classList.toggle("hidden", !show);
+  if (show) {
+    btn.textContent =
+      remaining > DASH_PAGE_SIZE
+        ? `Show ${DASH_PAGE_SIZE} more (${remaining} remaining)`
+        : `Show ${remaining} more`;
+  }
+}
+
 function render() {
+  if (themeLabelById.size !== themes.length) rebuildThemeLabelMap();
   const list = visibleItems();
   const toolsBar = document.getElementById("playlistToolsBar");
   const onPlaylist = Boolean(playlistViewMeta?.id);
@@ -3381,253 +3884,59 @@ function render() {
     btnExportYouTube?.classList.toggle("hidden", !(String(settings.youtubeOAuthClientId || "").trim()));
   }
   renderCurrentPlaylistHead();
+  syncPlaylistSearchUi(list);
+  const shownList = list.slice(0, dashRenderLimit);
   if (summary) {
     summary.classList.remove("summary--playlist-filter");
     summary.replaceChildren();
-    const base = `${list.length} shown · ${allItems.length} saved · ${themes.length} categories`;
-    summary.appendChild(document.createTextNode(base));
+    const q = playlistSearchQuery();
+    if (onPlaylist) {
+      const pl = localPlaylists.find((x) => x.id === playlistViewMeta.id);
+      const total = pl ? countPlaylistItems(pl) : list.length;
+      const label = playlistViewMeta.name || "Playlist";
+      if (q) {
+        summary.appendChild(
+          document.createTextNode(
+            `${list.length} of ${total} in “${label}” match search · showing ${shownList.length} · ${allItems.length} saved`
+          )
+        );
+        summary.classList.add("summary--playlist-filter");
+      } else {
+        summary.appendChild(
+          document.createTextNode(`${total} in “${label}” · showing ${shownList.length} · ${allItems.length} saved`)
+        );
+      }
+    } else {
+      summary.appendChild(
+        document.createTextNode(
+          `${shownList.length} of ${list.length} shown · ${allItems.length} saved · ${themes.length} categories`
+        )
+      );
+    }
   }
   empty.classList.toggle("hidden", list.length > 0);
   updatePlaylistGridHint(list);
-  grid.innerHTML = "";
   const isGridView = viewMode === "grid";
   const isListView = viewMode === "list";
   grid.classList.toggle("grid-view", isGridView);
 
-  for (const it of list) {
+  const frag = document.createDocumentFragment();
+  const existingAlbums = isGridView || isListView ? null : collectExistingAlbums();
+
+  for (const it of shownList) {
     if (isGridView) {
-      grid.appendChild(renderGridCard(it));
+      frag.appendChild(renderGridCard(it));
       continue;
     }
     if (isListView) {
-      grid.appendChild(renderListCard(it));
+      frag.appendChild(renderListCard(it));
       continue;
     }
-
-    const card = document.createElement("article");
-    card.className = "card";
-    card.dataset.id = it.id;
-    const playlistReorder = isPlaylistEditMode();
-    wireCardDrag(card, it, playlistReorder);
-
-    const pick = makePickCheckbox(it);
-
-    const thumb = makeThumbWrap(it);
-
-    const priStack = buildPriorityControl(it, { inline: false });
-
-    const mediaRow = document.createElement("div");
-    mediaRow.className = "card-media-row";
-    if (!isListView) mediaRow.appendChild(priStack);
-    mediaRow.appendChild(thumb);
-
-    const rowCat = document.createElement("div");
-    rowCat.className = "row row-list-under-thumb";
-    const labCat = document.createElement("label");
-    labCat.textContent = "List";
-    const selCat = document.createElement("select");
-    for (const c of Object.keys(LIST_LABELS)) {
-      const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = LIST_LABELS[c];
-      if (it.category === c) opt.selected = true;
-      selCat.appendChild(opt);
-    }
-    selCat.addEventListener("change", async () => {
-      const ok = await applyDashboardItemUpdate(it, { category: selCat.value });
-      if (ok) it.category = selCat.value;
-    });
-    rowCat.appendChild(labCat);
-    rowCat.appendChild(selCat);
-
-    const thumbCol = document.createElement("div");
-    thumbCol.className = "card-thumb-col";
-    thumbCol.appendChild(mediaRow);
-
-    const detailsInner = document.createElement("div");
-    detailsInner.className = "card-details-inner";
-
-    const main = document.createElement("div");
-    main.className = "card-details-main";
-
-    const titleRow = document.createElement("div");
-    titleRow.className = "title-row";
-    const a = document.createElement("a");
-    a.href = itemOpenUrl(it);
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.textContent = it.title || "Untitled";
-    titleRow.appendChild(a);
-    titleRow.appendChild(makeWatchStateBadge(it));
-    if (it.granularGenre) {
-      const pill = document.createElement("span");
-      pill.className = "granular-genre-pill";
-      pill.textContent = it.granularGenre;
-      pill.title = "Inferred niche (title keywords from your library)";
-      titleRow.appendChild(pill);
-    }
-
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    const tl = timeLeft(it);
-    const comp = completion(it);
-    const parts = [];
-    if (it.channel) parts.push(it.channel);
-    parts.push(`Time left: ${tl != null ? formatDuration(tl) : "—"}`);
-    parts.push(`Watched: ${pct(comp)}`);
-    parts.push(`Interest: ${Math.round(interestScore(it))}`);
-    meta.textContent = parts.join(" · ");
-
-    const detailsSide = document.createElement("div");
-    detailsSide.className = "card-details-fields";
-
-    const rowTheme = document.createElement("div");
-    rowTheme.className = "row card-details-field";
-    const labTh = document.createElement("label");
-    labTh.textContent = "Category";
-    const selTh = document.createElement("select");
-    fillThemeSelectOptions(selTh, it.themeId);
-    selTh.addEventListener("change", async () => {
-      const themeId = selTh.value || null;
-      const ok = await applyDashboardItemUpdate(it, { themeId });
-      if (ok) it.themeId = themeId;
-    });
-    rowTheme.appendChild(labTh);
-    rowTheme.appendChild(selTh);
-
-    const rowAlbum = document.createElement("div");
-    rowAlbum.className = "row card-details-field row-album-field";
-    const labAl = document.createElement("label");
-    labAl.textContent = "Album";
-    labAl.title = "Album / series";
-    const albumSelect = document.createElement("select");
-    const existingAlbums = [...new Set(allItems.map((x) => (x.libraryAlbum || "").trim()).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b)
-    );
-    const customSentinel = "__custom__";
-    const noneOpt = document.createElement("option");
-    noneOpt.value = "";
-    noneOpt.textContent = "Unassigned";
-    albumSelect.appendChild(noneOpt);
-    for (const alb of existingAlbums) {
-      const o = document.createElement("option");
-      o.value = alb;
-      o.textContent = alb;
-      albumSelect.appendChild(o);
-    }
-    const customOpt = document.createElement("option");
-    customOpt.value = customSentinel;
-    customOpt.textContent = "Custom…";
-    albumSelect.appendChild(customOpt);
-    const inpAl = document.createElement("input");
-    inpAl.type = "text";
-    inpAl.className = "oobe-input";
-    inpAl.placeholder = "Type album / series";
-    inpAl.maxLength = 120;
-    inpAl.value = it.libraryAlbum || "";
-    const hasExisting = it.libraryAlbum && existingAlbums.includes(it.libraryAlbum);
-    albumSelect.value = hasExisting ? it.libraryAlbum : it.libraryAlbum ? customSentinel : "";
-    inpAl.classList.toggle("hidden", albumSelect.value !== customSentinel);
-    let albumTimer;
-    const commitAlbum = (v) => {
-      clearTimeout(albumTimer);
-      albumTimer = setTimeout(async () => {
-        const val = String(v || "").trim();
-        const ok = await applyDashboardItemUpdate(it, { libraryAlbum: val || null });
-        if (ok) it.libraryAlbum = val || null;
-      }, 450);
-    };
-    albumSelect.addEventListener("change", () => {
-      const isCustom = albumSelect.value === customSentinel;
-      inpAl.classList.toggle("hidden", !isCustom);
-      if (!isCustom) commitAlbum(albumSelect.value);
-    });
-    inpAl.addEventListener("input", () => commitAlbum(inpAl.value));
-    rowAlbum.appendChild(labAl);
-    rowAlbum.appendChild(albumSelect);
-    rowAlbum.appendChild(inpAl);
-
-    const rowTags = document.createElement("div");
-    rowTags.className = "row tags-row";
-    const labTags = document.createElement("label");
-    labTags.textContent = "Tags";
-    const tagsHost = document.createElement("div");
-    tagsHost.className = "tag-chip-list";
-    const renderTagChips = (tags) => {
-      tagsHost.innerHTML = "";
-      const cleaned = (tags || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 6);
-      if (!cleaned.length) {
-        const m = document.createElement("span");
-        m.className = "ob-muted";
-        m.textContent = "No tags yet.";
-        tagsHost.appendChild(m);
-        return;
-      }
-      for (const tag of cleaned) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "tag-chip-link";
-        b.textContent = tag;
-        b.title = `Filter library by tag: ${tag}`;
-        b.addEventListener("click", () => {
-          searchEl.value = tag;
-          setActiveWindow("current");
-          render();
-        });
-        tagsHost.appendChild(b);
-      }
-    };
-    renderTagChips(it.tags || []);
-    ensureVideoTagsForItem(it, (tags) => {
-      renderTagChips(tags);
-      render();
-    });
-    rowTags.appendChild(labTags);
-    rowTags.appendChild(tagsHost);
-
-    const sug = document.createElement("div");
-    sug.className = "suggested";
-    const sugTags = it.suggestedTags?.length
-      ? it.suggestedTags.join(", ")
-      : "Suggested tags arrive in a later AI phase.";
-    sug.innerHTML = `<span>Suggested:</span> ${escapeHtml(sugTags)}`;
-
-    const rowWatchState = buildWatchStateRow(it, (ws) => {
-      const badge = titleRow.querySelector(".watch-state-badge");
-      if (badge && TS_WATCH) {
-        badge.textContent = TS_WATCH.watchStateLabel(ws);
-        badge.className = `watch-state-badge watch-state-badge--${ws}`;
-      }
-    });
-    rowWatchState.classList.add("card-details-field");
-    const watchLab = rowWatchState.querySelector("label");
-    if (watchLab) {
-      watchLab.textContent = "Watch";
-      watchLab.title = "Watch State";
-    }
-
-    detailsSide.appendChild(rowAlbum);
-    detailsSide.appendChild(rowTheme);
-    detailsSide.appendChild(rowWatchState);
-
-    main.appendChild(titleRow);
-    main.appendChild(meta);
-    main.appendChild(detailsSide);
-    main.appendChild(rowTags);
-    main.appendChild(sug);
-    main.appendChild(buildCardThumbNotesBlock(it));
-
-    detailsInner.appendChild(main);
-
-    thumbCol.appendChild(rowCat);
-
-    card.appendChild(pick);
-    card.appendChild(thumbCol);
-    card.appendChild(detailsInner);
-    grid.appendChild(card);
+    frag.appendChild(renderDetailsCard(it, existingAlbums));
   }
-  renderLatestImportPanel();
-  renderSubscriptionDirectory();
+  grid.replaceChildren(frag);
+  syncDashLoadMoreUi(list.length, shownList.length);
+  // Import triage + subscriptions are refreshed from loadState / their own actions — not every filter keystroke.
   if (activeWindow === "aiCategorize") updateAiCatScopeCount();
   btnDeleteLocalPlaylist?.classList.toggle("hidden", !getEditingPlaylistId());
   updateBulkCheckButtons();
@@ -3748,11 +4057,11 @@ function renderPlaylistPackOutput(q, budgetMinutes, estimatedSeconds) {
 
   openFirst.addEventListener("click", () => {
     if (!q[0]) return;
-    chrome.tabs.create({ url: buildOpenUrl(q[0]), active: true });
+    openItemOnYouTube(q[0], { active: true });
   });
   openAll.addEventListener("click", () => {
     q.slice(0, 8).forEach((it, i) => {
-      chrome.tabs.create({ url: buildOpenUrl(it), active: i === 0 });
+      openItemOnYouTube(it, { active: i === 0 });
     });
   });
 }
@@ -3766,6 +4075,8 @@ function defaultLocalPlaylistName() {
 }
 
 function snapshotPlaylistItem(it) {
+  // Keep snapshots lean — export/UI merge rich fields from the library item.
+  const tags = Array.isArray(it.tags) ? it.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 6) : [];
   return {
     videoId: it.videoId,
     url: it.url,
@@ -3776,11 +4087,138 @@ function snapshotPlaylistItem(it) {
     timestampSec: it.timestampSec,
     category: it.category,
     themeId: it.themeId,
+    granularGenre: it.granularGenre || "",
+    watchState: itemWatchState(it),
+    priority: normalizeItemPriority(it.priority),
     libraryAlbum: it.libraryAlbum || "",
-    tags: Array.isArray(it.tags) ? [...it.tags] : [],
-    notes: it.notes || "",
+    tags,
     savedAt: it.savedAt,
   };
+}
+
+function truncateWords(value, maxWords = 50) {
+  const words = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.slice(0, Math.max(0, maxWords)).join(" ");
+}
+
+function playlistExportFilename(name) {
+  const base = String(name || "tubestack-playlist")
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/\s+/g, " ")
+    .slice(0, 120)
+    .trim();
+  return `${base || "tubestack-playlist"}.json`;
+}
+
+function buildPlaylistJsonExport(pl) {
+  const libraryByVideoId = new Map();
+  for (const item of allItems) {
+    const videoId = itemVideoId(item);
+    if (videoId && !libraryByVideoId.has(videoId)) libraryByVideoId.set(videoId, item);
+  }
+
+  const videos = [];
+  const seen = new Set();
+  for (const snap of pl?.items || []) {
+    const videoId = itemVideoId(snap);
+    const key = videoId || String(snap?.url || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const libraryItem = videoId ? libraryByVideoId.get(videoId) : null;
+    const item = {
+      ...snap,
+      ...mergeLibraryWithSnapshot(libraryItem, snap),
+    };
+    const progress = videoId ? videoProgress[videoId] || {} : {};
+    const durationSec = Number(item.durationSec ?? progress.durationSec);
+    const playheadSec = Number(progress.playheadSec ?? item.timestampSec);
+    const totalWatchedSec = Number(progress.totalWatchedSec);
+    const hasDuration = Number.isFinite(durationSec) && durationSec >= 0;
+    const hasPlayhead = Number.isFinite(playheadSec) && playheadSec >= 0;
+    const hasWatched = Number.isFinite(totalWatchedSec) && totalWatchedSec >= 0;
+    const watchState = itemWatchState(item);
+    const theme = themeLabelForItem(item);
+
+    videos.push({
+      position: videos.length + 1,
+      videoId: videoId || null,
+      title: pickDisplayTitle(item.title),
+      creator: String(item.channel || "Unknown creator"),
+      url: String(item.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : "")),
+      length: {
+        seconds: hasDuration ? Math.floor(durationSec) : null,
+        display: hasDuration ? formatDuration(durationSec) : null,
+      },
+      watchStatus: {
+        id: watchState,
+        label: TS_WATCH ? TS_WATCH.watchStateLabel(watchState) : watchState,
+      },
+      description: truncateWords(item.description, 50),
+      tags: [...new Set([...(item.tags || []), ...(item.suggestedTags || [])].map((tag) => String(tag).trim()).filter(Boolean))],
+      category: {
+        listId: item.category || "watch_later",
+        listLabel: LIST_LABELS[item.category] || item.category || "Watch later",
+        themeId: item.themeId || null,
+        theme: theme || null,
+        niche: item.granularGenre || null,
+        album: item.libraryAlbum || item.playlistName || null,
+      },
+      priority: normalizeItemPriority(item.priority),
+      thumbnail: item.thumbnail || null,
+      publishedAt: item.publishedAt || null,
+      youtubeCategoryId: item.youtubeCategoryId || null,
+      savedAt: item.savedAt || null,
+      notes: String(item.note || item.notes || ""),
+      progress: {
+        playheadSeconds: hasPlayhead ? Math.floor(playheadSec) : null,
+        totalWatchedSeconds: hasWatched ? Math.floor(totalWatchedSec) : null,
+        completionPercent:
+          hasDuration && durationSec > 0 && (hasWatched || hasPlayhead)
+            ? Math.min(100, Math.round(((hasWatched ? totalWatchedSec : playheadSec) / durationSec) * 100))
+            : null,
+      },
+    });
+  }
+
+  return {
+    schema: "tubestack.playlist",
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    playlist: {
+      id: pl?.id || null,
+      title: String(pl?.name || "Untitled playlist"),
+      createdAt: pl?.createdAt || null,
+      source: pl?.playlistSource || "session",
+      youtubePlaylistId: pl?.youtubePlaylistId || null,
+      videoCount: videos.length,
+      summary: pl?.smartSummary || null,
+      stackNote: pl?.stackNote || "",
+      researchSummary: pl?.researchSummary || "",
+    },
+    videos,
+  };
+}
+
+function exportPlaylistAsJson(pl) {
+  if (!pl) {
+    alert("Playlist not found.");
+    return;
+  }
+  const data = buildPlaylistJsonExport(pl);
+  const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = playlistExportFilename(pl.name);
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 function getDragPlaylistItemIds(primaryId) {
@@ -3791,7 +4229,7 @@ function getDragPlaylistItemIds(primaryId) {
 function getDraggedPlaylistSnapshots() {
   const ids = [...new Set(draggingPlaylistItemIds || [])];
   return ids
-    .map((id) => allItems.find((it) => it.id === id))
+    .map((id) => itemsById.get(id))
     .filter(Boolean)
     .map(snapshotPlaylistItem);
 }
@@ -3964,6 +4402,11 @@ function buildLocalPlaylistRow(pl) {
     imp.className = "local-pl-badge local-pl-badge--import";
     imp.textContent = "YouTube import";
     badges.appendChild(imp);
+  } else if (pl.playlistSource === "pasted_url") {
+    const imp = document.createElement("span");
+    imp.className = "local-pl-badge local-pl-badge--import";
+    imp.textContent = "Pasted playlist";
+    badges.appendChild(imp);
   }
   if (pl.id === activeLocalPlaylistId) {
     const cur = document.createElement("span");
@@ -4019,6 +4462,12 @@ function buildLocalPlaylistRow(pl) {
   btnView.textContent = "View";
   btnView.dataset.action = "view";
   btnView.title = "Open this list in the library (playlist view)";
+  const btnJson = document.createElement("button");
+  btnJson.type = "button";
+  btnJson.className = "btn small";
+  btnJson.textContent = "Export JSON";
+  btnJson.dataset.action = "export-json";
+  btnJson.title = "Download this playlist and its video metadata as JSON";
   const btnRen = document.createElement("button");
   btnRen.type = "button";
   btnRen.className = "btn small ghost";
@@ -4031,6 +4480,7 @@ function buildLocalPlaylistRow(pl) {
   btnDel.dataset.action = "delete";
   actions.appendChild(btnSession);
   actions.appendChild(btnView);
+  actions.appendChild(btnJson);
   actions.appendChild(btnRen);
   actions.appendChild(btnDel);
 
@@ -4459,6 +4909,12 @@ function setupWindowLayout() {
   top.appendChild(topActions);
   shell.appendChild(top);
 
+  const playlistSearchStatus = document.createElement("p");
+  playlistSearchStatus.id = "playlistSearchStatus";
+  playlistSearchStatus.className = "playlist-search-status hidden";
+  playlistSearchStatus.setAttribute("role", "status");
+  shell.appendChild(playlistSearchStatus);
+
   const viewPanel = document.createElement("div");
   viewPanel.className = "compact-panel compact-view-panel hidden";
   viewPanel.id = "compactViewPanel";
@@ -4848,19 +5304,33 @@ bindYtPlaylistImportModalOnce();
 let searchTimer;
 searchEl.addEventListener("input", () => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => render(), 120);
+  searchTimer = setTimeout(() => {
+    resetDashRenderLimit();
+    render();
+  }, 120);
 });
-filterCategory.addEventListener("change", () => render());
-document.getElementById("filterWatchState")?.addEventListener("change", (e) => {
-  filterWatchStateValue = e.target.value || "";
+filterCategory.addEventListener("change", () => {
+  resetDashRenderLimit();
   render();
 });
-filterItemCategory?.addEventListener("change", () => render());
-quickSort.addEventListener("change", () => render());
+document.getElementById("filterWatchState")?.addEventListener("change", (e) => {
+  filterWatchStateValue = e.target.value || "";
+  resetDashRenderLimit();
+  render();
+});
+filterItemCategory?.addEventListener("change", () => {
+  resetDashRenderLimit();
+  render();
+});
+quickSort.addEventListener("change", () => {
+  resetDashRenderLimit();
+  render();
+});
 viewModeEl?.addEventListener("change", () => {
   viewMode = viewModeEl.value || "details";
   localStorage.setItem("ts_view_mode", viewMode);
   applyViewControlsUi();
+  resetDashRenderLimit();
   render();
 });
 gridSizeEl?.addEventListener("input", () => {
@@ -4869,7 +5339,17 @@ gridSizeEl?.addEventListener("input", () => {
   applyViewControlsUi();
   render();
 });
-searchEl.addEventListener("search", () => render());
+searchEl.addEventListener("search", () => {
+  resetDashRenderLimit();
+  render();
+});
+document.getElementById("btnDashLoadMore")?.addEventListener("click", () => {
+  dashRenderLimit += DASH_PAGE_SIZE;
+  render();
+});
+document.getElementById("btnSavePlaylistSearch")?.addEventListener("click", () => {
+  void savePlaylistSearchAsNew();
+});
 sidebarCurrentPlaylistLink?.addEventListener("click", () => {
   if (activeLocalPlaylistId) {
     activatePlaylistView(activeLocalPlaylistId, { replaceUrl: true });
@@ -4877,6 +5357,7 @@ sidebarCurrentPlaylistLink?.addEventListener("click", () => {
     playlistViewVideoIds = null;
     playlistViewMeta = null;
     history.replaceState({}, "", "dashboard.html");
+    resetDashRenderLimit();
     render();
   }
   setActiveWindow("current");
@@ -5205,6 +5686,56 @@ document.getElementById("btnImportYoutubePlaylists")?.addEventListener("click", 
   }
 });
 
+async function addPastedYoutubePlaylist() {
+  const input = document.getElementById("playlistPasteUrl");
+  const button = document.getElementById("btnAddPastedPlaylist");
+  const status = document.getElementById("playlistPasteStatus");
+  const url = String(input?.value || "").trim();
+  if (!url) {
+    if (status) status.textContent = "Paste a YouTube playlist URL first.";
+    input?.focus();
+    return;
+  }
+  if (button) button.disabled = true;
+  if (input) input.disabled = true;
+  if (status) {
+    status.classList.remove("success");
+    status.textContent = "Loading playlist metadata and videos…";
+  }
+  try {
+    const r = await send("TUBESTACK_IMPORT_YOUTUBE_PLAYLIST_URL", { url });
+    if (!r?.ok) {
+      if (status) status.textContent = r?.message || r?.error || "Could not add playlist.";
+      return;
+    }
+    await loadState();
+    if (input) input.value = "";
+    if (status) {
+      status.classList.add("success");
+      status.textContent = r.message || `Added “${r.playlistTitle || "playlist"}”.`;
+    }
+  } finally {
+    if (button) button.disabled = false;
+    if (input) input.disabled = false;
+  }
+}
+
+document.getElementById("btnAddPastedPlaylist")?.addEventListener("click", () => {
+  void addPastedYoutubePlaylist();
+});
+
+document.getElementById("playlistPasteUrl")?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  void addPastedYoutubePlaylist();
+});
+
+btnExportPlaylistJson?.addEventListener("click", () => {
+  const playlistId = getEditingPlaylistId();
+  const pl = localPlaylists.find((item) => item.id === playlistId);
+  exportPlaylistAsJson(pl);
+});
+
 btnExportYouTube?.addEventListener("click", () => {
   openYtExportModal();
 });
@@ -5313,6 +5844,9 @@ async function handlePlaylistListClick(e, listRoot) {
   } else if (action === "view") {
     activatePlaylistView(id, { replaceUrl: true });
     setActiveWindow("current");
+  } else if (action === "export-json") {
+    const pl = localPlaylists.find((x) => x.id === id);
+    exportPlaylistAsJson(pl);
   } else if (action === "toggle-yt") {
     const panel = row.querySelector(".local-pl-yt-panel");
     if (!panel) return;
@@ -5525,7 +6059,30 @@ btnBuildPlaylist.addEventListener("click", async () => {
   renderPlaylistPackOutput(qSynced, budgetMinutes, r.estimatedSeconds);
 });
 
-document.getElementById("obNext0").addEventListener("click", () => showObStep(1));
+const obPrivacyConsent = document.getElementById("obPrivacyConsent");
+const obNext0 = document.getElementById("obNext0");
+
+function syncObPrivacyNextEnabled() {
+  if (!obNext0) return;
+  obNext0.disabled = !(obPrivacyConsent?.checked === true);
+}
+
+obPrivacyConsent?.addEventListener("change", syncObPrivacyNextEnabled);
+syncObPrivacyNextEnabled();
+
+obNext0?.addEventListener("click", async () => {
+  if (obPrivacyConsent?.checked !== true) {
+    syncObPrivacyNextEnabled();
+    return;
+  }
+  const r = await send("TUBESTACK_ACCEPT_PRIVACY_CONSENT");
+  if (!r?.ok) {
+    alert(r?.message || r?.error || "Could not save privacy consent. Try again.");
+    return;
+  }
+  settings.privacyConsentAccepted = true;
+  showObStep(1);
+});
 
 document.getElementById("obOpenSetupGuide")?.addEventListener("click", () => {
   const url = chrome.runtime.getURL("dashboard/setup-guide.html");
@@ -6197,13 +6754,32 @@ async function bootDashboard() {
   }
 }
 
-/** When playlists or settings change in another tab/page, stay in sync without a full reload. */
-async function syncDashboardFromExtensionStorage() {
-  const r = await send("TUBESTACK_GET_STATE");
-  if (!r?.ok) return;
-  settings = r.settings || {};
+/** When playlists or settings change in another tab/page, stay in sync without a full library reload. */
+async function syncDashboardFromExtensionStorage(changes = null) {
+  // Prefer the storage event payload — avoids re-serializing the whole library.
+  if (changes?.localPlaylists?.newValue && Array.isArray(changes.localPlaylists.newValue)) {
+    localPlaylists = changes.localPlaylists.newValue;
+  }
+  if (changes?.settings?.newValue && typeof changes.settings.newValue === "object") {
+    settings = { ...settings, ...changes.settings.newValue };
+    // Never keep raw secrets from storage events in the UI object if present.
+    delete settings.youtubeDataApiKey;
+    delete settings.openaiApiKey;
+  }
+
+  const needFetch =
+    !changes ||
+    (changes.localPlaylists && !Array.isArray(changes.localPlaylists.newValue)) ||
+    (changes.settings && typeof changes.settings.newValue !== "object");
+
+  if (needFetch) {
+    const r = await send("TUBESTACK_GET_HOME_STATE");
+    if (!r?.ok) return;
+    settings = r.settings || settings;
+    localPlaylists = Array.isArray(r.localPlaylists) ? r.localPlaylists : localPlaylists;
+  }
+
   globalThis.TUBESTACK_UI_THEMES?.applyUiTheme(settings.uiThemePreset);
-  localPlaylists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
   if (settings.currentPlaylistName) currentPlaylistName = settings.currentPlaylistName;
   const savedCtxId = String(settings.currentPlaylistId || "").trim();
   if (savedCtxId && localPlaylists.some((x) => x.id === savedCtxId)) activeLocalPlaylistId = savedCtxId;
@@ -6215,10 +6791,18 @@ async function syncDashboardFromExtensionStorage() {
   render();
 }
 
+let dashStorageSyncTimer;
+let dashPendingStorageChanges = null;
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   if (!changes.localPlaylists && !changes.settings) return;
-  void syncDashboardFromExtensionStorage();
+  dashPendingStorageChanges = { ...(dashPendingStorageChanges || {}), ...changes };
+  clearTimeout(dashStorageSyncTimer);
+  dashStorageSyncTimer = setTimeout(() => {
+    const batched = dashPendingStorageChanges;
+    dashPendingStorageChanges = null;
+    void syncDashboardFromExtensionStorage(batched);
+  }, 160);
 });
 
 void bootDashboard();

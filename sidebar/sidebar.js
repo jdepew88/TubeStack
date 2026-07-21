@@ -167,14 +167,11 @@ async function applyRowReorder(dragId, targetId) {
 }
 
 async function loadState() {
-  const [state, itemsRes] = await Promise.all([
-    send("TUBESTACK_GET_STATE"),
-    send("TUBESTACK_GET_ITEMS"),
-  ]);
+  const state = await send("TUBESTACK_GET_SIDEBAR_STATE");
   playlists = Array.isArray(state?.localPlaylists) ? state.localPlaylists : [];
   settingsCurrentPlaylistId = String(state?.settings?.currentPlaylistId || "").trim() || null;
 
-  const items = Array.isArray(itemsRes?.items) ? itemsRes.items : [];
+  const items = Array.isArray(state?.items) ? state.items : [];
   libraryByVideoId = new Map();
   for (const it of items) {
     const vid = String(it.videoId || "").trim();

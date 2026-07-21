@@ -106,6 +106,8 @@ TubeStack supports:
 - Long-term archives
 - Topic-based collections
 - YouTube playlist importing/exporting
+- One-step local playlist creation by pasting a YouTube playlist URL
+- JSON playlist exports with title, creator, URL, duration, Watch State, brief description, tags, categories, and progress
 
 TubeStack organizes videos using:
 
@@ -255,15 +257,15 @@ Pin it to the right of the address bar by selecting the puzzle piece and pinning
 
 ## Privacy
 
-TubeStack is **local-first**: saved videos, playlists, organization data, locally tracked watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server.
+TubeStack is **local-first**: saved videos, playlists, organization data, locally tracked watch progress, and most settings live in **your browser’s extension storage**, not on a TubeStack server. The **`unlimitedStorage`** permission only raises that local quota.
 
-TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. TubeStack can **locally record playback progress** for YouTube videos watched in YouTube `/watch` tabs while the extension is installed (best-effort on Shorts), so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` per video and `watchByDay` for daily totals).
+TubeStack does **not** request Chrome History permission and does **not** scan unrelated browsing history. After you accept the in-product privacy notice, TubeStack can **locally record playback progress** for YouTube videos watched in YouTube `/watch` tabs while the extension is installed (best-effort on Shorts), so it can preserve resume position, estimate remaining time, and build Focused Playlists. This playback progress is stored locally in Chrome extension storage (`videoProgress` per video and `watchByDay` for daily totals).
 
 - Progress is observed on **YouTube `/watch` pages** via `content/youtube-progress.js` (heartbeats to the service worker); on Shorts, progress is best-effort. Progress may also be **captured when you save tabs** from the open player or URL timestamp.
 - **Does not request** the Chrome **History**, **`tabs`**, or **`windows`** permissions (YouTube tab access is limited by YouTube host permissions).
 - **YouTube API keys**, **OAuth client/session data**, and **OpenAI API keys** you provide are stored **locally on your device**.
 - **Google** and **OpenAI** are contacted **only when you enable and use** those optional features; requests go **directly** from the extension to those services (not through a TubeStack backend).
-- TubeStack **does not sell** your data. You can **delete stored data** from Settings in the extension or by removing the extension.
+- TubeStack **does not sell** your data and complies with Chrome Web Store **Limited Use** requirements (see the privacy policy). You can **delete stored data** from Settings in the extension or by removing the extension.
 
 **[Full privacy policy →](docs/PRIVACY.md)** · **[Permissions & CWS justifications →](docs/PERMISSIONS.md)**
 

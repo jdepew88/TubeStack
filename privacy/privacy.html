@@ -132,11 +132,32 @@
 
     <main>
       <h1>TubeStack Privacy Policy</h1>
-      <p class="meta"><strong>Last updated:</strong> May 2026</p>
+      <p class="meta"><strong>Last updated:</strong> July 2026</p>
 
       <p>
         This policy describes how the <strong>TubeStack</strong> Chrome Extension handles information when you use it.
         TubeStack is <strong>not affiliated with YouTube, Google, or OpenAI.</strong>
+      </p>
+
+      <h2>Chrome Web Store Limited Use disclosure</h2>
+      <p>
+        TubeStack&rsquo;s use of information received from Google APIs and of user data handled in the extension
+        complies with the
+        <a href="https://developer.chrome.com/docs/webstore/program-policies/user-data-faq"
+          >Chrome Web Store User Data Policy</a
+        >, including the Limited Use requirements. TubeStack uses permissions and data only to provide or improve its
+        single purpose&mdash;saving, organizing, and reopening YouTube watch and Shorts tabs in a local library. TubeStack
+        does <strong>not</strong> sell user data, does <strong>not</strong> use user data for personalized or
+        interest-based advertising, and does <strong>not</strong> transfer user data to third parties except when
+        <strong>you</strong> explicitly use optional Google or OpenAI features (requests go directly to those services),
+        or when required by law or for security.
+      </p>
+
+      <h2>In-product consent</h2>
+      <p>
+        Before TubeStack saves YouTube tabs or records local watch progress, you must accept a short privacy notice in
+        the extension popup or setup wizard. That notice summarizes local storage of library data and progress on this
+        device. You can review this full policy at any time from the popup or Settings.
       </p>
 
       <h2>Local-first design</h2>
@@ -144,7 +165,8 @@
         TubeStack is local-first. Most of what you see in TubeStack, including saved tabs, playlists, categories, tags,
         notes, and locally tracked watch progress, is stored <strong>locally in your browser</strong> using Chrome
         extension storage (<code>chrome.storage.local</code>), not on a TubeStack-owned server. TubeStack has no central
-        backend that collects your library or credentials.
+        backend that collects your library or credentials. The <code>unlimitedStorage</code> permission raises the local
+        storage quota so larger libraries can stay on your device.
       </p>
 
       <h2>What is stored on your device</h2>
@@ -207,9 +229,9 @@
       <h2>Permissions and page access</h2>
       <p>
         TubeStack declares <code>contextMenus</code>, <code>identity</code>, <code>scripting</code>,
-        <code>sidePanel</code>, and <code>storage</code>, plus YouTube host permissions. Google APIs and OpenAI are
-        optional runtime host permissions. TubeStack does <strong>not</strong> request Chrome History, the broad
-        <code>tabs</code> permission, <code>windows</code>, or <code>&lt;all_urls&gt;</code>.
+        <code>sidePanel</code>, <code>storage</code>, and <code>unlimitedStorage</code>, plus YouTube host permissions.
+        Google APIs and OpenAI are optional runtime host permissions. TubeStack does <strong>not</strong> request Chrome
+        History, the broad <code>tabs</code> permission, <code>windows</code>, or <code>&lt;all_urls&gt;</code>.
       </p>
       <p>
         Content scripts run on YouTube watch and Shorts pages (metadata on save; local progress on open tabs — full on

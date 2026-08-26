@@ -24,6 +24,130 @@ const storageCache = {
   localPlaylists: null,
 };
 
+/**
+ * Serializes every read-modify-write cycle over the library blobs (`items`, `localPlaylists`,
+ * `settings`, `videoProgress`). Those helpers persist whole arrays, so two overlapping operations
+ * would otherwise silently clobber each other — that is how saved tabs used to vanish while the
+ * background metadata repair pass was still holding a pre-save snapshot. One lock key covers all
+ * library blobs so no caller can deadlock by needing two of them.
+ */
+const LIBRARY_LOCK = "library";
+const storageLocks = new Map();
+
+function withStorageLock(key, fn) {
+  const prev = storageLocks.get(key) || Promise.resolve();
+  const run = prev.then(
+    () => fn(),
+    () => fn()
+  );
+  storageLocks.set(
+    key,
+    run.then(
+      () => {},
+      () => {}
+    )
+  );
+  return run;
+}
+
+/**
+ * Save-and-close operation records.
+ *
+ * The save flow persists a record *before* it closes any tab, so a teardown of the popup, the side
+ * panel, the window, or the service worker itself can never leave tabs closed with no trace of what
+ * was supposed to happen. Reopening TubeStack resumes or reports the record instead of starting a
+ * fresh save. A record is never treated as permission to close anything: `resumeSaveOperations`
+ * always re-verifies against current storage first.
+ */
+const SAVE_OPS_KEY = "saveOperations";
+const SAVE_OP_STATE = {
+  PENDING: "pending",
+  PERSISTED: "persisted",
+  VERIFIED: "verified",
+  COMPLETED: "completed",
+  FAILED: "failed",
+};
+const SAVE_OP_TERMINAL = new Set([SAVE_OP_STATE.COMPLETED, SAVE_OP_STATE.FAILED]);
+/** Finished records stay readable this long so a reopened popup/sidebar can still show the outcome. */
+const SAVE_OP_DONE_TTL_MS = 30 * 60 * 1000;
+/** An unfinished record older than this is abandoned: re-verify, then close it out. */
+const SAVE_OP_ACTIVE_TTL_MS = 10 * 60 * 1000;
+const SAVE_OP_MAX_RECORDS = 20;
+
+async function readSaveOps() {
+  const bag = await chrome.storage.local.get(SAVE_OPS_KEY);
+  const rows = bag?.[SAVE_OPS_KEY];
+  return Array.isArray(rows) ? rows.filter((r) => r && typeof r === "object" && r.id) : [];
+}
+
+function pruneSaveOps(rows, nowMs) {
+  const kept = rows.filter((r) => {
+    const age = nowMs - (Date.parse(r.updatedAt || r.createdAt || "") || 0);
+    const ttl = SAVE_OP_TERMINAL.has(r.state) ? SAVE_OP_DONE_TTL_MS : SAVE_OP_ACTIVE_TTL_MS * 4;
+    return age <= ttl;
+  });
+  kept.sort(
+    (a, b) =>
+      (Date.parse(b.updatedAt || b.createdAt || "") || 0) -
+      (Date.parse(a.updatedAt || a.createdAt || "") || 0)
+  );
+  return kept.slice(0, SAVE_OP_MAX_RECORDS);
+}
+
+/** Caller must already hold the library lock. */
+async function writeSaveOpUnlocked(rows, record) {
+  const now = new Date();
+  const next = { ...record, updatedAt: now.toISOString() };
+  const rest = rows.filter((r) => r.id !== next.id);
+  await chrome.storage.local.set({
+    [SAVE_OPS_KEY]: pruneSaveOps([next, ...rest], now.getTime()),
+  });
+  return next;
+}
+
+/** Write one record under the library lock; prunes expired records on the way through. */
+async function putSaveOp(record) {
+  return withStorageLock(LIBRARY_LOCK, async () =>
+    writeSaveOpUnlocked(await readSaveOps(), record)
+  );
+}
+
+async function dropSaveOp(operationId) {
+  const id = String(operationId || "").trim();
+  if (!id) return;
+  await withStorageLock(LIBRARY_LOCK, async () => {
+    const rows = await readSaveOps();
+    await chrome.storage.local.set({ [SAVE_OPS_KEY]: rows.filter((r) => r.id !== id) });
+  });
+}
+
+/**
+ * Reserves the right to run a save, atomically. Reading "is another save in flight?" and writing the
+ * new record have to happen in one critical section — checking first and writing after let two rapid
+ * clicks both see an empty list and each create a playlist.
+ */
+async function claimSaveOperation(record) {
+  return withStorageLock(LIBRARY_LOCK, async () => {
+    const rows = await readSaveOps();
+    const nowMs = Date.now();
+    const inFlight = rows.find(
+      (r) =>
+        r.id !== record.id &&
+        !SAVE_OP_TERMINAL.has(r.state) &&
+        nowMs - (Date.parse(r.updatedAt || r.createdAt || "") || 0) < SAVE_OP_IN_FLIGHT_MS
+    );
+    if (inFlight) return { claimed: false, inFlight };
+    return { claimed: true, record: await writeSaveOpUnlocked(rows, record) };
+  });
+}
+
+async function getSaveOp(operationId) {
+  const id = String(operationId || "").trim();
+  if (!id) return null;
+  const rows = await readSaveOps();
+  return rows.find((r) => r.id === id) || null;
+}
+
 const SEED_THEMES = [
   { label: "Gaming", keywords: ["gaming", "gameplay", "gamer", "speedrun", "esports", "walkthrough", "lets play"] },
   { label: "Emulation", keywords: ["emulator", "emulation", "retroarch", "dolphin", "pcsx2", "cemu", "rom hack", "mame"] },
@@ -132,22 +256,24 @@ function tubestackFail(err) {
   return { ok: false, error: tubestackSafeErrorMessage(err) };
 }
 
-async function saveYouTubeTabsAsNewPlaylistAndOpen(mode) {
-  const r = await saveYouTubeTabsByMode(mode);
-  if (!r?.ok || !r.savedCount) return { ok: false, error: r?.error || "nothing_to_save", savedCount: 0 };
-  const savePl = await saveLocalPlaylistEntry({
-    name: "",
-    items: r.saved,
-    playlistSource: "session",
+/**
+ * Context-menu entry point. Delegates to the one atomic save operation, so the ordering guarantee
+ * (persist -> verify -> close) and the resumable record apply here exactly as they do in the popup
+ * and the side panel.
+ */
+async function saveYouTubeTabsAsNewPlaylistAndOpen(mode, options = {}) {
+  const r = await saveYouTubeTabsAndAttach({
+    mode,
+    operationId: options.operationId,
+    target: { kind: "new" },
   });
-  if (!savePl?.ok || !savePl.playlistId) {
-    return { ok: false, error: savePl?.error || "playlist_save_failed", savedCount: r.savedCount };
+  if (r?.playlistId) {
+    const url = chrome.runtime.getURL(
+      `dashboard/dashboard.html?playlist=${encodeURIComponent(r.playlistId)}`
+    );
+    await chrome.tabs.create({ url, active: true });
   }
-  const url = chrome.runtime.getURL(
-    `dashboard/dashboard.html?playlist=${encodeURIComponent(savePl.playlistId)}`
-  );
-  await chrome.tabs.create({ url, active: true });
-  return { ok: true, savedCount: r.savedCount, playlistId: savePl.playlistId };
+  return r;
 }
 
 async function ensureOptionalHostOrigins(origins) {
@@ -338,7 +464,7 @@ async function fetchYouTubeOembedMetadata(videoId, pageUrl) {
     try {
       const res = await fetch(
         `https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`,
-        { method: "GET" }
+        { method: "GET", signal: AbortSignal.timeout(OEMBED_TIMEOUT_MS) }
       );
       if (!res.ok) continue;
       const json = await res.json();
@@ -390,51 +516,130 @@ function itemNeedsMetadataRepair(it) {
   return isWeakYouTubeTitle(it.title) || !effectiveVideoThumbnail(it.thumbnail, vid);
 }
 
-async function repairWeakStoredVideoMetadata() {
-  const items = await loadItems({ force: true });
-  const lists = await loadLocalPlaylists({ force: true });
-  const repairByVid = new Map();
+/**
+ * Repairs videos stored with a placeholder title (a tab that still read "YouTube" when it was
+ * saved) by asking YouTube's oembed endpoint for the real one.
+ *
+ * Two things here are load-bearing for reliability:
+ *  1. It applies a *merge patch* to a fresh read under the library lock. It used to snapshot the
+ *     whole `items`/`localPlaylists` arrays, spend seconds on network calls, then write the stale
+ *     snapshot back — silently reverting any save that landed in between (closed tabs, lost videos).
+ *  2. It tracks per-video attempts, so a video whose metadata can never be fetched (private,
+ *     deleted, age-restricted, region-blocked) stops re-arming the pass on every worker wakeup.
+ */
+const OEMBED_TIMEOUT_MS = 6000;
+const METADATA_REPAIR_STATE_KEY = "metadataRepairState";
+const METADATA_REPAIR_MAX_ATTEMPTS = 3;
+const METADATA_REPAIR_MAX_PER_PASS = 40;
 
+async function loadMetadataRepairState() {
+  const bag = await chrome.storage.local.get(METADATA_REPAIR_STATE_KEY);
+  const raw = bag?.[METADATA_REPAIR_STATE_KEY];
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+function applyMetadataPatch(obj, vid, patch) {
+  if (!obj || typeof obj !== "object") return false;
+  if (videoIdFromPlaylistItem(obj) !== vid) return false;
+  let changed = false;
+  if (patch.title && isWeakYouTubeTitle(obj.title)) {
+    obj.title = patch.title;
+    changed = true;
+  }
+  if (patch.thumbnail && !String(obj.thumbnail || "").trim()) {
+    obj.thumbnail = patch.thumbnail;
+    changed = true;
+  }
+  if (patch.channel && !obj.channel) {
+    obj.channel = patch.channel;
+    changed = true;
+  }
+  if (!obj.videoId) {
+    obj.videoId = vid;
+    changed = true;
+  }
+  return changed;
+}
+
+async function repairWeakStoredVideoMetadata() {
+  const [items, lists, repairState] = await Promise.all([
+    loadItems({ force: true }),
+    loadLocalPlaylists({ force: true }),
+    loadMetadataRepairState(),
+  ]);
+
+  /** videoId -> a sample row, used only to decide *what* to fetch. Never written back. */
+  const targets = new Map();
   const noteRepair = (obj) => {
     if (!obj || typeof obj !== "object") return;
     if (!itemNeedsMetadataRepair(obj)) return;
     const vid = videoIdFromPlaylistItem(obj);
-    if (!vid) return;
-    if (!repairByVid.has(vid)) {
-      repairByVid.set(vid, { url: String(obj.url || "").trim(), objs: [] });
-    }
-    repairByVid.get(vid).objs.push(obj);
+    if (!vid || targets.has(vid)) return;
+    const attempts = Number(repairState[vid]?.attempts) || 0;
+    if (attempts >= METADATA_REPAIR_MAX_ATTEMPTS) return;
+    targets.set(vid, { url: String(obj.url || "").trim(), sample: obj });
   };
 
   for (const it of items) noteRepair(it);
   for (const pl of lists) {
     for (const snap of pl.items || []) noteRepair(snap);
   }
-  if (!repairByVid.size) return;
+  if (!targets.size) return { ok: true, repaired: 0, attempted: 0 };
 
-  for (const [vid, bucket] of repairByVid) {
-    const sample = bucket.objs[0];
-    const enriched = await enrichVideoMetadata({
-      videoId: vid,
-      url: bucket.url || sample?.url,
-      title: sample?.title,
-      channel: sample?.channel,
-      thumbnail: sample?.thumbnail,
-      durationSec: sample?.durationSec,
-    });
-    for (const obj of bucket.objs) {
-      if (isWeakYouTubeTitle(obj.title) && enriched.title) obj.title = enriched.title;
-      if (!effectiveVideoThumbnail(obj.thumbnail, vid) && enriched.thumbnail) {
-        obj.thumbnail = enriched.thumbnail;
-      }
-      if (!obj.channel && enriched.channel) obj.channel = enriched.channel;
-      if (!obj.videoId) obj.videoId = vid;
+  const patches = new Map();
+  const nextState = { ...repairState };
+  let attempted = 0;
+  for (const [vid, bucket] of targets) {
+    if (attempted >= METADATA_REPAIR_MAX_PER_PASS) break;
+    attempted++;
+    const sample = bucket.sample;
+    let enriched = null;
+    try {
+      enriched = await enrichVideoMetadata({
+        videoId: vid,
+        url: bucket.url || sample?.url,
+        title: sample?.title,
+        channel: sample?.channel,
+        thumbnail: sample?.thumbnail,
+        durationSec: sample?.durationSec,
+      });
+    } catch (err) {
+      console.warn("[TubeStack] metadata repair fetch failed:", vid, tubestackSafeErrorMessage(err));
     }
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    const gotTitle = enriched?.title && !isWeakYouTubeTitle(enriched.title);
+    if (gotTitle || enriched?.thumbnail || enriched?.channel) {
+      patches.set(vid, {
+        title: gotTitle ? enriched.title : null,
+        thumbnail: enriched?.thumbnail || null,
+        channel: enriched?.channel || null,
+      });
+    }
+    nextState[vid] = {
+      attempts: (Number(repairState[vid]?.attempts) || 0) + (gotTitle ? 0 : 1),
+      lastAt: new Date().toISOString(),
+    };
   }
 
-  await saveItems(items);
-  await saveLocalPlaylists(lists);
+  // Apply as a patch onto a *fresh* read, inside the lock, so a concurrent save is never reverted.
+  const repaired = await withStorageLock(LIBRARY_LOCK, async () => {
+    const freshItems = await loadItems({ force: true });
+    const freshLists = await loadLocalPlaylists({ force: true });
+    let touched = 0;
+    for (const [vid, patch] of patches) {
+      for (const it of freshItems) if (applyMetadataPatch(it, vid, patch)) touched++;
+      for (const pl of freshLists) {
+        for (const snap of pl.items || []) if (applyMetadataPatch(snap, vid, patch)) touched++;
+      }
+    }
+    if (touched) {
+      await saveItems(freshItems);
+      await saveLocalPlaylists(freshLists);
+    }
+    await chrome.storage.local.set({ [METADATA_REPAIR_STATE_KEY]: nextState });
+    return touched;
+  });
+
+  return { ok: true, repaired, attempted };
 }
 
 function uuid() {
@@ -3374,12 +3579,19 @@ function buildItemFromTab(tab, meta) {
   return item;
 }
 
-async function saveYouTubeTabsByMode(mode, options = {}) {
+/**
+ * Enumerates the eligible YouTube tabs for `mode` and builds library rows for them.
+ *
+ * Pure with respect to persistence: it writes nothing and closes nothing. Tab closing lives in
+ * exactly one place (`closeVerifiedTabs`), reached only after a storage read-back has confirmed
+ * every video it is about to close.
+ */
+async function buildYouTubeTabSaveCandidates(mode, options = {}) {
   if (!SAVE_YT_TAB_MODES.has(mode)) {
-    return { ok: false, error: "invalid_mode", saved: [] };
+    return { ok: false, error: "invalid_mode", candidates: [] };
   }
   const { tabs, error, currentTabId } = await getYouTubeWatchTabsForMode(mode);
-  if (error) return { ok: false, error, saved: [] };
+  if (error) return { ok: false, error, candidates: [] };
 
   const excludeTabIds = new Set((options.excludeTabIds || []).map((id) => Number(id)).filter(Boolean));
   const excludeVideoIds = new Set(
@@ -3396,10 +3608,8 @@ async function saveYouTubeTabsByMode(mode, options = {}) {
 
   const importBatchId = uuid();
   const themes = await loadThemes();
-  const saved = [];
-  const tabIdsToClose = [];
-  const progressMap = await loadVideoProgress();
-  let progressDirty = false;
+  const candidates = [];
+  const progressPatches = [];
   let heldPlayback = false;
 
   for (const tab of ordered) {
@@ -3421,64 +3631,515 @@ async function saveYouTubeTabsByMode(mode, options = {}) {
     if (item.videoId) {
       const patch = progressPatchFromSaveMeta(item.videoId, meta);
       if (patch) {
-        progressMap[item.videoId] = mergeVideoProgressRecord(progressMap[item.videoId], {
-          ...patch,
-          deltaWatchSec: 0,
-        });
-        progressDirty = true;
-        if (patch.progressSource === "captured_on_save" && patch.playheadSec > 0) {
-          item.timestampSec = patch.playheadSec;
-        } else if (patch.progressSource === "url_timestamp" && patch.playheadSec > 0) {
+        progressPatches.push({ videoId: item.videoId, patch });
+        if (
+          (patch.progressSource === "captured_on_save" || patch.progressSource === "url_timestamp") &&
+          patch.playheadSec > 0
+        ) {
           item.timestampSec = patch.playheadSec;
         }
       }
     }
-    saved.push(item);
-    tabIdsToClose.push(tab.id);
+    candidates.push({ tabId: tab.id, videoId: item.videoId || null, item });
   }
 
-  if (progressDirty) await saveVideoProgress(progressMap);
+  return { ok: true, candidates, progressPatches, heldPlayback, importBatchId, mode };
+}
 
-  if (saved.length) {
-    const existing = await loadItems();
-    await saveItems([...saved, ...existing]);
-    await saveSettings({
-      latestImportBatchId: importBatchId,
-      latestImportAt: new Date().toISOString(),
-    });
+async function applyVideoProgressPatches(progressPatches) {
+  if (!progressPatches?.length) return;
+  const map = await loadVideoProgress();
+  for (const { videoId, patch } of progressPatches) {
+    map[videoId] = mergeVideoProgressRecord(map[videoId], { ...patch, deltaWatchSec: 0 });
   }
+  await saveVideoProgress(map);
+}
 
-  for (const id of tabIdsToClose) {
-    try {
-      await chrome.tabs.remove(id);
-    } catch {
-      /* */
-    }
+/**
+ * @deprecated Library-only save. Kept so a stale extension page cannot reach a code path that closes
+ * tabs without attaching them to a playlist. Closes nothing — use `saveYouTubeTabsAndAttach`.
+ */
+async function saveYouTubeTabsByMode(mode, options = {}) {
+  const built = await buildYouTubeTabSaveCandidates(mode, options);
+  if (!built.ok) return { ok: false, error: built.error, saved: [], savedCount: 0 };
+  if (!built.candidates.length) {
+    return {
+      ok: true,
+      savedCount: 0,
+      saved: [],
+      mode,
+      heldPlayback: built.heldPlayback,
+      closedTabIds: [],
+      deprecated: true,
+    };
   }
-
-  if (options.updateSidebarHold) {
-    const session = await loadSidebarPlayback();
-    if (session?.status === "playing") {
-      if (heldPlayback) {
-        session.pendingAddHold = {
-          tabId: session.activeTabId ?? null,
-          videoId: String(session.currentVideoId || "").trim() || null,
-        };
-      } else if (options.includeHeldPlayback && session.pendingAddHold) {
-        delete session.pendingAddHold;
-      }
-      session.updatedAt = new Date().toISOString();
-      await saveSidebarPlayback(session);
-    }
-  }
-
+  const saved = await withStorageLock(LIBRARY_LOCK, async () => {
+    const items = await loadItems({ force: true });
+    const known = new Set(items.map((it) => videoIdFromPlaylistItem(it)).filter(Boolean));
+    const additions = built.candidates
+      .map((c) => c.item)
+      .filter((it) => {
+        const vid = videoIdFromPlaylistItem(it);
+        if (vid && known.has(vid)) return false;
+        if (vid) known.add(vid);
+        return true;
+      });
+    if (additions.length) await saveItems([...additions, ...items]);
+    if (built.progressPatches.length) await applyVideoProgressPatches(built.progressPatches);
+    return built.candidates.map((c) => c.item);
+  });
   return {
     ok: true,
     savedCount: saved.length,
     saved,
     mode,
-    heldPlayback,
+    heldPlayback: built.heldPlayback,
+    closedTabIds: [],
+    deprecated: true,
   };
+}
+
+function saveOpEntrySnapshot(entry) {
+  return {
+    tabId: entry.tabId ?? null,
+    videoId: entry.videoId || null,
+    itemId: entry.itemId || null,
+    title: String(entry.title || "").slice(0, 300),
+    url: String(entry.url || "").slice(0, 500),
+  };
+}
+
+/** Client-facing payload for a record. Persisted on the record so a reopened UI can show it. */
+function buildSaveOpResult(record) {
+  const failures = record.failures || [];
+  return {
+    ok: record.state === SAVE_OP_STATE.COMPLETED && !failures.length,
+    partial: record.state === SAVE_OP_STATE.COMPLETED && failures.length > 0,
+    operationId: record.id,
+    state: record.state,
+    mode: record.mode,
+    error: record.error || null,
+    playlistId: record.playlistId || null,
+    playlistName: record.playlistName || null,
+    createdPlaylist: record.createdPlaylist === true,
+    savedCount: (record.entries || []).length,
+    confirmedCount: (record.confirmedVideoIds || []).length,
+    closedTabIds: record.closedTabIds || [],
+    keptOpenTabIds: record.keptOpenTabIds || [],
+    failures: failures.map((f) => ({
+      videoId: f.videoId || null,
+      title: String(f.title || "").slice(0, 300),
+      reason: f.reason || "unknown",
+    })),
+    heldPlayback: record.heldPlayback === true,
+    finishedAt: record.updatedAt || null,
+  };
+}
+
+/**
+ * Re-reads raw storage (never the in-memory cache) and reports which of a record's videos are
+ * genuinely present in the library *and* attached to the intended playlist. This is the gate on
+ * closing tabs; it runs both on the happy path and on every resume, so a stale record can never
+ * authorize a close on its own.
+ */
+async function verifySaveOperation(record) {
+  const bag = await chrome.storage.local.get(["items", "localPlaylists"]);
+  const items = Array.isArray(bag.items) ? bag.items : [];
+  const lists = Array.isArray(bag.localPlaylists) ? bag.localPlaylists : [];
+  const playlist = lists.find((x) => x && x.id === record.playlistId) || null;
+
+  const libraryIds = new Set(items.map((it) => videoIdFromPlaylistItem(it)).filter(Boolean));
+  const attachedIds = new Set(
+    (playlist?.items || []).map((s) => videoIdFromPlaylistItem(s)).filter(Boolean)
+  );
+
+  const confirmed = [];
+  const failures = [];
+  for (const entry of record.entries || []) {
+    const vid = entry.videoId;
+    if (!vid) failures.push({ ...entry, reason: "no_video_id" });
+    else if (!playlist) failures.push({ ...entry, reason: "playlist_missing" });
+    else if (!libraryIds.has(vid)) failures.push({ ...entry, reason: "library_row_missing" });
+    else if (!attachedIds.has(vid)) failures.push({ ...entry, reason: "not_attached_to_playlist" });
+    else confirmed.push(entry);
+  }
+  return { playlist, confirmed, failures };
+}
+
+/**
+ * The only place in TubeStack that closes a tab. Every entry handed here has already been confirmed
+ * present in storage and attached to the playlist. The tab's current URL is re-checked so a resumed
+ * operation cannot close a tab the user has since navigated elsewhere.
+ */
+async function closeVerifiedTabs(entries) {
+  const closedTabIds = [];
+  const failures = [];
+  for (const entry of entries) {
+    const tabId = entry.tabId;
+    if (!tabId) {
+      failures.push({ ...entry, reason: "missing_tab_id" });
+      continue;
+    }
+    let tab = null;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch {
+      // Already gone (user closed it, or an earlier run of this operation did). Nothing to do.
+      closedTabIds.push(tabId);
+      continue;
+    }
+    const liveVideoId = extractYouTubeVideoId(tab?.url || "");
+    if (entry.videoId && liveVideoId && liveVideoId !== entry.videoId) {
+      failures.push({ ...entry, reason: "tab_navigated_away" });
+      continue;
+    }
+    try {
+      await chrome.tabs.remove(tabId);
+      closedTabIds.push(tabId);
+    } catch (err) {
+      failures.push({ ...entry, reason: `tab_close_failed: ${tubestackSafeErrorMessage(err)}` });
+    }
+  }
+  return { closedTabIds, failures };
+}
+
+/** Verify -> close -> finalize. Shared by the happy path and by resume, so both behave identically. */
+async function finishSaveOperation(record) {
+  if (!record.playlistId) {
+    const failed = {
+      ...record,
+      state: SAVE_OP_STATE.FAILED,
+      error: record.error || "interrupted_before_persist",
+      closedTabIds: [],
+      keptOpenTabIds: (record.entries || []).map((e) => e.tabId).filter(Boolean),
+      failures: (record.entries || []).map((e) => ({ ...e, reason: "never_persisted" })),
+    };
+    failed.result = buildSaveOpResult(failed);
+    await putSaveOp(failed);
+    return failed.result;
+  }
+
+  const { playlist, confirmed, failures } = await verifySaveOperation(record);
+
+  const verified = await putSaveOp({
+    ...record,
+    state: SAVE_OP_STATE.VERIFIED,
+    playlistName: playlist?.name || record.playlistName || null,
+    confirmedVideoIds: confirmed.map((e) => e.videoId),
+  });
+
+  const closeResult = confirmed.length
+    ? await closeVerifiedTabs(confirmed)
+    : { closedTabIds: [], failures: [] };
+
+  const allFailures = [...failures, ...closeResult.failures];
+  const completed = {
+    ...verified,
+    state: SAVE_OP_STATE.COMPLETED,
+    closedTabIds: closeResult.closedTabIds,
+    keptOpenTabIds: allFailures.map((f) => f.tabId).filter(Boolean),
+    failures: allFailures.map((f) => ({ ...saveOpEntrySnapshot(f), reason: f.reason })),
+  };
+  completed.result = buildSaveOpResult(completed);
+  await putSaveOp(completed);
+
+  if (allFailures.length) {
+    console.warn(
+      "[TubeStack] save kept tabs open:",
+      allFailures.map((f) => `${f.videoId || "?"}:${f.reason}`).join(", ")
+    );
+  }
+
+  // Opportunistic, merge-patched, attempt-capped. Safe now that the save is finalized.
+  void repairWeakStoredVideoMetadata().catch((err) => {
+    console.error("[TubeStack] metadata repair error:", tubestackSafeErrorMessage(err));
+  });
+
+  return completed.result;
+}
+
+/** Resolve the playlist to attach to, creating it at the record's pre-planned id when needed. */
+function resolveSaveOpPlaylist(lists, record) {
+  const wantedId =
+    record.target?.kind === "existing" && record.target?.playlistId
+      ? String(record.target.playlistId)
+      : record.plannedPlaylistId;
+
+  let entry = lists.find((x) => x && x.id === wantedId) || null;
+  if (!entry && wantedId !== record.plannedPlaylistId) {
+    // Retry after the target queue was deleted — fall back to this operation's planned playlist.
+    entry = lists.find((x) => x && x.id === record.plannedPlaylistId) || null;
+  }
+  if (entry) return { entry, lists, created: false };
+
+  const created = {
+    id: record.plannedPlaylistId,
+    name: String(record.target?.name || "").trim().slice(0, 200) || defaultYtTabgroupPlaylistName(),
+    createdAt: new Date().toISOString(),
+    items: [],
+    kind: "static",
+    groupBy: null,
+    smartSummary: null,
+    stackNote: "",
+    researchSummary: "",
+    decisions: [],
+    playlistSource: "session",
+  };
+  return { entry: created, lists: [created, ...lists], created: true };
+}
+
+/**
+ * Writes the library rows and the playlist attachment in a single critical section, then reports the
+ * entries to verify. Re-running it for the same record is idempotent: library rows dedupe by video
+ * id and the playlist is looked up by the record's pre-planned id rather than created again.
+ */
+async function persistSaveOperation(record, built) {
+  return withStorageLock(LIBRARY_LOCK, async () => {
+    const items = await loadItems({ force: true });
+    const byVideoId = new Map();
+    for (const it of items) {
+      const vid = videoIdFromPlaylistItem(it);
+      if (vid && !byVideoId.has(vid)) byVideoId.set(vid, it);
+    }
+
+    const additions = [];
+    const attachRows = [];
+    for (const c of built.candidates) {
+      const vid = c.videoId || videoIdFromPlaylistItem(c.item);
+      const existing = vid ? byVideoId.get(vid) : null;
+      const row = existing || c.item;
+      if (!existing) {
+        additions.push(c.item);
+        if (vid) byVideoId.set(vid, c.item);
+      }
+      attachRows.push({ tabId: c.tabId, videoId: vid || null, row });
+    }
+    if (additions.length) await saveItems([...additions, ...items]);
+    if (built.progressPatches?.length) await applyVideoProgressPatches(built.progressPatches);
+
+    const lists = await loadLocalPlaylists({ force: true });
+    const resolved = resolveSaveOpPlaylist(lists, record);
+    const entry = resolved.entry;
+
+    const current = dedupePlaylistItems(Array.isArray(entry.items) ? entry.items : []);
+    const seen = new Set(current.map(playlistItemKey));
+    const batch = [];
+    for (const r of attachRows) {
+      const snap = normalizePlaylistItem(r.row);
+      if (!snap) continue;
+      const key = playlistItemKey(snap);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      batch.push(snap);
+    }
+    entry.items = record.target?.prepend === true ? [...batch, ...current] : [...current, ...batch];
+
+    const nextLists = trimPlaylistsCap(resolved.lists, MAX_LOCAL_PLAYLISTS);
+    await saveLocalPlaylists(nextLists);
+    await saveSettings({
+      currentPlaylistId: entry.id,
+      currentPlaylistName: entry.name,
+      latestImportBatchId: built.importBatchId,
+      latestImportAt: new Date().toISOString(),
+    });
+
+    return {
+      playlistId: entry.id,
+      playlistName: entry.name,
+      createdPlaylist: resolved.created,
+      entries: attachRows.map((r) =>
+        saveOpEntrySnapshot({
+          tabId: r.tabId,
+          videoId: r.videoId,
+          itemId: r.row?.id,
+          title: r.row?.title,
+          url: r.row?.url,
+        })
+      ),
+    };
+  });
+}
+
+const SAVE_OP_IN_FLIGHT_MS = 15000;
+
+/**
+ * The one save-and-close operation, used by the popup, the side panel, and the context menu.
+ *
+ * Order is persist -> verify (read-back) -> close. Nothing is closed unless a fresh read of
+ * chrome.storage.local shows the video in the library and attached to the intended playlist. A
+ * record is written before the first close, so a teardown mid-flight is resumable rather than lossy.
+ */
+async function saveYouTubeTabsAndAttach(request = {}) {
+  const mode = request.mode;
+  const operationId = String(request.operationId || "").trim() || uuid();
+
+  const prior = await getSaveOp(operationId);
+  if (prior) {
+    // Fully finished, nothing left to do: hand back the stored outcome.
+    if (prior.state === SAVE_OP_STATE.COMPLETED && !(prior.failures || []).length) {
+      return { ...(prior.result || buildSaveOpResult(prior)), replayed: true };
+    }
+    // Already attached to a playlist: re-verify and finish the outstanding closes.
+    if (prior.playlistId) {
+      return { ...(await finishSaveOperation(prior)), resumed: true };
+    }
+    // Never got as far as persisting: fall through and run the whole thing again, reusing this
+    // record's planned playlist id so a retry cannot produce a second playlist.
+  }
+
+  const nowIso = new Date().toISOString();
+  let record = {
+    id: operationId,
+    state: SAVE_OP_STATE.PENDING,
+    mode,
+    createdAt: prior?.createdAt || nowIso,
+    updatedAt: nowIso,
+    plannedPlaylistId: prior?.plannedPlaylistId || uuid(),
+    target: {
+      kind: request.target?.kind === "existing" ? "existing" : "new",
+      playlistId: request.target?.playlistId ? String(request.target.playlistId) : null,
+      name: request.target?.name ? String(request.target.name) : null,
+      prepend: request.target?.prepend === true,
+    },
+    playlistId: null,
+    playlistName: null,
+    createdPlaylist: false,
+    heldPlayback: false,
+    entries: [],
+    confirmedVideoIds: [],
+    closedTabIds: [],
+    keptOpenTabIds: [],
+    failures: [],
+    error: null,
+    result: null,
+  };
+
+  // Claim the lease *before* the slow per-tab metadata pass, so a second click is rejected rather
+  // than racing to the finish line and creating a duplicate playlist.
+  const claim = await claimSaveOperation(record);
+  if (!claim.claimed) {
+    return {
+      ok: false,
+      error: "save_in_progress",
+      operationId: claim.inFlight.id,
+      state: claim.inFlight.state,
+      closedTabIds: [],
+      keptOpenTabIds: [],
+      failures: [],
+    };
+  }
+  record = claim.record;
+
+  const built = await buildYouTubeTabSaveCandidates(mode, request);
+  if (!built.ok) {
+    await dropSaveOp(record.id);
+    return { ok: false, error: built.error, closedTabIds: [], keptOpenTabIds: [], failures: [] };
+  }
+  if (!built.candidates.length) {
+    // Nothing eligible: create no playlist, close nothing, leave no record behind.
+    await dropSaveOp(record.id);
+    return {
+      ok: true,
+      savedCount: 0,
+      confirmedCount: 0,
+      nothingToSave: true,
+      message: built.heldPlayback
+        ? "Now playing kept open — tap again to include it."
+        : "No YouTube tabs found in this window.",
+      playlistId: null,
+      closedTabIds: [],
+      keptOpenTabIds: [],
+      failures: [],
+      heldPlayback: built.heldPlayback,
+      mode,
+    };
+  }
+
+  record = await putSaveOp({
+    ...record,
+    heldPlayback: built.heldPlayback,
+    entries: built.candidates.map((c) =>
+      saveOpEntrySnapshot({ tabId: c.tabId, videoId: c.videoId, title: c.item?.title, url: c.item?.url })
+    ),
+  });
+
+  let persisted;
+  try {
+    persisted = await persistSaveOperation(record, built);
+  } catch (err) {
+    const failed = {
+      ...record,
+      state: SAVE_OP_STATE.FAILED,
+      error: tubestackSafeErrorMessage(err),
+      closedTabIds: [],
+      keptOpenTabIds: record.entries.map((e) => e.tabId).filter(Boolean),
+      failures: record.entries.map((e) => ({ ...e, reason: "storage_write_failed" })),
+    };
+    failed.result = buildSaveOpResult(failed);
+    await putSaveOp(failed);
+    console.error("[TubeStack] save persist failed:", failed.error);
+    return failed.result;
+  }
+
+  record = await putSaveOp({
+    ...record,
+    state: SAVE_OP_STATE.PERSISTED,
+    playlistId: persisted.playlistId,
+    playlistName: persisted.playlistName,
+    createdPlaylist: persisted.createdPlaylist,
+    entries: persisted.entries,
+  });
+
+  const result = await finishSaveOperation(record);
+
+  if (request.updateSidebarHold) {
+    await updateSidebarHoldAfterSave({
+      heldPlayback: built.heldPlayback,
+      includeHeldPlayback: request.includeHeldPlayback === true,
+    });
+  }
+  return result;
+}
+
+async function updateSidebarHoldAfterSave({ heldPlayback, includeHeldPlayback }) {
+  const session = await loadSidebarPlayback();
+  if (session?.status !== "playing") return;
+  if (heldPlayback) {
+    session.pendingAddHold = {
+      tabId: session.activeTabId ?? null,
+      videoId: String(session.currentVideoId || "").trim() || null,
+    };
+  } else if (includeHeldPlayback && session.pendingAddHold) {
+    delete session.pendingAddHold;
+  }
+  session.updatedAt = new Date().toISOString();
+  await saveSidebarPlayback(session);
+}
+
+/**
+ * Called when a TubeStack surface opens. Finishes any operation that was interrupted mid-flight —
+ * always by re-verifying storage first — and hands back recent outcomes so the UI can report them.
+ */
+async function resumeSaveOperations() {
+  const rows = await readSaveOps();
+  const nowMs = Date.now();
+  const resumed = [];
+  for (const r of rows) {
+    if (SAVE_OP_TERMINAL.has(r.state)) continue;
+    const age = nowMs - (Date.parse(r.updatedAt || r.createdAt || "") || 0);
+    if (age < SAVE_OP_IN_FLIGHT_MS) continue; // still running in another context
+    try {
+      resumed.push(await finishSaveOperation(r));
+    } catch (err) {
+      console.error("[TubeStack] resume save op failed:", r.id, tubestackSafeErrorMessage(err));
+    }
+  }
+  const after = await readSaveOps();
+  const recent = after
+    .filter((r) => SAVE_OP_TERMINAL.has(r.state))
+    .map((r) => r.result || buildSaveOpResult(r))
+    .slice(0, 5);
+  return { ok: true, resumed, recent };
 }
 
 function sanitizeItemPatch(fields) {
@@ -4049,6 +4710,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
       switch (msg?.type) {
+      case "TUBESTACK_SAVE_AND_ATTACH_TABS": {
+        sendResponse(
+          await saveYouTubeTabsAndAttach({
+            mode: msg.mode,
+            operationId: msg.operationId,
+            target: msg.target,
+            excludeTabIds: msg.excludeTabIds,
+            excludeVideoIds: msg.excludeVideoIds,
+            tabOrder: msg.tabOrder,
+            updateSidebarHold: msg.updateSidebarHold === true,
+            includeHeldPlayback: msg.includeHeldPlayback === true,
+          })
+        );
+        break;
+      }
+      case "TUBESTACK_SAVE_OPS_RESUME": {
+        sendResponse(await resumeSaveOperations());
+        break;
+      }
+      case "TUBESTACK_SAVE_OP_GET": {
+        const rec = await getSaveOp(msg.operationId);
+        sendResponse(
+          rec
+            ? { ok: true, record: rec, result: rec.result || buildSaveOpResult(rec) }
+            : { ok: false, error: "not_found" }
+        );
+        break;
+      }
       case "TUBESTACK_SAVE_LEFT": {
         sendResponse(await saveYouTubeTabsByMode("left"));
         break;
@@ -4614,9 +5303,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 void ensureToolbarPopupBehavior();
-void repairWeakStoredVideoMetadata().catch((err) => {
-  console.error("[TubeStack] metadata repair error:", tubestackSafeErrorMessage(err));
-});
+// Deliberately NOT running repairWeakStoredVideoMetadata() here. It used to run on every service
+// worker cold start, which meant every wakeup raced the very save that woke the worker. It now runs
+// only from onInstalled and after a completed save operation, and only via merge patches.
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const session = await loadSidebarPlayback();

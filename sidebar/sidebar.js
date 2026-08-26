@@ -81,10 +81,57 @@ function syncPlaybackControls(pl) {
   if (btnPip) btnPip.disabled = !showPip;
 }
 
+/** Message timeout. Saving many tabs fetches metadata per tab, so this has to be generous. */
+const SEND_TIMEOUT_MS = 90000;
+
+/**
+ * Resolves to a real object even when the channel dies. `chrome.runtime.sendMessage` invokes its
+ * callback with `undefined` and sets `chrome.runtime.lastError` when the service worker goes away or
+ * this panel is torn down mid-flight; leaving that unchecked made a dropped response indistinguishable
+ * from a genuine failure.
+ */
 function send(type, payload = {}) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type, ...payload }, resolve);
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(
+      () => finish({ ok: false, error: "timeout", transportError: "timeout" }),
+      SEND_TIMEOUT_MS
+    );
+    try {
+      chrome.runtime.sendMessage({ type, ...payload }, (res) => {
+        const lastError = chrome.runtime.lastError;
+        if (lastError) {
+          finish({
+            ok: false,
+            error: lastError.message || "message_channel_closed",
+            transportError: "lastError",
+          });
+          return;
+        }
+        if (res === undefined || res === null) {
+          finish({ ok: false, error: "no_response", transportError: "empty" });
+          return;
+        }
+        finish(res);
+      });
+    } catch (err) {
+      finish({ ok: false, error: String(err?.message || err), transportError: "throw" });
+    }
   });
+}
+
+function newOperationId() {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `op-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
 }
 
 function isWeakYouTubeTitle(title) {
@@ -477,14 +524,29 @@ async function refreshCount() {
   btnNewQueue.disabled = tabCount === 0;
 }
 
+/**
+ * Same single atomic operation the popup uses — the side panel and the toolbar popup now differ only
+ * in which playlist they target. Previously each surface stitched together its own two-message
+ * sequence, and step one closed the tabs before step two attached them to a queue.
+ */
+let sidebarSaveBusy = false;
+
 async function saveWindowTabs({ createNew }) {
+  if (sidebarSaveBusy) return;
+  sidebarSaveBusy = true;
   btnAddTabs.disabled = true;
   btnNewQueue.disabled = true;
   status.textContent = "Saving tabs…";
 
   const { excludeTabIds, excludeVideoIds, includeHeld } = getSidebarSaveExcludes();
-  const r = await send("TUBESTACK_SAVE_YT_TABS", {
+  const useExisting = !createNew && currentPlaylistId && findPlaylist(currentPlaylistId);
+
+  const r = await send("TUBESTACK_SAVE_AND_ATTACH_TABS", {
     mode: "all",
+    operationId: newOperationId(),
+    target: useExisting
+      ? { kind: "existing", playlistId: currentPlaylistId, prepend: true }
+      : { kind: "new" },
     excludeTabIds,
     excludeVideoIds,
     tabOrder: "window_left",
@@ -492,65 +554,56 @@ async function saveWindowTabs({ createNew }) {
     includeHeldPlayback: includeHeld,
   });
 
+  sidebarSaveBusy = false;
   await loadPlaybackSession();
+  status.textContent = describeSidebarSaveResult(r, { includeHeld, createNew: !useExisting });
 
-  if (!r?.ok) {
-    status.textContent = r?.error || "Something went wrong.";
-    await refreshCount();
-    return;
+  if (r?.playlistId) {
+    await loadState();
+    refreshPlaylistOptions(r.playlistId);
+    await loadPlaylistIntoView(r.playlistId, { persist: true });
   }
-  if (!r.savedCount) {
-    status.textContent = r.heldPlayback
-      ? "Now playing kept open — tap Add window tabs again to include it."
-      : "No YouTube tabs to save.";
-    await refreshCount();
-    return;
-  }
-
-  let playlistId = currentPlaylistId;
-  let addRes;
-
-  if (createNew || !playlistId || !findPlaylist(playlistId)) {
-    addRes = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", {
-      items: r.saved,
-      createNew: true,
-    });
-    playlistId = addRes?.playlistId || addRes?.playlists?.[0]?.id;
-  } else {
-    addRes = await send("TUBESTACK_LOCAL_PLAYLIST_ADD_ITEMS", {
-      playlistId,
-      items: r.saved,
-      createNew: false,
-      prepend: true,
-    });
-  }
-
-  if (!addRes?.ok) {
-    status.textContent = addRes?.error || "Saved tabs, but queue update failed.";
-    await refreshCount();
-    return;
-  }
-
-  const pl = findPlaylist(playlistId) || addRes.playlists?.find((p) => p.id === playlistId);
-  const name = pl?.name || "queue";
-  const added = addRes.addedCount ?? r.savedCount;
-
-  if (includeHeld) {
-    status.textContent = `Added now playing to "${name}".`;
-  } else if (createNew) {
-    status.textContent = `Created "${name}" with ${r.savedCount} tab${r.savedCount === 1 ? "" : "s"}.`;
-  } else if (added < r.savedCount) {
-    status.textContent = `Added ${added} to "${name}" (${r.savedCount - added} already in queue).`;
-  } else if (r.heldPlayback) {
-    status.textContent = `Added ${added} tab${added === 1 ? "" : "s"} to "${name}" · now playing kept open · tap Add again to include it`;
-  } else {
-    status.textContent = `Added ${added} tab${added === 1 ? "" : "s"} to "${name}".`;
-  }
-
-  await loadState();
-  refreshPlaylistOptions(playlistId);
-  await loadPlaylistIntoView(playlistId, { persist: true });
   await refreshCount();
+}
+
+function describeSidebarSaveResult(r, { includeHeld, createNew }) {
+  if (r?.nothingToSave) {
+    return r.message || "No YouTube tabs found in this window.";
+  }
+  if (r?.error === "save_in_progress") return "A save is already running — give it a moment.";
+
+  const closed = r?.closedTabIds?.length || 0;
+  const kept = r?.keptOpenTabIds?.length || 0;
+  const name = r?.playlistName || "queue";
+
+  if (r?.ok) {
+    if (includeHeld) return `Added now playing to "${name}".`;
+    if (createNew) {
+      return `Created "${name}" with ${closed} tab${closed === 1 ? "" : "s"}.`;
+    }
+    const suffix = r.heldPlayback ? " · now playing kept open · tap Add again to include it" : "";
+    return `Added ${closed} tab${closed === 1 ? "" : "s"} to "${name}".${suffix}`;
+  }
+  if (r?.partial) {
+    const reasons = [...new Set((r.failures || []).map((f) => f.reason))].join(", ");
+    return `Added ${closed} to "${name}"; ${kept} tab${kept === 1 ? "" : "s"} left open — not confirmed saved (${reasons}).`;
+  }
+  if (kept) {
+    return `Save failed (${r?.error || "unknown"}). All ${kept} tab${kept === 1 ? "" : "s"} left open.`;
+  }
+  return r?.error ? `Save failed: ${r.error}` : "Something went wrong. No tabs were closed.";
+}
+
+/** Finish and report any operation interrupted by a window/panel teardown. */
+async function reportInterruptedSaves() {
+  const r = await send("TUBESTACK_SAVE_OPS_RESUME");
+  const resumed = Array.isArray(r?.resumed) ? r.resumed : [];
+  if (!resumed.length) return;
+  const kept = resumed.reduce((n, x) => n + (x.keptOpenTabIds?.length || 0), 0);
+  const closed = resumed.reduce((n, x) => n + (x.closedTabIds?.length || 0), 0);
+  status.textContent = kept
+    ? `Recovered an interrupted save: ${closed} closed, ${kept} left open (not confirmed saved).`
+    : `Recovered an interrupted save: ${closed} tab${closed === 1 ? "" : "s"} finished safely.`;
 }
 
 btnAddTabs.addEventListener("click", () => saveWindowTabs({ createNew: false }));
@@ -596,6 +649,7 @@ async function onLibraryChanged() {
 }
 
 async function init() {
+  await reportInterruptedSaves();
   await loadState();
   await loadPlaybackSession();
   refreshPlaylistOptions();

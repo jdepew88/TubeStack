@@ -4900,3 +4900,123 @@ a.toolbar-library-link:hover {
 .grid:not(.grid-view) {
   gap: 8px;
 }
+
+/* AI provider selection + categorization preview */
+.settings-ai-provider-select {
+  max-width: 280px;
+}
+
+.settings-ai-used-for {
+  list-style: none;
+  margin: 10px 0 6px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.85rem;
+}
+
+.settings-ai-used-for li::before {
+  content: "✓ ";
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ai-categorize-panel .ai-cat-provider-line {
+  color: var(--muted);
+}
+
+.ai-categorize-panel .ai-cat-undo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.ai-categorize-panel .ai-cat-undo-row .stat-line {
+  margin: 0;
+}
+
+.ai-preview-card.modal-card-wide {
+  max-width: 920px;
+  width: min(920px, calc(100vw - 32px));
+}
+
+.ai-preview-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.ai-preview-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.82rem;
+}
+
+.ai-preview-chip.is-new {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ai-preview-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-preview-table-wrap {
+  max-height: min(48vh, 460px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+}
+
+.ai-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.ai-preview-table th,
+.ai-preview-table td {
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-preview-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.ai-preview-table td:first-child,
+.ai-preview-table th:first-child {
+  width: 28px;
+}
+
+.ai-preview-title {
+  overflow-wrap: anywhere;
+}
+
+.ai-preview-channel {
+  font-size: 0.78rem;
+}
+
+.ai-preview-from {
+  color: var(--muted);
+}
+
+.ai-preview-new {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ai-preview-unchanged td {
+  opacity: 0.65;
+}

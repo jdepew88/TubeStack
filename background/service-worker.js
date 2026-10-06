@@ -1,7 +1,7 @@
 /**
  * TubeStack — background: YouTube tabs, library, themes, progress, playlist pack.
- * Host access: youtube.com / m.youtube.com (manifest). Google YouTube API + OpenAI are optional_host_permissions
- * and are requested at runtime only when those features run (see ensureGoogleApisHostAccess / ensureOpenaiHostAccess).
+ * Host access: youtube.com / m.youtube.com (manifest). Google YouTube API and the AI providers (OpenAI, Anthropic) are
+ * optional_host_permissions requested at runtime only when those features run (see ensureGoogleApisHostAccess / ensureAiHostAccess).
  */
 
 importScripts("granular-genres.js");
@@ -9,9 +9,13 @@ importScripts("genre-taxonomy.js");
 importScripts("../lib/watch-states.js");
 importScripts("../lib/youtube-url.js");
 importScripts("../lib/backup.js");
+importScripts("../lib/ai-providers.js");
+importScripts("../lib/ai-categorize.js");
 const TS_WATCH = globalThis.TUBESTACK_WATCH;
 const TS_BACKUP = globalThis.TUBESTACK_BACKUP;
 const YT_URL = globalThis.TUBESTACK_YT_URL;
+const TS_AI = globalThis.TUBESTACK_AI;
+const TS_AI_CAT = globalThis.TUBESTACK_AI_CATEGORIZE;
 const GRANULAR_GENRE_PRESETS = globalThis.GRANULAR_GENRE_PRESETS || [];
 delete globalThis.GRANULAR_GENRE_PRESETS;
 const BROAD_GENRE_TAXONOMY = globalThis.TUBESTACK_BROAD_GENRES || [];
@@ -253,7 +257,6 @@ function parseVideoId(url) {
 
 /** Match manifest optional_host_permissions (requested before network calls to these origins). */
 const OPTIONAL_ORIGINS_GOOGLE_APIS = ["https://www.googleapis.com/*"];
-const OPTIONAL_ORIGINS_OPENAI = ["https://api.openai.com/*"];
 
 function tubestackSafeErrorMessage(err) {
   const msg = err?.message != null ? String(err.message) : String(err || "unknown error");
@@ -308,14 +311,14 @@ async function ensureGoogleApisHostAccess() {
   }
 }
 
-async function ensureOpenaiHostAccess() {
-  const ok = await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_OPENAI);
+async function ensureAiHostAccess(provider) {
+  const ok = await ensureOptionalHostOrigins(provider.origins);
   if (!ok) {
-    const e = new Error(
-      "TubeStack needs permission to reach OpenAI (api.openai.com) when you use AI features. Allow the prompt or enable optional site access, then try again."
+    throw new TS_AI.AiProviderError(
+      "host_permission_denied",
+      `TubeStack needs permission to reach ${provider.label} (${provider.host}) when you use AI features. Allow the prompt or enable optional site access, then try again.`,
+      { providerId: provider.id }
     );
-    e.code = "host_permission_denied_openai";
-    throw e;
   }
 }
 
@@ -683,7 +686,7 @@ async function saveItems(items, options = {}) {
 /**
  * API keys and the YouTube OAuth Web Client ID persist only inside the `settings` object in
  * chrome.storage.local. The extension has no first-party backend; values leave the device only when
- * you trigger calls to Google or OpenAI. OAuth access tokens for playlist import are RAM-only (__youtubeImportAuth).
+ * you trigger calls to Google, OpenAI, or Anthropic. OAuth access tokens for playlist import are RAM-only (__youtubeImportAuth).
  */
 async function loadSettings() {
   const data = await chrome.storage.local.get("settings");
@@ -1090,8 +1093,7 @@ function sanitizeSettingsForClient(raw) {
   if (!raw || typeof raw !== "object") return {};
   const s = { ...raw };
   delete s.youtubeDataApiKey;
-  delete s.openaiApiKey;
-  return s;
+  return TS_AI.stripAiSecrets(s);
 }
 
 async function markIntegrationTest(kind, ok) {
@@ -1106,6 +1108,9 @@ async function markIntegrationTest(kind, ok) {
   } else if (kind === "openai") {
     patch.openaiLastTestAt = now;
     patch.openaiLastTestOk = ok === true;
+  } else if (kind === "anthropic") {
+    patch.anthropicLastTestAt = now;
+    patch.anthropicLastTestOk = ok === true;
   } else {
     return;
   }
@@ -1131,6 +1136,12 @@ function integrationHealthFromSettings(raw) {
       lastTestAt: s.openaiLastTestAt || null,
       lastTestOk: s.openaiLastTestOk === true,
     },
+    anthropic: {
+      configured: Boolean(String(s.anthropicApiKey || "").trim()),
+      lastTestAt: s.anthropicLastTestAt || null,
+      lastTestOk: s.anthropicLastTestOk === true,
+    },
+    aiProvider: TS_AI.resolveAiSettings(s).providerId,
   };
 }
 
@@ -1140,33 +1151,6 @@ function hashStringDjb2(s) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) h = Math.imul(h, 33) ^ str.charCodeAt(i);
   return String(h >>> 0);
-}
-
-/**
- * User-facing copy for OpenAI HTTP failures (quota, billing, rate limits). Never includes request bodies or keys.
- */
-function openAiHttpErrorMessage(status, json) {
-  const err = json?.error;
-  const code = String(err?.code || "");
-  const msg = String(err?.message || "");
-  const blob = `${code} ${msg} ${status}`.toLowerCase();
-  if (status === 429 || blob.includes("rate_limit") || blob.includes("rate limit")) {
-    return "OpenAI rate limit reached. Wait a few minutes or check usage limits on platform.openai.com, then try again.";
-  }
-  if (
-    blob.includes("insufficient_quota") ||
-    blob.includes("billing") ||
-    blob.includes("payment") ||
-    blob.includes("credit") ||
-    blob.includes("exceeded your")
-  ) {
-    return "OpenAI quota or billing blocked this request. Add credits or fix billing on platform.openai.com, then try again.";
-  }
-  if (status === 401) {
-    return "OpenAI rejected the API key (401). Paste a valid secret key in Settings and try again.";
-  }
-  if (msg) return msg;
-  return `OpenAI request failed (${status}).`;
 }
 
 const OPENAI_LIBRARY_CLASSIFY_CACHE_KEY = "openAiLibraryClassifyV1";
@@ -1261,8 +1245,8 @@ function isTrustedExtensionSender(sender) {
   return Boolean(sender && sender.id === chrome.runtime.id);
 }
 
-/** Minimal library fields sent to OpenAI (no URLs, transcripts, or Google secrets). */
-function buildLibraryItemPayloadForOpenAi(it, themeLabelById) {
+/** Minimal library fields sent to the selected AI provider (no URLs, transcripts, or Google secrets). */
+function buildLibraryItemPayloadForAi(it, themeLabelById) {
   const tags = [...(it.tags || [])].map((t) => String(t).trim()).filter(Boolean).slice(0, 15);
   const suggestedTags = [...(it.suggestedTags || [])].map((t) => String(t).trim()).filter(Boolean).slice(0, 10);
   const out = {
@@ -1631,6 +1615,7 @@ async function eraseLocalLibraryData() {
     watchByDay: {},
     localPlaylists: [],
   });
+  await chrome.storage.local.remove(AI_CATEGORY_UNDO_SNAPSHOT_KEY);
   const cur = await loadSettings();
   const next = { ...cur };
   for (const k of [
@@ -3238,8 +3223,67 @@ function nearestBroadLabel(raw, labels) {
   return best;
 }
 
-async function openAiClassifyTitleChunk({ items, apiKey, model, broadLabels }) {
-  await ensureOpenaiHostAccess();
+const AI_CATEGORY_UNDO_SNAPSHOT_KEY = "aiCategoryUndoSnapshotV1";
+
+/**
+ * Resolve the provider, model, and key for an AI request. A key pasted into a dashboard tool is used for this
+ * request and saved only when the user ticked "save". Legacy OpenAI-only message fields are still accepted.
+ */
+async function resolveAiRequestContext(msg = {}) {
+  const settings = await loadSettings();
+  const base = TS_AI.resolveAiSettings(settings);
+  const provider = TS_AI.getAiProvider(msg.provider) || base.provider;
+  const legacyPasted = provider.id === "openai" ? msg.openaiApiKey : msg.anthropicApiKey;
+  const pasted = String(msg.apiKey || legacyPasted || "").trim();
+  const saveRequested = msg.saveApiKey === true || (provider.id === "openai" && msg.saveOpenaiKey === true);
+  if (saveRequested && pasted.length >= provider.minKeyLength) {
+    await saveSettings({ [provider.keySetting]: pasted });
+  }
+  const apiKey = pasted || String(settings[provider.keySetting] || "").trim();
+  const legacyModel = provider.id === "openai" ? msg.openaiModel : undefined;
+  const model = TS_AI.resolveAiModel(provider, msg.model || legacyModel || settings[provider.modelSetting]);
+  return { provider, apiKey, model };
+}
+
+function aiKeyRequiredResponse(provider) {
+  return {
+    ok: false,
+    error: `${provider.id}_key_required`,
+    message: `Add an ${provider.label} API key in Settings (or paste one below).`,
+  };
+}
+
+function aiFailureResponse(e, fallbackCode = "ai_failed") {
+  return { ok: false, error: e?.code || fallbackCode, message: tubestackSafeErrorMessage(e) };
+}
+
+/** Provider-neutral JSON completion for the resolved context (see lib/ai-providers.js). */
+function aiCompleteJson(ctx, { system, user, schema }) {
+  return TS_AI.completeJson(
+    ctx.provider,
+    { apiKey: ctx.apiKey, model: ctx.model, system, user, schema },
+    { fetch: (url, init) => fetch(url, init), ensureHostAccess: ensureAiHostAccess }
+  );
+}
+
+const AI_NICHE_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { videoId: { type: "string" }, broad: { type: "string" }, niche: { type: "string" } },
+        required: ["videoId", "broad", "niche"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+};
+
+async function aiClassifyTitleChunk(ctx, { items, broadLabels }) {
   const payload = items.map((x) => {
     const row = {
       videoId: x.videoId,
@@ -3249,390 +3293,140 @@ async function openAiClassifyTitleChunk({ items, apiKey, model, broadLabels }) {
     if (ch) row.channel = ch.slice(0, 120);
     return row;
   });
-  const user = `Input (JSON array of saved library videos):\n${JSON.stringify(payload)}`;
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: model || "gpt-4o-mini",
-      temperature: 0.15,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `Each row is a YouTube video saved in the user's TubeStack library: videoId, title, and optional channel name.
+  const parsed = await aiCompleteJson(ctx, {
+    system: `Each row is a YouTube video saved in the user's TubeStack library: videoId, title, and optional channel name.
 There are no transcripts, page URLs, or API keys in this payload. For each row, suggest niche: a short 2-6 word user-specific sub-interest when the title clearly implies one; otherwise "".
 Broad must be EXACTLY one of: ${broadLabels.join(" | ")} (best guess from title and optional channel only).
 Respond as JSON: {"items":[{"videoId":"","broad":"","niche":""}]}`,
-        },
-        { role: "user", content: user },
-      ],
-    }),
+    user: `Input (JSON array of saved library videos):\n${JSON.stringify(payload)}`,
+    schema: AI_NICHE_SCHEMA,
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(openAiHttpErrorMessage(res.status, json));
-  }
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Empty model response");
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error("Model returned non-JSON");
-  }
-  const out = parsed.items || parsed.results || parsed.data;
-  if (!Array.isArray(out)) throw new Error("JSON missing items[]");
-  return out;
+  const out = parsed?.items || parsed?.results || parsed?.data;
+  if (!Array.isArray(out)) throw new Error("The AI response was missing items[]. Nothing was changed.");
+  const want = new Set(items.map((x) => x.videoId));
+  return out.filter((row) => row && typeof row === "object" && want.has(String(row.videoId || "").trim()));
 }
 
-async function openAiJsonCompletion({ apiKey, model, system, user }) {
-  const key = String(apiKey || "").trim();
-  if (key.length < 20) throw new Error("openai_key_required");
-  await ensureOpenaiHostAccess();
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: model || "gpt-4o-mini",
-      temperature: 0.15,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(openAiHttpErrorMessage(res.status, json));
-  }
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Empty model response");
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error("Model returned non-JSON");
-  }
-  return parsed;
-}
-
-/** Validate key (models list) + tiny completion for rate-limit headers; optional billing snapshot. */
-async function testOpenAiConnection(msg = {}) {
+/** Test a key for the requested (or selected) provider. Records pass/fail for Integration health. */
+async function testAiProviderConnection(msg = {}) {
   const settings = await loadSettings();
-  const apiKey = String(msg.openaiApiKey || "").trim() || String(settings.openaiApiKey || "").trim();
-  if (apiKey.length < 20) {
-    return { ok: false, error: "openai_key_required", message: "Paste a key or save one in Settings first." };
+  const provider = TS_AI.getAiProvider(msg.provider) || TS_AI.resolveAiSettings(settings).provider;
+  const apiKey = String(msg.apiKey || "").trim() || String(settings[provider.keySetting] || "").trim();
+  if (apiKey.length < provider.minKeyLength) {
+    return { ok: false, error: `${provider.id}_key_required`, message: "Paste a key or save one in Settings first." };
   }
-  if (!(await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_OPENAI))) {
-    await markIntegrationTest("openai", false);
+  if (!(await ensureOptionalHostOrigins(provider.origins))) {
+    await markIntegrationTest(provider.id, false);
     return {
       ok: false,
       error: "host_permission_denied",
-      message:
-        "TubeStack needs optional access to api.openai.com only when you use AI features. Allow the browser prompt and try again.",
+      message: `TubeStack needs optional access to ${provider.host} only when you use AI features. Allow the browser prompt and try again.`,
     };
   }
-  const auth = { Authorization: `Bearer ${apiKey}` };
+  const model = TS_AI.resolveAiModel(provider, msg.model || settings[provider.modelSetting]);
+  const r = await TS_AI.testAiConnection(provider, { apiKey, model }, { fetch: (url, init) => fetch(url, init) });
+  await markIntegrationTest(provider.id, r.ok === true && r.allOk === true);
+  return r;
+}
 
-  let modelCount = 0;
-  try {
-    const r = await fetch("https://api.openai.com/v1/models", { method: "GET", headers: auth });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      await markIntegrationTest("openai", false);
-      return {
-        ok: false,
-        error: "openai_http",
-        message: openAiHttpErrorMessage(r.status, j),
-      };
-    }
-    modelCount = Array.isArray(j?.data) ? j.data.length : 0;
-  } catch (e) {
-    await markIntegrationTest("openai", false);
-    return { ok: false, error: "network", message: String(e.message || e) };
-  }
+/** Legacy message: OpenAI test from Settings / Setup Integrations. */
+async function testOpenAiConnection(msg = {}) {
+  return testAiProviderConnection({ provider: "openai", apiKey: msg.openaiApiKey });
+}
 
-  let completionOk = false;
-  let completionError = null;
-  let lastUsage = null;
-  const rateLimits = {};
-  try {
-    const r2 = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 2,
-        temperature: 0,
-        messages: [{ role: "user", content: "ok" }],
-      }),
-    });
-    const pick = (name) => {
-      const v = r2.headers.get(name);
-      if (v != null && String(v).trim() !== "") rateLimits[name] = v.trim();
-    };
-    pick("x-ratelimit-remaining-requests");
-    pick("x-ratelimit-limit-requests");
-    pick("x-ratelimit-remaining-tokens");
-    pick("x-ratelimit-limit-tokens");
-    pick("x-ratelimit-reset-requests");
-    pick("x-ratelimit-reset-tokens");
-    if (r2.ok) {
-      completionOk = true;
-      const body = await r2.json().catch(() => ({}));
-      lastUsage = body?.usage || null;
-    } else {
-      const j2 = await r2.json().catch(() => ({}));
-      completionError = openAiHttpErrorMessage(r2.status, j2);
-    }
-  } catch (e) {
-    completionError = String(e.message || e);
-  }
+async function saveAiCategoryUndoSnapshot(snapshot) {
+  await chrome.storage.local.set({ [AI_CATEGORY_UNDO_SNAPSHOT_KEY]: snapshot });
+}
 
-  let usageCredits = null;
-  try {
-    const rb = await fetch("https://api.openai.com/v1/dashboard/billing/credit_grants", {
-      method: "GET",
-      headers: auth,
-    });
-    if (rb.ok) {
-      const bj = await rb.json().catch(() => null);
-      if (bj && (bj.total_available != null || bj.total_granted != null)) {
-        usageCredits = {
-          totalAvailable: typeof bj.total_available === "number" ? bj.total_available : null,
-          totalUsed: typeof bj.total_used === "number" ? bj.total_used : null,
-          totalGranted: typeof bj.total_granted === "number" ? bj.total_granted : null,
-        };
-      }
-    }
-  } catch {
-    /* billing endpoint often 401 for standard keys */
-  }
+async function loadAiCategoryUndoSnapshot() {
+  const bag = await chrome.storage.local.get(AI_CATEGORY_UNDO_SNAPSHOT_KEY);
+  return bag[AI_CATEGORY_UNDO_SNAPSHOT_KEY] || null;
+}
 
-  const allOk = completionOk && modelCount > 0;
-  await markIntegrationTest("openai", allOk);
-  return {
-    ok: true,
-    modelCount,
-    completionOk,
-    completionError,
-    rateLimits: Object.keys(rateLimits).length ? rateLimits : null,
-    lastUsage,
-    usageCredits,
-    billingCreditsAvailable: usageCredits != null,
-  };
+async function describeAiCategoryUndo() {
+  const snap = await loadAiCategoryUndoSnapshot();
+  return snap ? { at: snap.at || null, kind: snap.kind || "", label: snap.label || "" } : null;
 }
 
 /**
- * AI-assisted library category assignment. Dashboard sends concrete itemIds (max 120).
+ * AI-assisted categorization preview. Calls the selected provider in batches and validates every response,
+ * but never writes the library. The dashboard shows the plan and sends it back to TUBESTACK_AI_CATEGORIZE_APPLY.
  * strategy: "existing" | "discover" | "criteria"
  */
-async function aiCategorizeLibrary(msg = {}) {
-  const settings = await loadSettings();
-  let apiKey = String(msg.openaiApiKey || "").trim() || String(settings.openaiApiKey || "").trim();
-  if (msg.saveOpenaiKey === true && String(msg.openaiApiKey || "").trim().length >= 20) {
-    await saveSettings({ openaiApiKey: String(msg.openaiApiKey).trim() });
-    apiKey = String(msg.openaiApiKey).trim();
-  }
-  if (apiKey.length < 20) {
-    return { ok: false, error: "openai_key_required", message: "Add an OpenAI API key in Settings (or paste below)." };
-  }
-
-  const strategy = msg.strategy === "existing" ? "existing" : msg.strategy === "criteria" ? "criteria" : "discover";
-  const rawIds = Array.isArray(msg.itemIds) ? msg.itemIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
-  const itemIds = [...new Set(rawIds)];
-  if (!itemIds.length) {
-    return { ok: false, error: "no_items", message: "No videos selected." };
-  }
-
-  const MAX = 120;
-  const cappedIds = itemIds.slice(0, MAX);
-
-  const allItems = await loadItems();
-  const order = new Map(cappedIds.map((id, i) => [id, i]));
-  let targets = allItems.filter((x) => cappedIds.includes(x.id));
-  targets.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-  if (!targets.length) {
-    return { ok: false, error: "no_items", message: "None of those videos are in your library." };
-  }
-
-  const model = String(msg.openaiModel || "").trim() || "gpt-4o-mini";
-  let themes = await loadThemes();
-
-  const themeLabelById = new Map(themes.map((t) => [t.id, String(t.label || "").trim()]));
-  const rows = targets.map((it) => buildLibraryItemPayloadForOpenAi(it, themeLabelById));
-
+async function aiCategorizePreview(msg = {}) {
+  const ctx = await resolveAiRequestContext(msg);
+  if (ctx.apiKey.length < ctx.provider.minKeyLength) return aiKeyRequiredResponse(ctx.provider);
   try {
-    if (strategy === "existing") {
-      const catList = themes.map((t) => ({ id: t.id, label: String(t.label || "").slice(0, 80) }));
-      if (!catList.length) {
-        return { ok: false, error: "no_categories", message: "Add at least one category first." };
+    const plan = await TS_AI_CAT.runCategorizationPreview(
+      {
+        loadItems,
+        loadThemes,
+        buildItemPayload: buildLibraryItemPayloadForAi,
+        completeJson: (req) => aiCompleteJson(ctx, req),
+      },
+      {
+        itemIds: msg.itemIds,
+        strategy: msg.strategy,
+        targetCategoryCount: msg.targetCategoryCount,
+        granularity: msg.granularity,
+        criteriaText: msg.criteriaText,
+        scope: msg.scope,
+        providerId: ctx.provider.id,
+        providerLabel: ctx.provider.label,
+        model: ctx.model,
       }
-      const merged = new Map();
-      const chunkSize = 36;
-      for (let i = 0; i < rows.length; i += chunkSize) {
-        const chunk = rows.slice(i, i + chunkSize);
-        const system = `You assign each YouTube library video to exactly one saved category. Each object in videos[] only contains metadata TubeStack already stored (title, channel, listCategory, optional tags/suggestedTags/notes/descriptionSnippet, optional currentCategoryLabel). Do not assume transcripts, watch URLs, or Google/OpenAI secrets are available. Use only themeId values from categories[]. Pick the closest fit when uncertain. JSON only: {"assignments":[{"itemId":"","themeId":""}]} — include every video in videos[] exactly once.`;
-        const user = JSON.stringify({ categories: catList, videos: chunk });
-        const parsed = await openAiJsonCompletion({ apiKey, model, system, user });
-        const arr = parsed.assignments || parsed.results;
-        if (!Array.isArray(arr)) throw new Error("JSON missing assignments[]");
-        for (const a of arr) {
-          const id = String(a.itemId || "").trim();
-          const tid = String(a.themeId || "").trim();
-          if (!id || !tid) continue;
-          if (!catList.some((c) => c.id === tid)) continue;
-          merged.set(id, tid);
-        }
-      }
-      const idToItem = new Map(allItems.map((x) => [x.id, x]));
-      let updated = 0;
-      for (const [id, themeId] of merged) {
-        const it = idToItem.get(id);
-        if (!it) continue;
-        if (it.themeId !== themeId) {
-          it.themeId = themeId;
-          updated++;
-        }
-      }
-      await saveItems(allItems);
-      return {
-        ok: true,
-        strategy: "existing",
-        updatedCount: updated,
-        assignedCount: merged.size,
-        truncated: itemIds.length > MAX,
-        themes: await loadThemes(),
-        items: allItems,
-      };
-    }
+    );
+    return { ok: true, plan };
+  } catch (e) {
+    return aiFailureResponse(e);
+  }
+}
 
-    const granularity = msg.granularity === "specific" ? "specific" : "broad";
-    const targetK = Math.min(28, Math.max(2, Number(msg.targetCategoryCount) || 8));
-    const criteriaText = String(msg.criteriaText || "").trim().slice(0, 1200);
-
-    const granHint =
-      granularity === "broad"
-        ? "Prefer broad buckets (e.g. Tech, Gaming, Music) — short labels."
-        : "Prefer specific niches (e.g. Android, iOS, PC gaming, Generative AI) — still concise (2–6 words).";
-
-    const phase1System =
-      strategy === "criteria"
-        ? `You name exactly ${targetK} category labels for a personal YouTube library. Follow the user's instructions in the JSON field userCriteria. ${granHint} videoSamples contain only stored TubeStack fields (no transcripts, no YouTube/Google API keys). JSON only: {"categories":["label1",...]} — categories.length must equal ${targetK}. Labels must be unique (case-insensitive).`
-        : `You name exactly ${targetK} category labels that best group the user's saved YouTube videos (see videoSamples). ${granHint} videoSamples contain only stored TubeStack fields (no transcripts, no URLs, no API keys). JSON only: {"categories":["label1",...]} — categories.length must equal ${targetK}. Labels must be unique (case-insensitive).`;
-
-    const phase1User =
-      strategy === "criteria"
-        ? JSON.stringify({
-            userCriteria: criteriaText || "(infer sensible groups from the videos)",
-            videoSamples: rows.slice(0, 60),
-            totalVideos: rows.length,
-          })
-        : JSON.stringify({ videoSamples: rows.slice(0, 60), totalVideos: rows.length });
-
-    const p1 = await openAiJsonCompletion({ apiKey, model, system: phase1System, user: phase1User });
-    let categories = p1.categories || p1.categoryLabels;
-    if (!Array.isArray(categories)) throw new Error("JSON missing categories[]");
-    categories = categories
-      .map((x) => String(x || "").trim().slice(0, 80))
-      .filter(Boolean);
-    const seen = new Set();
-    categories = categories.filter((c) => {
-      const k = c.toLowerCase();
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
-    if (categories.length < 2) throw new Error("Model returned too few categories");
-    if (categories.length > targetK) categories = categories.slice(0, targetK);
-
-    const labelToThemeId = new Map(themes.map((t) => [String(t.label || "").trim().toLowerCase(), t.id]));
-    const newThemes = [];
-    for (const lab of categories) {
-      const k = lab.toLowerCase();
-      if (labelToThemeId.has(k)) continue;
-      const id = uuid();
-      const kwSet = new Set([k, ...keywordsFromLabel(lab)]);
-      newThemes.push({
-        id,
-        label: lab,
-        keywords: [...kwSet].slice(0, 48),
-        tier: "active",
-        genreScope: "ai",
-      });
-      labelToThemeId.set(k, id);
-    }
-    if (newThemes.length) {
-      themes = [...themes, ...newThemes];
-      await saveThemes(themes);
-    }
-
-    const categoryLabels = categories.map((c) => c.trim()).filter(Boolean);
-    const allowedLower = new Set(categoryLabels.map((c) => c.toLowerCase()));
-
-    const mergedAssign = new Map();
-    const chunk2 = 40;
-    for (let i = 0; i < rows.length; i += chunk2) {
-      const chunk = rows.slice(i, i + chunk2);
-      const system2 = `Assign each video to exactly one category from allowedCategories (copy categoryLabel text exactly as listed). videos[] objects include only TubeStack metadata already listed (no transcripts). JSON only: {"assignments":[{"itemId":"","categoryLabel":""}]} — include every video in videos[] exactly once.`;
-      const user2 = JSON.stringify({
-        allowedCategories: categoryLabels,
-        videos: chunk,
-      });
-      const p2 = await openAiJsonCompletion({ apiKey, model, system: system2, user: user2 });
-      const arr = p2.assignments || p2.results;
-      if (!Array.isArray(arr)) throw new Error("JSON missing assignments[]");
-      for (const a of arr) {
-        const id = String(a.itemId || "").trim();
-        let lab = String(a.categoryLabel || "").trim();
-        if (!id) continue;
-        if (!allowedLower.has(lab.toLowerCase())) {
-          lab = categoryLabels[0];
-        }
-        const themeId =
-          labelToThemeId.get(lab.toLowerCase()) || labelToThemeId.get(String(categoryLabels[0] || "").toLowerCase());
-        if (themeId) mergedAssign.set(id, themeId);
-      }
-    }
-
-    const fallbackId = labelToThemeId.get(String(categoryLabels[0] || "").toLowerCase());
-    for (const r of rows) {
-      if (!mergedAssign.has(r.id) && fallbackId) mergedAssign.set(r.id, fallbackId);
-    }
-
-    const idToItem = new Map(allItems.map((x) => [x.id, x]));
-    let updated = 0;
-    for (const [id, themeId] of mergedAssign) {
-      const it = idToItem.get(id);
-      if (!it) continue;
-      if (it.themeId !== themeId) {
-        it.themeId = themeId;
-        updated++;
-      }
-    }
-    await saveItems(allItems);
+async function aiCategorizeApply(msg = {}) {
+  try {
+    const r = await TS_AI_CAT.commitCategorizationPlan(
+      {
+        loadItems,
+        loadThemes,
+        saveItems,
+        saveThemes,
+        saveSnapshot: saveAiCategoryUndoSnapshot,
+        makeId: uuid,
+        keywordsFromLabel,
+      },
+      { plan: msg.plan, excludedItemIds: msg.excludedItemIds }
+    );
     return {
       ok: true,
-      strategy,
-      updatedCount: updated,
-      assignedCount: mergedAssign.size,
-      newThemesCount: newThemes.length,
-      categoriesUsed: categoryLabels,
-      truncated: itemIds.length > MAX,
+      updatedCount: r.updatedCount,
+      newThemesCount: r.createdThemes.length,
+      undo: await describeAiCategoryUndo(),
       themes: await loadThemes(),
-      items: allItems,
     };
   } catch (e) {
-    return { ok: false, error: "openai_failed", message: String(e.message || e) };
+    return aiFailureResponse(e, "apply_failed");
   }
+}
+
+async function aiCategorizeUndo() {
+  try {
+    const r = await TS_AI_CAT.undoCategorization({
+      loadItems,
+      saveItems,
+      saveThemes,
+      loadSnapshot: loadAiCategoryUndoSnapshot,
+      clearSnapshot: () => chrome.storage.local.remove(AI_CATEGORY_UNDO_SNAPSHOT_KEY),
+    });
+    return { ok: true, restoredCount: r.restoredCount, kind: r.kind, themes: r.themes };
+  } catch (e) {
+    return aiFailureResponse(e, "undo_failed");
+  }
+}
+
+/** Save an undo point before a rebuild replaces every category chip and re-tags the library. */
+async function snapshotCategoriesBeforeRebuild(label) {
+  const [items, themes] = await Promise.all([loadItems(), loadThemes()]);
+  await saveAiCategoryUndoSnapshot(TS_AI_CAT.captureCategorySnapshot(items, themes, { kind: "genre_rebuild", label }));
 }
 
 async function rebuildGenresFromLibraryHeuristic({ maxUserNiches = 15, replaceExisting = true }) {
@@ -3687,6 +3481,7 @@ async function rebuildGenresFromLibraryHeuristic({ maxUserNiches = 15, replaceEx
   }
 
   if (replaceExisting) {
+    await snapshotCategoriesBeforeRebuild("Category rebuild (local)");
     await saveThemes(newThemes);
     await reassignLibraryThemesToThemeSet(newThemes);
   }
@@ -3699,14 +3494,8 @@ async function rebuildGenresFromLibraryHeuristic({ maxUserNiches = 15, replaceEx
   };
 }
 
-async function rebuildGenresFromLibraryOpenAI({
-  maxUserNiches = 15,
-  replaceExisting = true,
-  apiKey,
-  model,
-}) {
-  const key = String(apiKey || "").trim();
-  if (key.length < 20) return { ok: false, error: "openai_key_required", message: "Add an OpenAI API key in settings or paste it in the rebuild dialog." };
+async function rebuildGenresFromLibraryAI({ maxUserNiches = 15, replaceExisting = true, ctx }) {
+  if (ctx.apiKey.length < ctx.provider.minKeyLength) return aiKeyRequiredResponse(ctx.provider);
   const g = await gatherLibraryVideosForGenreRebuild();
   if (!g.ok) return g;
   let videos = g.videos.sort((a, b) => (b.visitCount || 0) - (a.visitCount || 0)).slice(0, 280);
@@ -3723,7 +3512,9 @@ async function rebuildGenresFromLibraryOpenAI({
       for (const v of chunk) {
         const th = hashStringDjb2(String(v.title || "").slice(0, 240));
         const ent = cache[v.videoId];
-        if (ent && ent.th === th && now - ent.at < OPENAI_LIBRARY_CLASSIFY_TTL_MS) {
+        // Entries from before provider selection have no `p` and came from OpenAI.
+        const entProvider = ent?.p || "openai";
+        if (ent && ent.th === th && entProvider === ctx.provider.id && now - ent.at < OPENAI_LIBRARY_CLASSIFY_TTL_MS) {
           cachedRows.push({ videoId: v.videoId, broad: ent.broad, niche: ent.niche });
         } else {
           need.push(v);
@@ -3731,7 +3522,7 @@ async function rebuildGenresFromLibraryOpenAI({
       }
       let rows = cachedRows.slice();
       if (need.length) {
-        const fresh = await openAiClassifyTitleChunk({ items: need, apiKey: key, model, broadLabels });
+        const fresh = await aiClassifyTitleChunk(ctx, { items: need, broadLabels });
         for (const row of fresh) {
           const vid = String(row.videoId || "").trim();
           const rec = need.find((x) => x.videoId === vid);
@@ -3741,6 +3532,7 @@ async function rebuildGenresFromLibraryOpenAI({
               broad: String(row.broad || ""),
               niche: String(row.niche || ""),
               at: now,
+              p: ctx.provider.id,
             };
           }
         }
@@ -3759,11 +3551,7 @@ async function rebuildGenresFromLibraryOpenAI({
       }
     }
   } catch (e) {
-    return {
-      ok: false,
-      error: "openai_failed",
-      message: String(e?.message || e) || "OpenAI request failed during category rebuild.",
-    };
+    return aiFailureResponse(e);
   }
 
   const topNiches = [...nicheWeight.entries()]
@@ -3795,12 +3583,15 @@ async function rebuildGenresFromLibraryOpenAI({
   }
 
   if (replaceExisting) {
+    await snapshotCategoriesBeforeRebuild(`Category rebuild (${ctx.provider.label})`);
     await saveThemes(newThemes);
     await reassignLibraryThemesToThemeSet(newThemes);
   }
   return {
     ok: true,
-    mode: "openai",
+    mode: "ai",
+    provider: ctx.provider.id,
+    providerLabel: ctx.provider.label,
     themes: newThemes,
     libraryVideos: g.videos.length,
     userNiches: topNiches.length,
@@ -3808,23 +3599,14 @@ async function rebuildGenresFromLibraryOpenAI({
 }
 
 async function rebuildGenresFromLibrary(msg = {}) {
-  const mode = msg.mode === "openai" ? "openai" : "heuristic";
+  // "openai" is the pre-provider-selection value; it now means "use the selected AI provider".
+  const mode = msg.mode === "ai" || msg.mode === "openai" ? "ai" : "heuristic";
   const maxUserNiches = Math.min(20, Math.max(5, Number(msg.maxUserNiches) || 15));
   const replaceExisting = msg.replaceExisting !== false;
-  const settings = await loadSettings();
-  let apiKey = String(msg.openaiApiKey || "").trim() || String(settings.openaiApiKey || "").trim();
 
-  if (mode === "openai") {
-    if (msg.saveOpenaiKey && String(msg.openaiApiKey || "").trim().length >= 20) {
-      await saveSettings({ openaiApiKey: String(msg.openaiApiKey).trim() });
-      apiKey = String(msg.openaiApiKey).trim();
-    }
-    return rebuildGenresFromLibraryOpenAI({
-      maxUserNiches,
-      replaceExisting,
-      apiKey,
-      model: msg.openaiModel,
-    });
+  if (mode === "ai") {
+    const ctx = await resolveAiRequestContext(msg);
+    return rebuildGenresFromLibraryAI({ maxUserNiches, replaceExisting, ctx });
   }
   return rebuildGenresFromLibraryHeuristic({ maxUserNiches, replaceExisting });
 }
@@ -4537,16 +4319,31 @@ async function updateLocalPlaylistStack({ playlistId, patch }) {
   return { ok: true, playlist: pl, playlists: lists };
 }
 
+const AI_WATCH_STATE_SCHEMA = {
+  type: "object",
+  properties: {
+    videos: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          videoId: { type: "string" },
+          suggestedWatchState: { type: "string" },
+          suggestedTags: { type: "array", items: { type: "string" } },
+          reason: { type: "string" },
+        },
+        required: ["videoId", "suggestedWatchState", "suggestedTags", "reason"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["videos"],
+  additionalProperties: false,
+};
+
 async function aiSuggestWatchStates(msg = {}) {
-  const settings = await loadSettings();
-  let apiKey = String(msg.openaiApiKey || "").trim() || String(settings.openaiApiKey || "").trim();
-  if (msg.saveOpenaiKey === true && String(msg.openaiApiKey || "").trim().length >= 20) {
-    await saveSettings({ openaiApiKey: String(msg.openaiApiKey).trim() });
-    apiKey = String(msg.openaiApiKey).trim();
-  }
-  if (apiKey.length < 20) {
-    return { ok: false, error: "openai_key_required", message: "Add an OpenAI API key in Settings (or paste below)." };
-  }
+  const ctx = await resolveAiRequestContext(msg);
+  if (ctx.apiKey.length < ctx.provider.minKeyLength) return aiKeyRequiredResponse(ctx.provider);
 
   const rawIds = Array.isArray(msg.itemIds) ? msg.itemIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
   const itemIds = [...new Set(rawIds)];
@@ -4562,11 +4359,10 @@ async function aiSuggestWatchStates(msg = {}) {
     return { ok: false, error: "no_items", message: "None of those videos are in your library." };
   }
 
-  const model = String(msg.openaiModel || "").trim() || "gpt-4o-mini";
   const themeLabelById = new Map((await loadThemes()).map((t) => [t.id, String(t.label || "").trim()]));
   const watchLabels = TS_WATCH.WATCH_STATE_LIST.map((x) => `${x.id} (${x.label})`).join(", ");
   const rows = targets.map((it) => {
-    const row = buildLibraryItemPayloadForOpenAi(it, themeLabelById);
+    const row = buildLibraryItemPayloadForAi(it, themeLabelById);
     row.videoId = it.videoId || "";
     row.currentWatchState = TS_WATCH.normalizeWatchStateId(it.watchState);
     return row;
@@ -4587,6 +4383,8 @@ async function aiSuggestWatchStates(msg = {}) {
 
   const suggestions = [];
   const chunkSize = 24;
+  const targetByVideoId = new Map(targets.filter((t) => t.videoId).map((t) => [t.videoId, t]));
+  try {
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
     const system = `You suggest Watch States for saved YouTube library videos. Watch States are separate from tags/categories.
@@ -4596,15 +4394,16 @@ Do not assume transcripts or data from unrelated sites. JSON only:
 {"videos":[{"videoId":"","suggestedWatchState":"","suggestedTags":[""],"reason":""}]}
 Include every video in the input exactly once.`;
     const user = JSON.stringify({ watchStateOptions: watchLabels, stackContext: stackContext || null, videos: chunk });
-    const parsed = await openAiJsonCompletion({ apiKey, model, system, user });
-    const arr = parsed.videos || parsed.items || parsed.results;
-    if (!Array.isArray(arr)) throw new Error("JSON missing videos[]");
+    const parsed = await aiCompleteJson(ctx, { system, user, schema: AI_WATCH_STATE_SCHEMA });
+    const arr = parsed?.videos || parsed?.items || parsed?.results;
+    if (!Array.isArray(arr)) throw new Error("The AI response was missing videos[]. Nothing was changed.");
     for (const row of arr) {
-      const videoId = String(row.videoId || "").trim();
-      if (!videoId) continue;
+      const videoId = String(row?.videoId || "").trim();
+      // Ignore anything that was not part of this request.
+      if (!videoId || !targetByVideoId.has(videoId)) continue;
       suggestions.push({
         videoId,
-        itemId: targets.find((t) => t.videoId === videoId)?.id || null,
+        itemId: targetByVideoId.get(videoId).id,
         suggestedWatchState: TS_WATCH.normalizeWatchStateId(row.suggestedWatchState),
         suggestedTags: Array.isArray(row.suggestedTags)
           ? row.suggestedTags.map((t) => String(t || "").trim()).filter(Boolean).slice(0, 8)
@@ -4612,6 +4411,9 @@ Include every video in the input exactly once.`;
         reason: String(row.reason || "").slice(0, 400),
       });
     }
+  }
+  } catch (e) {
+    return aiFailureResponse(e);
   }
 
   return {
@@ -5045,6 +4847,10 @@ async function getFullState() {
     settings: sanitizeSettingsForClient(rawSettings),
     hasYoutubeApiKey: Boolean(rawSettings.youtubeDataApiKey),
     hasOpenaiKey: Boolean(rawSettings.openaiApiKey),
+    hasAnthropicKey: Boolean(rawSettings.anthropicApiKey),
+    aiKeys: TS_AI.describeAiKeys(rawSettings),
+    aiProvider: TS_AI.resolveAiSettings(rawSettings).providerId,
+    aiCategoryUndo: await describeAiCategoryUndo(),
     hasYoutubeOAuthClientId: Boolean(String(rawSettings.youtubeOAuthClientId || "").trim()),
     integrationHealth: integrationHealthFromSettings(rawSettings),
     extensionId: chrome.runtime?.id || "",
@@ -5141,7 +4947,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_PATCH_SETTINGS": {
-        const patch = msg.patch || {};
+        const patch = TS_AI.normalizeAiSettingsPatch(msg.patch || {});
         if (Object.prototype.hasOwnProperty.call(patch, "youtubeOAuthClientId")) {
           clearYoutubeImportAuthCache();
         }
@@ -5151,6 +4957,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           settings: sanitizeSettingsForClient(merged),
           hasYoutubeApiKey: Boolean(merged.youtubeDataApiKey),
           hasOpenaiKey: Boolean(merged.openaiApiKey),
+          hasAnthropicKey: Boolean(merged.anthropicApiKey),
+          aiKeys: TS_AI.describeAiKeys(merged),
+          aiProvider: TS_AI.resolveAiSettings(merged).providerId,
+          integrationHealth: integrationHealthFromSettings(merged),
         });
         break;
       }
@@ -5164,6 +4974,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "TUBESTACK_TEST_OPENAI_CONNECTION": {
         sendResponse(await testOpenAiConnection(msg));
+        break;
+      }
+      case "TUBESTACK_TEST_AI_CONNECTION": {
+        sendResponse(await testAiProviderConnection(msg));
         break;
       }
       case "TUBESTACK_CREATE_YOUTUBE_PLAYLIST": {
@@ -5441,8 +5255,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await rebuildGenresFromLibrary(msg));
         break;
       }
-      case "TUBESTACK_AI_CATEGORIZE_LIBRARY": {
-        sendResponse(await aiCategorizeLibrary(msg));
+      // Legacy name: now returns a preview and never writes the library.
+      case "TUBESTACK_AI_CATEGORIZE_LIBRARY":
+      case "TUBESTACK_AI_CATEGORIZE_PREVIEW": {
+        sendResponse(await aiCategorizePreview(msg));
+        break;
+      }
+      case "TUBESTACK_AI_CATEGORIZE_APPLY": {
+        sendResponse(await aiCategorizeApply(msg));
+        break;
+      }
+      case "TUBESTACK_AI_CATEGORIZE_UNDO": {
+        sendResponse(await aiCategorizeUndo());
         break;
       }
       case "TUBESTACK_RENAME_THEME": {

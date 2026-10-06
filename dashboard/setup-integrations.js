@@ -7,6 +7,9 @@ function send(type, payload = {}) {
 let state = {
   hasYoutubeApiKey: false,
   hasOpenaiKey: false,
+  hasAnthropicKey: false,
+  aiProvider: "openai",
+  aiKeys: {},
   hasYoutubeOAuthClientId: false,
   settings: {},
   oauthRedirectUri: "",
@@ -89,9 +92,10 @@ function checklistLabel(kind) {
     if (state.youtubeOAuthTested) return "Sign-in tested";
     return "Saved";
   }
-  if (kind === "openai") {
-    if (!state.hasOpenaiKey) return "Not set";
-    return "Saved · Optional";
+  if (kind === "openai" || kind === "anthropic") {
+    const has = kind === "openai" ? state.hasOpenaiKey : state.hasAnthropicKey;
+    if (!has) return "Not set";
+    return state.aiProvider === kind ? "Saved · Selected provider" : "Saved · Optional";
   }
   return "—";
 }
@@ -103,6 +107,7 @@ function renderChecklist() {
     ["YouTube API key", "youtube_api"],
     ["Google OAuth Client ID", "youtube_oauth"],
     ["OpenAI API key", "openai"],
+    ["Anthropic (Claude) API key", "anthropic"],
   ];
   ul.innerHTML = rows
     .map(([label, kind]) => {
@@ -116,6 +121,9 @@ function renderChecklist() {
 function applyLoadedState(r) {
   state.hasYoutubeApiKey = Boolean(r.hasYoutubeApiKey);
   state.hasOpenaiKey = Boolean(r.hasOpenaiKey);
+  state.hasAnthropicKey = Boolean(r.hasAnthropicKey);
+  state.aiProvider = r.aiProvider || "openai";
+  state.aiKeys = r.aiKeys || {};
   state.hasYoutubeOAuthClientId = Boolean(
     r.hasYoutubeOAuthClientId || String(r.settings?.youtubeOAuthClientId || "").trim()
   );
@@ -156,6 +164,20 @@ function applyLoadedState(r) {
       ? "Saved on this device. Paste a new key only to replace it."
       : "Optional — paste when you want AI features.";
   }
+
+  const ak = document.getElementById("siAnthropicKey");
+  if (ak) {
+    ak.value = "";
+    ak.placeholder = state.hasAnthropicKey ? "Key on file — enter only to replace" : "sk-ant-…";
+  }
+  const akh = document.getElementById("siAnthropicKeyHint");
+  if (akh) {
+    akh.textContent = state.hasAnthropicKey
+      ? `Saved on this device (${state.aiKeys?.anthropic?.hint || "••••"}). Paste a new key only to replace it.`
+      : "Optional — paste when you want to use Anthropic (Claude) for AI features.";
+  }
+  const akd = document.getElementById("siAnthropicMakeDefault");
+  if (akd) akd.checked = state.aiProvider === "anthropic" || !state.hasAnthropicKey;
 
   renderChecklist();
 }
@@ -340,6 +362,75 @@ document.getElementById("siClearOpenai")?.addEventListener("click", async () => 
   }
   state.hasOpenaiKey = false;
   setStatus(st, "OpenAI key cleared.", true);
+  await loadState();
+});
+
+const ANTHROPIC_ORIGINS = ["https://api.anthropic.com/*"];
+
+/** Request api.anthropic.com access while the click still counts as a user gesture. */
+async function requestAnthropicAccess() {
+  try {
+    return await chrome.permissions.request({ origins: ANTHROPIC_ORIGINS });
+  } catch {
+    return false;
+  }
+}
+
+document.getElementById("siSaveAnthropic")?.addEventListener("click", async () => {
+  const raw = document.getElementById("siAnthropicKey")?.value.trim() || "";
+  const st = document.getElementById("siAnthropicStatus");
+  if (raw.length < 20) {
+    setStatus(st, "Paste a valid Anthropic API key first.", false);
+    return;
+  }
+  await requestAnthropicAccess();
+  const patch = { anthropicApiKey: raw };
+  if (document.getElementById("siAnthropicMakeDefault")?.checked) patch.aiProvider = "anthropic";
+  const r = await send("TUBESTACK_PATCH_SETTINGS", { patch });
+  if (!r?.ok) {
+    setStatus(st, "Could not save.", false);
+    return;
+  }
+  document.getElementById("siAnthropicKey").value = "";
+  setStatus(
+    st,
+    patch.aiProvider ? "Anthropic key saved on this device and selected as the AI provider." : "Anthropic key saved on this device.",
+    true
+  );
+  await loadState();
+});
+
+document.getElementById("siTestAnthropic")?.addEventListener("click", async () => {
+  const key = document.getElementById("siAnthropicKey")?.value.trim() || "";
+  const st = document.getElementById("siAnthropicStatus");
+  if (!key && !state.hasAnthropicKey) {
+    setStatus(st, "Paste your Anthropic API key first.", false);
+    return;
+  }
+  if (!(await requestAnthropicAccess())) {
+    setStatus(st, "TubeStack needs permission to reach api.anthropic.com. Allow the browser prompt and try again.", false);
+    return;
+  }
+  setStatus(st, "Testing…", true);
+  const r = await send("TUBESTACK_TEST_AI_CONNECTION", { provider: "anthropic", apiKey: key || undefined });
+  const msg = r?.ok
+    ? r.allOk
+      ? `Connected (${r.modelDisplayName || r.model}).`
+      : `Key accepted, but a test request failed: ${r.completionError || "unknown error"}`
+    : r?.message || r?.error || "Test failed.";
+  setStatus(st, msg, Boolean(r?.ok && r.allOk));
+  await loadState();
+});
+
+document.getElementById("siClearAnthropic")?.addEventListener("click", async () => {
+  if (!confirm("Remove the saved Anthropic API key from this device?")) return;
+  const st = document.getElementById("siAnthropicStatus");
+  const r = await send("TUBESTACK_PATCH_SETTINGS", { patch: { anthropicApiKey: "" } });
+  if (!r?.ok) {
+    setStatus(st, "Could not clear.", false);
+    return;
+  }
+  setStatus(st, "Anthropic key cleared.", true);
   await loadState();
 });
 

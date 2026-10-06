@@ -559,6 +559,49 @@ scenario("onboarding: click favorites, double-click super-favorites, keyboard an
   }
 });
 
+scenario("settings: AI categorization (OpenAI / Anthropic) and Data & Backup work side by side", async () => {
+  const b = await launch("settings");
+  try {
+    let page = await openDashboard(b);
+    await page.eval(`chrome.storage.local.set(${JSON.stringify(populatedStorage())})`);
+    page = await openDashboard(b);
+    await page.eval(`setActiveWindow("settings")`);
+    const visible = (sel) =>
+      page.eval(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return !!el && el.getClientRects().length > 0; })()`);
+
+    for (const sel of ["#settingsAiProvider", "#settingsBackupCard", "#btnExportBackup", "#btnImportBackup"]) {
+      eq(await visible(sel), true, `${sel} visible`);
+    }
+    eq(
+      await page.eval(`[...document.querySelectorAll("#settingsAiProvider option")].map((o) => o.textContent.trim())`),
+      ["OpenAI", "Anthropic (Claude)"],
+      "provider choices"
+    );
+    // The fixture selected Anthropic; only its block shows.
+    eq(await page.eval(`document.getElementById("settingsAiProvider").value`), "anthropic", "stored provider selected");
+    eq(await visible('[data-ai-provider-block="anthropic"]'), true, "Anthropic settings shown");
+    eq(await visible('[data-ai-provider-block="openai"]'), false, "OpenAI settings hidden");
+    await page.shot("08-settings-ai-and-backup");
+
+    await page.eval(`(() => {
+      const sel = document.getElementById("settingsAiProvider");
+      sel.value = "openai";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await page.waitFor(`chrome.storage.local.get("settings").then((b) => b.settings.aiProvider === "openai")`, { label: "provider saved" });
+    await page.waitFor(`document.querySelector('[data-ai-provider-block="openai"]').getClientRects().length > 0`, { label: "OpenAI block shown" });
+    eq(await visible('[data-ai-provider-block="anthropic"]'), false, "Anthropic settings hidden after switching");
+    const st = (await storageGet(page, "settings")).settings;
+    eq([st.openaiApiKey, st.anthropicApiKey], [SECRETS.openaiApiKey, SECRETS.anthropicApiKey], "switching provider kept both keys");
+
+    const html = await page.eval(`document.documentElement.outerHTML`);
+    for (const k of ["openaiApiKey", "anthropicApiKey"]) assert(!html.includes(SECRETS[k]), `${k} never rendered into the page`);
+    eq(page.dialogs, [], "no alert dialogs");
+  } finally {
+    await b.close();
+  }
+});
+
 // ---------------------------------------------------------------- runner
 
 (async () => {

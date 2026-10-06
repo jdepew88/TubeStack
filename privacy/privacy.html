@@ -136,7 +136,7 @@
 
       <p>
         This policy describes how the <strong>TubeStack</strong> Chrome Extension handles information when you use it.
-        TubeStack is <strong>not affiliated with YouTube, Google, or OpenAI.</strong>
+        TubeStack is <strong>not affiliated with YouTube, Google, OpenAI, or Anthropic.</strong>
       </p>
 
       <h2>Chrome Web Store Limited Use disclosure</h2>
@@ -149,7 +149,8 @@
         single purpose&mdash;saving, organizing, and reopening YouTube watch and Shorts tabs in a local library. TubeStack
         does <strong>not</strong> sell user data, does <strong>not</strong> use user data for personalized or
         interest-based advertising, and does <strong>not</strong> transfer user data to third parties except when
-        <strong>you</strong> explicitly use optional Google or OpenAI features (requests go directly to those services),
+        <strong>you</strong> explicitly use optional Google features or optional AI categorization with OpenAI or Anthropic
+        (requests go directly to those services),
         or when required by law or for security.
       </p>
 
@@ -182,7 +183,15 @@
           History API.
         </li>
         <li>Extension settings and UI preferences (including your selected queue and sidebar panel state).</li>
-        <li>YouTube Data API keys and OpenAI API keys you paste (stored locally only).</li>
+        <li>
+          YouTube Data API keys, OpenAI API keys, and Anthropic API keys you paste (stored locally only, in Chrome
+          extension storage), plus your choice of AI provider and model.
+        </li>
+        <li>
+          A temporary undo point for your most recent AI categorization or category rebuild (previous category list
+          and per-video category), so you can restore it. It is replaced by the next run and removed when you delete
+          your library.
+        </li>
         <li>YouTube OAuth Web Client IDs you paste (public client identifiers, stored locally).</li>
         <li>
           <strong>Google account email (optional)</strong> — if you enter it during setup, it is stored locally to help
@@ -221,16 +230,42 @@
         features. Requests go directly from the extension to Google&rsquo;s services.
       </p>
       <p>
-        <strong>OpenAI</strong> — Optional calls happen only when you configure an API key and run AI features
-        (including <strong>Test OpenAI connection</strong> in Settings). Selected saved-video metadata may be sent for
-        categorization or Watch State suggestions when you explicitly run those tools.
+        <strong>AI categorization (optional)</strong> — TubeStack remains local-first and works without any AI
+        provider. In Settings you choose one provider: <strong>OpenAI</strong> or <strong>Anthropic (Claude)</strong>.
+        TubeStack contacts that provider only when you explicitly run an AI tool (AI categorize, an AI category
+        rebuild, Watch State suggestions, or <strong>Test connection</strong> in Settings). It never sends your library
+        in the background.
       </p>
+      <ul>
+        <li>
+          If <strong>OpenAI</strong> is selected, the metadata needed for that operation is sent directly to OpenAI
+          (<code>api.openai.com</code>) using your OpenAI API key.
+        </li>
+        <li>
+          If <strong>Anthropic</strong> is selected, the metadata needed for that operation is sent directly to
+          Anthropic (<code>api.anthropic.com</code>) using your Anthropic API key.
+        </li>
+        <li>
+          The metadata is limited to what TubeStack already stored for the videos you chose (for example title,
+          channel, list category, tags, the video&rsquo;s own note, Watch State, a short description snippet, and its
+          current category) plus your category names. TubeStack does <strong>not</strong> send transcripts, watch URLs,
+          browsing history, unrelated playlists, Google API keys, or OAuth tokens.
+        </li>
+        <li>
+          API keys are stored locally in Chrome extension storage and are sent only to the provider they belong to, in
+          request headers. Usage is billed to your own provider account; TubeStack cannot see your balance.
+        </li>
+        <li>
+          AI results are shown for review first; your library changes only when you click <strong>Apply Changes</strong>.
+        </li>
+      </ul>
 
       <h2>Permissions and page access</h2>
       <p>
         TubeStack declares <code>contextMenus</code>, <code>identity</code>, <code>scripting</code>,
         <code>sidePanel</code>, <code>storage</code>, and <code>unlimitedStorage</code>, plus YouTube host permissions.
-        Google APIs and OpenAI are optional runtime host permissions. TubeStack does <strong>not</strong> request Chrome
+        Google APIs, OpenAI (<code>api.openai.com</code>), and Anthropic (<code>api.anthropic.com</code>) are optional
+        runtime host permissions, requested only when you use those features. TubeStack does <strong>not</strong> request Chrome
         History, the broad <code>tabs</code> permission, <code>windows</code>, or <code>&lt;all_urls&gt;</code>.
       </p>
       <p>
@@ -248,8 +283,9 @@
       </p>
       <p>
         The file contains your library and organization data — saved videos, local playlists, categories and favorites,
-        notes, watch states and locally tracked progress, the Subbed Channels list, and non-secret settings. It does
-        <strong>not</strong> contain API keys, the OAuth Client ID, your Google account email, or Google sign-in tokens.
+        notes, watch states and locally tracked progress, the Subbed Channels list, and non-secret settings (including
+        your chosen AI provider and model). It does <strong>not</strong> contain API keys (YouTube, OpenAI or Anthropic),
+        the OAuth Client ID, your Google account email, or Google sign-in tokens.
         Anyone who has the file can read your saved-video list and notes, so store it like any personal document.
       </p>
       <p>

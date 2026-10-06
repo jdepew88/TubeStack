@@ -27,8 +27,8 @@ const SECRETS = {
   openaiApiKey: "sk-proj-FAKE-openai-key-1111111111111111",
   youtubeOAuthClientId: "123456789012-fakeclientid.apps.googleusercontent.com",
   youtubeAccountEmail: "fake.person@example.com",
-  // Fields a future build might add — the name-pattern guard must keep them out too.
   anthropicApiKey: "sk-ant-FAKE-anthropic-key-2222222222",
+  // A field a future build might add — the name-pattern guard must keep it out too.
   googleRefreshToken: "1//FAKE-refresh-token-3333333333",
 };
 
@@ -206,10 +206,16 @@ function populatedStorage() {
     latestImportAt: "2026-05-01T08:00:00.000Z",
     youtubeLastScanSummary: { channelTitle: "Fake channel", categoryBreakdown: { 10: 4, 28: 2 }, scannedAt: "2026-05-01T08:00:00.000Z" },
     sidebarSectionVisibility: { focus: true, watchAnalytics: false, subscriptions: true },
+    // AI preferences (not credentials) travel with the library:
+    aiProvider: "anthropic",
+    anthropicModel: "claude-sonnet-5-5",
+    openaiModel: "gpt-4o-mini",
     // Per-install / secret fields that must not travel:
     youtubeApiLastTestAt: "2026-05-01T08:00:00.000Z",
     youtubeApiLastTestOk: true,
     openaiLastTestOk: true,
+    anthropicLastTestAt: "2026-06-01T08:00:00.000Z",
+    anthropicLastTestOk: true,
     focusSession: { startedAt: 1, endsAt: 2, minutes: 25 },
     ...SECRETS,
   };
@@ -227,6 +233,7 @@ function populatedStorage() {
     metadataRepairState: { [VID[12]]: { attempts: 2, lastAt: "2026-06-20T00:00:00.000Z" } },
     sidebarPlayback: { playlistId: "pl-0004-session-music", index: 1, activeTabId: 77 },
     openAiLibraryClassifyV1: { abc123: { themeId: THEME.music, at: 1 } },
+    aiCategoryUndoSnapshotV1: { at: "2026-06-20T00:00:00.000Z", kind: "categorize", label: "AI categorize", items: [] },
   };
 }
 

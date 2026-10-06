@@ -157,16 +157,43 @@ test("API keys, OAuth Client ID, account email and token-like fields are never e
     assert(!(k in backup.data.settings), `${k} key absent from settings`);
     assert(!text.includes(v), `${k} value absent from file text`);
   }
-  for (const k of ["youtubeApiLastTestAt", "youtubeApiLastTestOk", "openaiLastTestOk", "focusSession"]) {
+  for (const k of ["youtubeApiLastTestAt", "youtubeApiLastTestOk", "openaiLastTestOk", "anthropicLastTestAt", "anthropicLastTestOk", "focusSession"]) {
     assert(!(k in backup.data.settings), `per-install ${k} absent`);
   }
 });
 
 test("transient and cache storage keys are not exported", async () => {
   const { backup } = await exportFrom(bootExtension({ storage: populatedStorage() }));
-  for (const k of ["saveOperations", "metadataRepairState", "sidebarPlayback", "openAiLibraryClassifyV1"]) {
+  for (const k of ["saveOperations", "metadataRepairState", "sidebarPlayback", "openAiLibraryClassifyV1", "aiCategoryUndoSnapshotV1"]) {
     assert(!(k in backup.data), `${k} not in backup`);
   }
+});
+
+test("OpenAI, Anthropic and YouTube credentials are excluded while AI preferences travel", async () => {
+  const { backup } = await exportFrom(bootExtension({ storage: populatedStorage() }));
+  const text = asFileText(backup);
+  for (const k of ["openaiApiKey", "anthropicApiKey", "youtubeDataApiKey", "youtubeOAuthClientId"]) {
+    assert(!(k in backup.data.settings), `${k} not exported`);
+    assert(!text.includes(SECRETS[k]), `${k} value nowhere in the file`);
+    assert(backup.excludedSettings.includes(k), `${k} listed as excluded`);
+  }
+  eq(backup.data.settings.aiProvider, "anthropic", "selected provider kept");
+  eq(backup.data.settings.anthropicModel, "claude-sonnet-5-5", "Anthropic model kept");
+  eq(backup.data.settings.openaiModel, "gpt-4o-mini", "OpenAI model kept");
+});
+
+test("every credential field the AI provider registry declares is treated as a secret", async () => {
+  const sb = { console };
+  sb.globalThis = sb;
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, "lib", "ai-providers.js"), "utf8"), sb);
+  const AI = sb.TUBESTACK_AI;
+  assert(AI && AI.AI_PROVIDER_IDS.length >= 2, "provider registry loads");
+  for (const id of AI.AI_PROVIDER_IDS) {
+    const { keySetting, modelSetting } = AI.AI_PROVIDERS[id];
+    eq(B.isExcludedSettingKey(keySetting), true, `${id} key setting (${keySetting}) excluded`);
+    eq(B.isExcludedSettingKey(modelSetting), false, `${id} model setting (${modelSetting}) kept`);
+  }
+  eq(B.isExcludedSettingKey("aiProvider"), false, "provider choice kept");
 });
 
 test("export does not write to or change storage", async () => {
@@ -370,6 +397,31 @@ test("replace mode swaps a populated library and keeps this install's own creden
   eq(dest.browser.store.settings.onboardingComplete, true, "onboarding state comes from the backup");
   eq(dest.browser.store.sidebarPlayback, null, "stale side-panel session cleared");
   eq(dest.browser.store.saveOperations, [{ id: "keep-me", state: "completed" }], "save-operation records untouched");
+});
+
+test("restore keeps the destination's OpenAI and Anthropic keys and clears its stale AI undo snapshot", async () => {
+  const { backup } = await exportFrom(bootExtension({ storage: populatedStorage() }));
+  const destKeys = {
+    openaiApiKey: "sk-proj-DEST-openai-key-aaaaaaaaaaaaaaaa",
+    anthropicApiKey: "sk-ant-DEST-anthropic-key-bbbbbbbbbbbbbbbb",
+    youtubeDataApiKey: "AIzaDEST-youtube-key-cccccccccccccc",
+  };
+  const dest = await freshInstall({
+    settings: { ...CONSENTED, ...destKeys, aiProvider: "openai", anthropicLastTestOk: false },
+    aiCategoryUndoSnapshotV1: { at: "2026-10-01T00:00:00.000Z", kind: "categorize", label: "old run", items: [] },
+  });
+  const r = await dest.send({ type: "TUBESTACK_BACKUP_RESTORE", backup });
+  eq(r.ok, true, `restore ok (${r.message || r.error})`);
+  const st = dest.browser.store.settings;
+  for (const [k, v] of Object.entries(destKeys)) eq(st[k], v, `destination ${k} preserved`);
+  eq(st.anthropicLastTestOk, false, "destination test result preserved");
+  eq(st.aiProvider, "anthropic", "provider preference comes from the backup");
+  eq(dest.browser.store.aiCategoryUndoSnapshotV1, null, "undo cannot swap in the pre-restore library");
+  const state = await dest.send({ type: "TUBESTACK_GET_STATE" });
+  eq(state.aiCategoryUndo ?? null, null, "app reports nothing to undo");
+  eq(state.aiKeys?.openai?.configured, true, "OpenAI key still configured");
+  eq(state.aiKeys?.anthropic?.configured, true, "Anthropic key still configured");
+  assert(!JSON.stringify(state).includes(destKeys.anthropicApiKey), "app state never exposes the key");
 });
 
 test("a storage write failure leaves the existing library exactly as it was", async () => {

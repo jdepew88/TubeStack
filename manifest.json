@@ -12,7 +12,7 @@
   },
   "permissions": ["contextMenus", "identity", "scripting", "sidePanel", "storage", "unlimitedStorage"],
   "host_permissions": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
-  "optional_host_permissions": ["https://www.googleapis.com/*", "https://api.openai.com/*"],
+  "optional_host_permissions": ["https://www.googleapis.com/*", "https://api.openai.com/*", "https://api.anthropic.com/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },

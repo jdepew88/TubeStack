@@ -14,9 +14,9 @@ The hosted HTML version at [`privacy/privacy.html`](../privacy/privacy.html) is 
 
 ## What TubeStack is
 
-**TubeStack is a Chrome Extension** (Manifest V3) that runs in your browser. It helps you save and organize YouTube watch and Shorts tabs, build a local video library, and optionally use YouTube’s APIs and OpenAI for advanced features you configure yourself.
+**TubeStack is a Chrome Extension** (Manifest V3) that runs in your browser. It helps you save and organize YouTube watch and Shorts tabs, build a local video library, and optionally use YouTube’s APIs and an AI provider (OpenAI or Anthropic) for advanced features you configure yourself.
 
-**TubeStack is not affiliated with YouTube, Google, or OpenAI.** Those are separate companies with their own terms and privacy policies.
+**TubeStack is not affiliated with YouTube, Google, OpenAI, or Anthropic.** Those are separate companies with their own terms and privacy policies.
 
 ---
 
@@ -52,7 +52,8 @@ Depending on how you use TubeStack, the extension may store locally, among other
 - **YouTube OAuth Web Client IDs** — stored locally; Connect YouTube helps you set them up without sending credentials to TubeStack.
 - **Google account email (optional)** — stored locally to help you remember which Google Cloud project your API key belongs to. Not sent to a TubeStack server.
 - **OAuth access tokens** — kept **in the service worker’s memory only** (not in `chrome.storage.local`) until they expire or you choose **Sign out of Google** in Settings.
-- **OpenAI API keys** — stored locally in Chrome extension storage.
+- **OpenAI and Anthropic API keys** — stored locally in Chrome extension storage, together with your selected AI provider and model.
+- **AI undo point** — the category list and per-video category from just before your most recent AI categorization or category rebuild, so you can restore it. Replaced by the next run; removed when you delete your library.
 
 ---
 
@@ -62,11 +63,15 @@ Depending on how you use TubeStack, the extension may store locally, among other
 
 **YouTube and Google API calls only happen when you configure and use those optional features** (API lookups, playlist operations, OAuth sign-in). Requests go **directly from the extension to Google’s services**. TubeStack does not route those requests through a TubeStack-owned server.
 
-### OpenAI (optional)
+### AI categorization: OpenAI or Anthropic (optional)
 
-**OpenAI API calls only happen when you configure an API key and run optional AI features** (AI-assisted categorization or **Test OpenAI connection** in Settings). Requests go **directly to OpenAI’s API** (`api.openai.com`), using your key only for user-initiated actions.
+TubeStack remains local-first; AI categorization is optional. In **Settings → AI categorization** you choose one provider — **OpenAI** or **Anthropic (Claude)** — and TubeStack contacts it **only when you explicitly run an AI tool** (AI categorize, an AI category rebuild, Watch State suggestions, or **Test connection**). TubeStack does **not** send your library to either provider in the background.
 
-AI categorization and AI Watch State suggestions may send **selected video metadata** from your saved library (titles, channels, tags, notes, current watch state). AI does not overwrite watch states unless you confirm an apply step.
+- If **OpenAI** is selected, the metadata needed for that operation is sent **directly** to OpenAI (`api.openai.com`) with your OpenAI API key.
+- If **Anthropic** is selected, the metadata needed for that operation is sent **directly** to Anthropic (`api.anthropic.com`) with your Anthropic API key.
+- Metadata is limited to what TubeStack already stored for the videos you chose (title, channel, list category, tags, the video’s own note, Watch State, a short description snippet, current category) plus your category names. Transcripts, watch URLs, browsing history, unrelated playlists, Google API keys, and OAuth tokens are **not** sent.
+- API keys are stored locally in Chrome extension storage and are sent only to the provider they belong to, in request headers. Usage is billed to **your** provider account; TubeStack cannot see your balance.
+- AI results are previewed first. Categories and Watch States change only after you confirm (**Apply Changes** / **Apply**), and the last applied AI categorization can be undone.
 
 ---
 
@@ -108,7 +113,7 @@ TubeStack does **not** reconstruct what you watched before install or on sites o
 
 ## Permissions and page access
 
-TubeStack declares **`contextMenus`**, **`identity`**, **`scripting`**, **`sidePanel`**, **`storage`**, and **`unlimitedStorage`**, plus **YouTube host permissions** at install time. **Google APIs** and **OpenAI** are **optional host permissions** requested at runtime when you use those features.
+TubeStack declares **`contextMenus`**, **`identity`**, **`scripting`**, **`sidePanel`**, **`storage`**, and **`unlimitedStorage`**, plus **YouTube host permissions** at install time. **Google APIs**, **OpenAI** (`api.openai.com`), and **Anthropic** (`api.anthropic.com`) are **optional host permissions** requested at runtime when you use those features.
 
 TubeStack does **not** request Chrome History, the broad **`tabs`** permission, **`windows`**, or **`<all_urls>`**.
 
@@ -137,8 +142,8 @@ For a permission-by-permission breakdown, see **[PERMISSIONS.md](PERMISSIONS.md)
 **Settings → Data & Backup** can export your TubeStack library to a JSON file and restore one later (for example, to move to another TubeStack install).
 
 - A backup is created **only when you click Export TubeStack Backup**. TubeStack builds the file in your browser and hands it to Chrome’s normal download; it is **never uploaded** anywhere, and TubeStack has no backup server or sync.
-- The file contains your library and organization data: saved videos (IDs, URLs, titles, channels, thumbnail URLs), local playlists, categories and favorite tiers, notes and timestamp notes, watch states, locally tracked watch progress and daily watch totals, the Subbed Channels list, non-secret settings, and layout preferences.
-- It **does not contain** your YouTube Data API key, OpenAI API key, OAuth Client ID, Google account email, or any Google sign-in token. Those must be set up again on the new install.
+- The file contains your library and organization data: saved videos (IDs, URLs, titles, channels, thumbnail URLs), local playlists, categories and favorite tiers, notes and timestamp notes, watch states, locally tracked watch progress and daily watch totals, the Subbed Channels list, non-secret settings (including which AI provider and model you chose), and layout preferences.
+- It **does not contain** your YouTube Data API key, OpenAI API key, Anthropic API key, OAuth Client ID, Google account email, or any Google sign-in token. Those must be set up again on the new install. It also leaves out AI response caches and the AI categorization undo copy.
 - Treat the file like any personal document: anyone who has it can read your saved-video list and notes.
 - **Import** shows a preview first and changes nothing until you confirm. Confirming **replaces** the library on that install; its own API keys, OAuth Client ID and sign-in are kept. If the install already has a library, a safety backup of it is downloaded first.
 
@@ -156,7 +161,7 @@ You can **delete local TubeStack data** from Settings in the dashboard:
 
 You can also clear API keys, clear AI cache, and clear the Subbed Channels list separately from Settings.
 
-Clearing data in TubeStack does not delete your Google or OpenAI accounts or change those companies’ API usage records.
+Clearing data in TubeStack does not delete your Google, OpenAI, or Anthropic accounts or change those companies’ API usage records.
 
 ---
 
@@ -172,4 +177,4 @@ For privacy questions about **TubeStack**, use the contact or support channel in
 
 **https://github.com/jdepew88/TubeStack**
 
-For **Google**, **YouTube**, or **OpenAI** data practices, refer to those companies’ official policies.
+For **Google**, **YouTube**, **OpenAI**, or **Anthropic** data practices, refer to those companies’ official policies.

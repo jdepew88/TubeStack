@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TubeStack — YouTube setup guide</title>
+    <title>TubeStack — Setup guide (YouTube &amp; AI providers)</title>
     <link rel="icon" type="image/png" href="../icons/logo.png" />
     <link rel="stylesheet" href="../lib/ui-themes.css" />
     <link rel="stylesheet" href="setup-guide.css" />
@@ -34,7 +34,7 @@
         <a href="#sg-paste">Where to paste</a>
         <a href="#sg-trouble">Troubleshooting</a>
         <a href="#sg-privacy">Privacy</a>
-        <a href="#sg-openai">OpenAI (optional)</a>
+        <a href="#sg-ai">AI providers (optional)</a>
       </nav>
 
       <section class="sg-section" id="sg-unlocks" aria-labelledby="sg-unlocks-h">
@@ -272,24 +272,57 @@
         </p>
       </section>
 
-      <section class="sg-section" id="sg-openai" aria-labelledby="sg-openai-h">
-        <h2 id="sg-openai-h">OpenAI API key <span class="sg-badge">Optional</span></h2>
+      <section class="sg-section" id="sg-ai" aria-labelledby="sg-ai-h">
+        <h2 id="sg-ai-h">AI providers <span class="sg-badge">Optional</span></h2>
         <p>
-          Some dashboard tools (for example AI-assisted categorization) can call OpenAI using an API key you store in
-          TubeStack. The key stays on this device and is sent only to OpenAI when you run those features.
+          AI tools (generate categories, AI categorize, Watch State suggestions) can use <strong>OpenAI</strong> or
+          <strong>Anthropic (Claude)</strong>. Pick one in <strong>Settings → AI categorization</strong>. TubeStack sends the
+          metadata a tool needs straight from your browser to that provider, only when you run the tool, and always
+          shows a preview before anything in your library changes. Keys stay on this device and are never put in a
+          backup file.
         </p>
+      </section>
+
+      <section class="sg-section" id="sg-openai" aria-labelledby="sg-openai-h">
+        <h2 id="sg-openai-h">OpenAI API key</h2>
         <ol class="sg-plain-steps">
           <li>
             Sign in at
             <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer">platform.openai.com</a> (the
             API platform — not the same product as ChatGPT).
           </li>
-          <li>Open <strong>API keys</strong>, create a secret key, and paste it into <strong>Settings → OpenAI API key</strong>.</li>
-          <li>API usage is billed through the platform account’s billing or prepaid credits.</li>
+          <li>Open <strong>API keys</strong> and create a secret key. API usage is billed through that account’s credits.</li>
+          <li>
+            In TubeStack choose <strong>Provider: OpenAI</strong> in <strong>Settings → AI categorization</strong>, paste the
+            key, save, and use <strong>Test API connection</strong>.
+          </li>
         </ol>
         <div class="sg-callout" role="note">
           <strong>ChatGPT Plus is separate.</strong>
-          <p>A ChatGPT subscription doesn’t fund API calls. Use <strong>Test API connection</strong> in Settings to confirm the key works.</p>
+          <p>A ChatGPT subscription doesn’t fund API calls.</p>
+        </div>
+      </section>
+
+      <section class="sg-section" id="sg-anthropic" aria-labelledby="sg-anthropic-h">
+        <h2 id="sg-anthropic-h">Anthropic (Claude) API key</h2>
+        <ol class="sg-plain-steps">
+          <li>
+            Sign in to the
+            <a href="https://platform.claude.com/" target="_blank" rel="noopener noreferrer">Claude Console</a>
+            (the <strong>Anthropic API</strong> platform — not the Claude.ai chat app and not Claude Code).
+          </li>
+          <li>Add API credits under billing, then create an API key under <strong>API keys</strong>.</li>
+          <li>
+            In TubeStack choose <strong>Provider: Anthropic (Claude)</strong>, paste the key, pick a model, save, and use
+            <strong>Test connection</strong>. Requests go only to <span class="sg-inline">api.anthropic.com</span>.
+          </li>
+        </ol>
+        <div class="sg-callout" role="note">
+          <strong>A Claude.ai subscription is separate.</strong>
+          <p>
+            Pro, Max and Team plans don’t fund API calls. TubeStack can’t read your Anthropic balance; if credits run
+            out, AI tools say so and nothing in your library changes.
+          </p>
         </div>
       </section>
     </div>

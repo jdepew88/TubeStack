@@ -14,7 +14,7 @@
         <div>
           <h1>Setup Integrations</h1>
           <p class="si-lead">
-            Optional YouTube Data API, Google OAuth, and OpenAI — all stored locally. TubeStack works without any of
+            Optional YouTube Data API, Google OAuth, and AI providers (OpenAI or Anthropic) — all stored locally. TubeStack works without any of
             these.
           </p>
         </div>
@@ -27,7 +27,7 @@
       <section class="si-card si-reminder" aria-labelledby="si-local-heading">
         <h2 id="si-local-heading" class="si-section-title">Local-first</h2>
         <p>
-          TubeStack works locally without Google, YouTube API, OpenAI, or any TubeStack server. Optional integrations
+          TubeStack works locally without Google, YouTube API, OpenAI, Anthropic, or any TubeStack server. Optional integrations
           only run when you enable and use them.
         </p>
       </section>
@@ -150,8 +150,37 @@
         </details>
       </section>
 
+      <section class="si-card" id="siSectionAnthropic" aria-labelledby="si-anthropic-heading">
+        <h2 id="si-anthropic-heading" class="si-section-title">Anthropic (Claude) API key</h2>
+        <p class="si-hint">
+          Anthropic is optional and an alternative to OpenAI for AI categorization. TubeStack only contacts Anthropic
+          (api.anthropic.com) when Anthropic is the selected provider in Settings and you explicitly run an AI tool.
+          This is an <strong>Anthropic API key</strong> from the Claude Console — not a Claude.ai subscription.
+        </p>
+        <label class="ob-label" for="siAnthropicKey">Anthropic API key</label>
+        <input type="password" id="siAnthropicKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" />
+        <p class="si-hint ob-muted" id="siAnthropicKeyHint">Paste a key to add or replace.</p>
+        <label class="modal-checkbox"
+          ><input type="checkbox" id="siAnthropicMakeDefault" checked /> Use Anthropic (Claude) as the AI provider</label
+        >
+        <div class="si-actions">
+          <button type="button" id="siSaveAnthropic" class="btn small">Save Anthropic key</button>
+          <button type="button" id="siTestAnthropic" class="btn small ghost">Test Anthropic connection</button>
+          <button type="button" id="siClearAnthropic" class="btn small danger ghost">Clear key</button>
+        </div>
+        <p id="siAnthropicStatus" class="si-status" role="status"></p>
+        <details class="si-help">
+          <summary>How to get an Anthropic API key</summary>
+          <ol>
+            <li>Sign in to the <a href="https://platform.claude.com/" target="_blank" rel="noopener noreferrer">Claude Console</a>.</li>
+            <li>Add API credits under billing, then create a key under API keys.</li>
+            <li>Paste it here and test it. Choose the model in Settings → AI categorization.</li>
+          </ol>
+        </details>
+      </section>
+
       <footer class="si-footer">
-        <a class="btn ghost" href="setup-guide.html" target="_blank" rel="noopener noreferrer">Full setup guide (Google &amp; OpenAI)</a>
+        <a class="btn ghost" href="setup-guide.html" target="_blank" rel="noopener noreferrer">Full setup guide (Google &amp; AI providers)</a>
       </footer>
     </div>
     <script src="setup-integrations.js"></script>

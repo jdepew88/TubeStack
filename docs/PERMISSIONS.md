@@ -20,7 +20,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | --- | --- |
 | No History / tabs / windows / all_urls | TubeStack does not request these permissions or read unrelated browsing history |
 | Host access at install | Limited to `youtube.com` and `m.youtube.com` |
-| Optional hosts | Google APIs and OpenAI — granted at runtime when the user runs those features |
+| Optional hosts | Google APIs, OpenAI, and Anthropic — granted at runtime when the user runs those features |
 | Data storage | Library data stored locally in `chrome.storage.local` on the user’s device (`unlimitedStorage` raises quota) |
 
 ### Approved install-time permissions
@@ -63,7 +63,8 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 ```json
 "optional_host_permissions": [
   "https://www.googleapis.com/*",
-  "https://api.openai.com/*"
+  "https://api.openai.com/*",
+  "https://api.anthropic.com/*"
 ]
 ```
 
@@ -239,6 +240,19 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 
 > Optional access to OpenAI when you add an API key and run AI organization features yourself.
 
+### Optional: `https://api.anthropic.com/*`
+
+| Field | Detail |
+| --- | --- |
+| Why optional | Optional AI categorization (alternative provider to OpenAI) and connection test |
+| Grant mechanism | Runtime permission request (from the Settings / AI tool click) before fetch to Anthropic |
+| User trigger | User selects Anthropic (Claude), adds an Anthropic API key, and runs AI categorization or test |
+| Data sent | Selected metadata from saved library items only — not a log of all browsing |
+
+**Chrome Web Store justification (short):**
+
+> Optional access to Anthropic’s API when you choose Anthropic (Claude) as the AI provider, add your own API key, and run AI organization features yourself.
+
 ---
 
 ## APIs used without extra permissions
@@ -247,7 +261,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | --- | --- | --- |
 | `chrome.tabs.query` / `create` / `update` / `remove` | Save YouTube tabs by position; open library videos; open dashboard | YouTube **host permissions** allow reading `url`/`title` for matching tabs without the broad **`tabs`** permission |
 | `chrome.runtime.*` | Messaging, extension pages | Always available |
-| `chrome.permissions.request` | Optional Google/OpenAI hosts | Requests optional hosts only when needed |
+| `chrome.permissions.request` | Optional Google/OpenAI/Anthropic hosts | Requests optional hosts only when needed |
 
 **Important for reviewers:** Without the **`tabs`** permission and without host access to other origins, TubeStack **cannot** read tab URLs/titles on arbitrary non-YouTube sites.
 

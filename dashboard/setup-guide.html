@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TubeStack — Setup guide (Google Cloud &amp; OpenAI)</title>
+    <title>TubeStack — Setup guide (Google Cloud &amp; AI providers)</title>
     <link rel="icon" type="image/png" href="../icons/logo.png" />
     <link rel="stylesheet" href="setup-guide.css" />
   </head>
@@ -14,7 +14,7 @@
           <h1>TubeStack setup guide</h1>
           <p class="sg-lead">
             One-time Google Cloud configuration for the <strong>YouTube Data API v3</strong> key and
-            <strong>OAuth</strong> (playlist tools), plus a short note on <strong>OpenAI</strong> for optional AI
+            <strong>OAuth</strong> (playlist tools), plus short notes on <strong>OpenAI</strong> and <strong>Anthropic (Claude)</strong> for optional AI
             features in the dashboard.
           </p>
         </div>
@@ -129,6 +129,32 @@
         <p class="sg-muted">
           Use <strong>Test API connection</strong> in Settings after saving the key to confirm the extension can reach
           OpenAI.
+        </p>
+      </section>
+
+      <section class="sg-section" aria-labelledby="sg-anthropic-heading">
+        <h2 id="sg-anthropic-heading">Anthropic (Claude) API key (optional)</h2>
+        <p>
+          Instead of OpenAI, you can choose <strong>Anthropic (Claude)</strong> in <strong>Settings → AI
+          categorization</strong>. TubeStack then sends the metadata needed for an AI tool directly to Anthropic
+          (<code>api.anthropic.com</code>) — only when you run that tool. The key is kept on this device.
+        </p>
+        <ol>
+          <li>
+            Sign in to the
+            <a href="https://platform.claude.com/" target="_blank" rel="noopener noreferrer">Claude Console</a>
+            (the <strong>Anthropic API</strong> platform — not the Claude.ai chat app and not Claude Code).
+          </li>
+          <li>Add API credits under billing, then create an API key under <strong>API keys</strong>.</li>
+          <li>
+            In TubeStack choose <strong>Provider: Anthropic (Claude)</strong>, paste the key, pick a model, save, and use
+            <strong>Test connection</strong>.
+          </li>
+        </ol>
+        <p>
+          A <strong>Claude.ai</strong> subscription (Pro, Max, Team) is <strong>separate</strong> from API billing and
+          does not fund API calls. TubeStack cannot read your Anthropic balance; if credits run out, AI tools say so and
+          nothing in your library changes.
         </p>
       </section>
     </div>

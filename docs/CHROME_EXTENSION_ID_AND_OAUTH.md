@@ -45,7 +45,7 @@ If the extension ID changes, sign-in breaks until you update the OAuth client’
 - Private keys used to fix a dev extension ID (`manifest.json` `key`)
 - OAuth **client secrets** (Web clients used only in extension flows may not need secrets in-repo; never publish secrets regardless)
 - **Access tokens**, **refresh tokens**, or user session data
-- **YouTube Data API keys**, **OpenAI API keys**, or other live credentials
+- **YouTube Data API keys**, **OpenAI or Anthropic API keys**, or other live credentials
 
 TubeStack stores user-supplied Client IDs and API keys **locally** in the browser; the repo should only contain placeholders and documentation.
 

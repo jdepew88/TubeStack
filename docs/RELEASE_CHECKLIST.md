@@ -38,6 +38,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - `https://www.googleapis.com/*`
 - `https://api.openai.com/*`
+- `https://api.anthropic.com/*`
 
 ---
 
@@ -61,7 +62,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 - [ ] **Host permissions minimized**
   - Required: `youtube.com`, `m.youtube.com` only
-  - Optional: `www.googleapis.com`, `api.openai.com` (runtime grant)
+  - Optional: `www.googleapis.com`, `api.openai.com`, `api.anthropic.com` (runtime grant)
 
 - [ ] **Context menus scoped**
   - Save menus on **YouTube URLs only**
@@ -108,8 +109,8 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 
 ## Disclosures, privacy, and data
 
-- [ ] **OpenAI disclosure present**
-  - Store listing and in-extension copy state optional AI may send selected video metadata to OpenAI
+- [ ] **AI provider disclosure present**
+  - Store listing and in-extension copy state optional AI may send selected video metadata to the selected provider (OpenAI or Anthropic)
 
 - [ ] **Privacy policy present**
   - [`privacy/privacy.html`](../privacy/privacy.html) is valid standalone HTML and matches [PRIVACY.md](PRIVACY.md)
@@ -124,7 +125,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
   - Hosted privacy policy includes Limited Use + `unlimitedStorage` disclosures
 
 - [ ] **Data deletion controls tested**
-  - Delete library, clear API keys, OAuth sign-out, OpenAI key removal, AI cache clear
+  - Delete library, clear API keys, OAuth sign-out, OpenAI/Anthropic key removal, AI cache clear
 
 - [ ] **Local storage cleared successfully**
   - After deletion actions, verify `chrome.storage.local` reflects expected removals
@@ -141,7 +142,7 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
   - Descriptions and justifications copied into store dashboard; character limits verified
 
 - [ ] **Disclaimers present**
-  - TubeStack not affiliated with YouTube, Google, or OpenAI
+  - TubeStack not affiliated with YouTube, Google, OpenAI, or Anthropic
 
 ---
 
@@ -181,7 +182,8 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 ### Optional integrations
 
 - [ ] **AI categorization (small batch)**
-  - Test with a small set and test OpenAI key; confirm metadata sent matches disclosure
+  - Test with a small set with both OpenAI and Anthropic keys; confirm metadata sent matches disclosure, preview does not change the library until Apply, and Undo restores it
+  - `node --test tests/*.test.js` passes (provider adapters, categorization validation, manifest checks)
 
 - [ ] **YouTube playlist creation**
   - OAuth path creates playlist on intended account with expected visibility

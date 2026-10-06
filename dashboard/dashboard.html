@@ -28,7 +28,7 @@
         </div>
         <p class="oobe-wizard-guide">
           <button type="button" class="oobe-guide-btn" id="obOpenSetupGuide">
-            Setup guide: optional YouTube API, Google &amp; OpenAI
+            Setup guide: optional YouTube API, Google &amp; AI providers
             <span class="oobe-guide-hint"> — opens in a new window</span>
           </button>
         </p>
@@ -44,8 +44,8 @@
             <p>
               <strong>Before you continue:</strong> TubeStack stores your YouTube library, playlists, settings, and
               <strong>local watch progress</strong> from open YouTube watch/Shorts tabs in Chrome extension storage on
-              <strong>this device</strong>. It does not use Chrome History or scan unrelated sites. Optional Google or
-              OpenAI features only contact those services when you enable and run them.
+              <strong>this device</strong>. It does not use Chrome History or scan unrelated sites. Optional Google, OpenAI, or
+              Anthropic (Claude) features only contact those services when you enable and run them.
             </p>
             <p class="ob-muted">
               Full details:
@@ -97,7 +97,7 @@
               class="btn ghost"
               href="setup-integrations.html?from=onboarding"
               id="obOpenSetupIntegrations"
-              >Optional: API keys &amp; OpenAI (advanced)</a
+              >Optional: API keys &amp; AI providers (advanced)</a
             >
             <button type="button" class="btn oobe-cta primary" id="obNextFromIntro">Continue</button>
           </div>
@@ -332,8 +332,8 @@
           <p class="panel-hint">
             Click: cycle <strong>off → green → off</strong> (skips gold). <strong>Double-click</strong>: toggle
             <strong>gold</strong> favorite (max 8). <strong>Ctrl+click</strong>: rename. Use
-            <strong>Rebuild categories…</strong> to replace chips from your saved library (~25 broad + your top niches); OpenAI
-            optional for smarter niche names when titles lack YouTube tags.
+            <strong>Rebuild categories…</strong> to replace chips from your saved library (~25 broad + your top niches); an AI
+            provider (OpenAI or Anthropic) is optional for smarter niche names when titles lack YouTube tags.
           </p>
           <div class="category-editor-controls">
             <span class="ob-label">Sort</span>
@@ -356,20 +356,28 @@
         <section class="panel-block ai-categorize-panel" data-sidebar-section="aiCategorize">
           <span class="label">AI categorize (optional)</span>
           <p class="panel-hint">
-            Optional OpenAI tool. Uses your <strong>OpenAI API key</strong> from Settings (or paste below). Runs only when you click
-            <strong>Run AI categorize</strong> — nothing is sent to OpenAI in the background.
+            Uses the AI provider chosen in <strong>Settings → AI categorization</strong> (or paste a key below). Runs only
+            when you click <strong>Preview AI categorize</strong> — nothing is sent in the background, and nothing in your
+            library changes until you review the result and click <strong>Apply Changes</strong>.
           </p>
+          <p id="aiCatProviderLine" class="stat-line small ai-cat-provider-line">—</p>
           <p class="panel-hint ob-muted">
             For each selected video, TubeStack sends <strong>only</strong> metadata it already holds locally (e.g.
-            title, channel, list category, tags, notes, Watch State, optional description snippet, current category label).
-            <strong>Tags</strong> and <strong>Watch States</strong> are separate. It does <strong>not</strong> send
-            transcripts, watch URLs, YouTube/Google API keys, or OAuth tokens to OpenAI.
+            title, channel, list category, tags, notes, Watch State, optional description snippet, current category label)
+            plus your current category names. <strong>Tags</strong> and <strong>Watch States</strong> are separate. It does
+            <strong>not</strong> send transcripts, watch URLs, YouTube/Google API keys, or OAuth tokens.
           </p>
-          <p class="panel-hint ob-muted">Large jobs are capped at <strong>120 videos</strong> per run.</p>
+          <p class="panel-hint ob-muted">
+            Large jobs are sent in batches (up to <strong>500 videos</strong> per run) so categories stay consistent.
+          </p>
           <fieldset class="ai-cat-fieldset">
             <legend class="modal-legend">Videos to process</legend>
             <label class="modal-radio"
-              ><input type="radio" name="aiCatScope" value="library" checked /> Entire library</label
+              ><input type="radio" name="aiCatScope" value="library" checked /> Entire library (all playlists)</label
+            >
+            <label class="modal-radio"
+              ><input type="radio" name="aiCatScope" value="playlist" />
+              <span id="aiCatPlaylistScopeLabel">Current playlist</span></label
             >
             <label class="modal-radio"
               ><input type="radio" name="aiCatScope" value="filtered" /> Current filters + search (grid)</label
@@ -418,10 +426,10 @@
               placeholder="e.g. Split by project I’m researching; keep news separate from tutorials; group all music production together…"
             ></textarea>
           </div>
-          <label class="ob-label" for="aiCatOpenaiKey">OpenAI key (optional if saved in Settings)</label>
+          <label class="ob-label" for="aiCatApiKey" id="aiCatApiKeyLabel">API key (optional if saved in Settings)</label>
           <input
             type="password"
-            id="aiCatOpenaiKey"
+            id="aiCatApiKey"
             class="oobe-input"
             autocomplete="off"
             spellcheck="false"
@@ -429,7 +437,11 @@
           />
           <label class="modal-checkbox"><input type="checkbox" id="aiCatSaveKey" /> Save pasted key to Settings</label>
           <p id="aiCatStatus" class="modal-status" role="status"></p>
-          <button type="button" id="btnRunAiCategorize" class="btn small primary">Run AI categorize</button>
+          <button type="button" id="btnRunAiCategorize" class="btn small primary">Preview AI categorize</button>
+          <div id="aiCatUndoRow" class="ai-cat-undo-row hidden">
+            <p id="aiCatUndoText" class="stat-line small"></p>
+            <button type="button" id="btnUndoAiCategorize" class="btn small ghost">Undo</button>
+          </div>
           <hr class="panel-divider" />
           <span class="label">AI Watch State suggestions</span>
           <p class="panel-hint ob-muted">
@@ -596,7 +608,7 @@
             <h3 class="settings-section-title">Optional integrations</h3>
             <p class="panel-hint settings-section-lead">
               Not required for saving tabs or organizing your local library. Connect your own cloud projects here. Keys and Client IDs stay in <strong>Chrome extension storage on this
-              device</strong>; requests go <strong>directly</strong> from the browser to Google or OpenAI when you use a
+              device</strong>; requests go <strong>directly</strong> from the browser to Google, OpenAI, or Anthropic when you use a
               feature that needs them — not through a TubeStack backend.
             </p>
 
@@ -612,7 +624,7 @@
             <div class="settings-setup-integrations-cta">
               <a class="btn small ghost" href="setup-integrations.html?from=settings">Setup Integrations (advanced)</a>
               <p class="panel-hint ob-muted">
-                YouTube Data API key, OAuth, and OpenAI checklist. Use this if you prefer developer-style setup.
+                YouTube Data API key, OAuth, and AI provider (OpenAI / Anthropic) checklist. Use this if you prefer developer-style setup.
               </p>
             </div>
 
@@ -699,15 +711,39 @@
 
             <hr class="settings-divider settings-divider-major" />
 
-            <div class="settings-integration-block">
+            <div class="settings-integration-block settings-ai-block" id="settingsAiBlock">
+              <h4 class="settings-subhead-sm">AI categorization</h4>
+              <p class="panel-hint">
+                Optional. Choose which AI provider TubeStack calls when <strong>you</strong> run an AI tool. Your library is
+                never sent in the background.
+              </p>
+              <label class="ob-label" for="settingsAiProvider">Provider</label>
+              <select id="settingsAiProvider" class="oobe-input settings-ai-provider-select">
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+              </select>
+              <ul class="settings-ai-used-for" aria-label="Used for">
+                <li>Generate categories</li>
+                <li>Organize playlists</li>
+                <li>Categorize videos</li>
+                <li>Suggest Watch States</li>
+              </ul>
+              <p id="settingsAiCreditsNote" class="panel-hint ob-muted">API requests use your OpenAI account credits.</p>
+            </div>
+
+            <div class="settings-integration-block" data-ai-provider-block="openai">
               <h4 class="settings-subhead-sm">OpenAI</h4>
-              <p class="panel-hint">Optional API key for AI categorization and related tools. Used only when you run those features.</p>
+              <p class="panel-hint">
+                Uses an <strong>OpenAI API key</strong> from platform.openai.com (not a ChatGPT subscription). Used only
+                when you run AI features with OpenAI selected.
+              </p>
+              <p id="settingsOpenaiKeyHint" class="panel-hint ob-muted"></p>
               <label class="ob-label" for="settingsOpenaiKey">OpenAI API key</label>
               <input type="password" id="settingsOpenaiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
               <p class="panel-hint ob-muted">
                 Stored only in this browser’s <code>chrome.storage.local</code>. The key is never sent to TubeStack — only
                 in the <code>Authorization</code> header to <strong>api.openai.com</strong> when you explicitly run Test,
-                AI categorize, or an OpenAI category rebuild.
+                AI categorize, an AI category rebuild, or Watch State suggestions with OpenAI selected.
               </p>
               <div class="settings-openai-actions">
                 <button type="button" id="btnSaveOpenaiKey" class="btn small">Save OpenAI key</button>
@@ -726,6 +762,48 @@
                 <strong>Test</strong> calls OpenAI (models list + a 2-token completion). If your account exposes it, we also
                 request prepaid <strong>credit balance</strong>. Otherwise we only show <strong>rolling rate limits</strong>
                 (requests/tokens left in the current short window — not the same as monthly quota).
+              </p>
+            </div>
+
+            <div class="settings-integration-block hidden" data-ai-provider-block="anthropic">
+              <h4 class="settings-subhead-sm">Anthropic (Claude)</h4>
+              <p class="panel-hint">
+                Uses an <strong>Anthropic API key</strong> created in the Claude Console (platform.claude.com) — not a
+                Claude.ai subscription. Used only when you run AI features with Anthropic selected.
+              </p>
+              <p id="settingsAnthropicKeyHint" class="panel-hint ob-muted"></p>
+              <label class="ob-label" for="settingsAnthropicKey">Anthropic API key</label>
+              <input
+                type="password"
+                id="settingsAnthropicKey"
+                class="oobe-input"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="sk-ant-…"
+              />
+              <label class="ob-label" for="settingsAnthropicModel">Model</label>
+              <select id="settingsAnthropicModel" class="oobe-input"></select>
+              <p class="panel-hint ob-muted">
+                Stored only in this browser’s <code>chrome.storage.local</code>. The key is never sent to TubeStack — only
+                in the <code>x-api-key</code> header to <strong>api.anthropic.com</strong> when you explicitly run Test or an
+                AI tool.
+              </p>
+              <div class="settings-openai-actions">
+                <button type="button" id="btnSaveAnthropicKey" class="btn small">Save Anthropic key</button>
+                <button type="button" id="btnTestAnthropicConnection" class="btn small ghost">Test connection</button>
+                <button
+                  type="button"
+                  id="btnClearAnthropicKey"
+                  class="btn small danger ghost"
+                  title="Deletes the Anthropic API key from chrome.storage.local on this device. Does not change your Anthropic account."
+                >
+                  Remove Anthropic API key
+                </button>
+              </div>
+              <p id="anthropicTestStatus" class="stat-line small openai-test-status" role="status"></p>
+              <p class="panel-hint ob-muted">
+                <strong>Test</strong> checks that the key can use the selected model and sends one tiny request (a few
+                tokens) to confirm the account can run API requests. TubeStack cannot see your Anthropic credit balance.
               </p>
             </div>
           </div>
@@ -781,7 +859,7 @@
                 type="button"
                 id="btnClearOpenaiClassifyCache"
                 class="btn small danger ghost"
-                title="Deletes TubeStack’s local OpenAI title-classification cache. Does not remove your videos, themes, or API keys."
+                title="Deletes TubeStack’s local AI title-classification cache. Does not remove your videos, themes, or API keys."
               >
                 Clear AI categorization cache…
               </button>
@@ -802,7 +880,7 @@
                 href="setup-guide.html"
                 target="_blank"
                 rel="noopener noreferrer"
-                >Optional setup guide (YouTube API, Google &amp; OpenAI)</a
+                >Optional setup guide (YouTube API, Google &amp; AI providers)</a
               >
             </div>
             <p class="panel-hint ob-muted">Re-opens onboarding without deleting your library. Finish or skip to return.</p>
@@ -950,6 +1028,41 @@
           </div>
         </div>
 
+        <div id="aiPreviewModal" class="modal-overlay hidden" role="presentation">
+          <div class="modal-card modal-card-wide ai-preview-card" role="dialog" aria-labelledby="aiPreviewTitle" aria-modal="true">
+            <h3 id="aiPreviewTitle" class="modal-title">Review AI categorization</h3>
+            <p id="aiPreviewSummary" class="modal-lead"></p>
+            <p class="modal-lead ob-muted">
+              Nothing has changed yet. Uncheck any video you want to leave as it is, then click
+              <strong>Apply Changes</strong>. You can undo an applied run from the AI categorize panel.
+            </p>
+            <div id="aiPreviewCategories" class="ai-preview-categories"></div>
+            <div class="ai-preview-toolbar">
+              <label class="modal-checkbox"
+                ><input type="checkbox" id="aiPreviewShowUnchanged" /> Show unchanged videos</label
+              >
+            </div>
+            <div class="ai-preview-table-wrap">
+              <table class="ai-preview-table">
+                <thead>
+                  <tr>
+                    <th scope="col"><span class="sr-only">Apply</span></th>
+                    <th scope="col">Video</th>
+                    <th scope="col">Current category</th>
+                    <th scope="col">Proposed category</th>
+                  </tr>
+                </thead>
+                <tbody id="aiPreviewRows"></tbody>
+              </table>
+            </div>
+            <p class="modal-status" id="aiPreviewStatus" role="status"></p>
+            <div class="modal-actions modal-actions-split">
+              <button type="button" class="btn ghost" id="aiPreviewCancel">Cancel</button>
+              <button type="button" class="btn primary" id="aiPreviewApply">Apply Changes</button>
+            </div>
+          </div>
+        </div>
+
         <div id="genreRebuildModal" class="modal-overlay hidden" role="presentation">
           <div class="modal-card modal-card-wide" role="dialog" aria-labelledby="grTitle" aria-modal="true">
             <h3 id="grTitle" class="modal-title">Rebuild categories from library</h3>
@@ -959,17 +1072,19 @@
               <strong>re-tagged</strong> to the closest new category by keywords.
             </p>
             <p class="modal-lead ob-muted">
-              If you choose <strong>OpenAI</strong>, TubeStack sends <strong>only</strong> video titles (and optional channel names from
-              your library) to OpenAI in small batches — no transcripts, URLs, Google keys, or OAuth tokens. Results of
-              recent runs may be reused locally for up to 7 days to skip duplicate API calls for unchanged titles.
+              If you choose the <strong>AI provider</strong> (OpenAI or Anthropic, as selected in Settings), TubeStack sends
+              <strong>only</strong> video titles (and optional channel names from your library) directly to that provider in
+              small batches — no transcripts, URLs, Google keys, or OAuth tokens. Results of recent runs may be reused
+              locally for up to 7 days to skip duplicate API calls for unchanged titles. You can undo a rebuild from the AI
+              categorize panel.
             </p>
             <label class="ob-label" for="grMode">Niche detection</label>
             <select id="grMode" class="oobe-input">
               <option value="heuristic">Local — keyword + niche presets (no network)</option>
-              <option value="openai">OpenAI — model suggests niches from titles (uses saved key or paste below)</option>
+              <option value="ai" id="grModeAiOption">AI provider — model suggests niches from titles (uses saved key or paste below)</option>
             </select>
-            <label class="ob-label" for="grOpenaiKey">OpenAI key (only if mode is OpenAI; optional if already saved)</label>
-            <input type="password" id="grOpenaiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+            <label class="ob-label" for="grApiKey" id="grApiKeyLabel">API key (only if mode is AI provider; optional if already saved)</label>
+            <input type="password" id="grApiKey" class="oobe-input" autocomplete="off" spellcheck="false" placeholder="sk-…" />
             <label class="modal-checkbox"
               ><input type="checkbox" id="grSaveKey" /> Save this key to extension settings</label
             >
@@ -1085,6 +1200,8 @@
     <script src="../lib/ui-themes.js"></script>
     <script src="../lib/watch-states.js"></script>
     <script src="../lib/youtube-url.js"></script>
+    <script src="../lib/ai-providers.js"></script>
+    <script src="../lib/ai-categorize.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>

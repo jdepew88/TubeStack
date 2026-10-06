@@ -47,6 +47,15 @@ let watchByDay = {};
 let limits = { maxFavoriteThemes: 8, maxPlaylistThemes: 5 };
 let hasYoutubeApiKey = false;
 let hasOpenaiKey = false;
+const TS_AI = globalThis.TUBESTACK_AI;
+const TS_AI_CAT = globalThis.TUBESTACK_AI_CATEGORIZE;
+/** Per-provider { configured, hint } from the service worker — never the key itself. */
+let aiKeys = {};
+let aiProviderId = "openai";
+/** Last undoable AI categorization / rebuild ({ at, kind, label }) or null. */
+let aiCategoryUndo = null;
+/** Validated preview plan waiting for Apply / Cancel. Never written to storage. */
+let pendingAiPlan = null;
 let oauthRedirectUri = "";
 let lastPlaylistQueue = [];
 /** @type {Array<{ id: string; name: string; createdAt: string; items: object[] }>} */
@@ -3404,6 +3413,7 @@ function renderIntegrationHealth(health) {
     ["YouTube Data API", formatIntegrationHealthLine(h.youtubeApi)],
     ["Google OAuth", formatIntegrationHealthLine(h.youtubeOAuth)],
     ["OpenAI", formatIntegrationHealthLine(h.openai)],
+    ["Anthropic (Claude)", formatIntegrationHealthLine(h.anthropic)],
   ];
   list.innerHTML = rows
     .map(([label, value]) => `<li><span class="ih-label">${label}</span><span class="ih-value">${value}</span></li>`)
@@ -3437,6 +3447,8 @@ async function loadState() {
   limits = r.limits || limits;
   hasYoutubeApiKey = Boolean(r.hasYoutubeApiKey);
   hasOpenaiKey = Boolean(r.hasOpenaiKey);
+  applyAiStateFromResponse(r);
+  aiCategoryUndo = r.aiCategoryUndo || null;
   oauthRedirectUri = r.oauthRedirectUri || "";
   resetDashRenderLimit();
   renderIntegrationHealth(r.integrationHealth);
@@ -3472,6 +3484,8 @@ async function loadState() {
     oai.value = "";
     oai.placeholder = hasOpenaiKey ? "Key on file — enter only to replace" : "sk-… (optional)";
   }
+  syncAiSettingsUi();
+  renderAiCategoryUndo();
   if (settings.currentPlaylistName) currentPlaylistName = settings.currentPlaylistName;
   const savedCtxId = String(settings.currentPlaylistId || "").trim();
   if (savedCtxId && localPlaylists.some((x) => x.id === savedCtxId)) activeLocalPlaylistId = savedCtxId;
@@ -4742,6 +4756,12 @@ function renderSidebarFavoriteCategories() {
   }
 }
 
+/** Playlist used by the “Current playlist” AI scope: the one being viewed, else the current working playlist. */
+function aiScopePlaylist() {
+  const id = playlistViewMeta?.id || activeLocalPlaylistId;
+  return id ? localPlaylists.find((x) => x.id === id) || null : null;
+}
+
 function collectAiCategorizeItemIds(scope) {
   if (scope === "selected") {
     return [...selected].filter((id) => allItems.some((x) => x.id === id));
@@ -4749,7 +4769,114 @@ function collectAiCategorizeItemIds(scope) {
   if (scope === "filtered") {
     return visibleItems().map((x) => x.id);
   }
+  if (scope === "playlist") {
+    const pl = aiScopePlaylist();
+    if (!pl) return [];
+    const vids = playlistVideoIdSet(pl);
+    return allItems.filter((x) => vids.has(itemVideoId(x))).map((x) => x.id);
+  }
   return allItems.map((x) => x.id);
+}
+
+function currentAiProvider() {
+  return TS_AI.getAiProvider(aiProviderId) || TS_AI.AI_PROVIDERS[TS_AI.DEFAULT_AI_PROVIDER];
+}
+
+function currentAiModel() {
+  const p = currentAiProvider();
+  return TS_AI.resolveAiModel(p, settings[p.modelSetting]);
+}
+
+function applyAiStateFromResponse(r) {
+  if (!r) return;
+  if (r.aiKeys) aiKeys = r.aiKeys;
+  if (r.aiProvider) aiProviderId = r.aiProvider;
+  if (typeof r.hasOpenaiKey === "boolean") hasOpenaiKey = r.hasOpenaiKey;
+}
+
+/**
+ * Ask Chrome for the provider's optional host access while we still have the click's user gesture.
+ * Resolves true immediately when access was already granted.
+ */
+async function requestAiHostPermission(provider) {
+  try {
+    return await chrome.permissions.request({ origins: provider.origins });
+  } catch {
+    return false;
+  }
+}
+
+function aiKeyPlaceholder(provider) {
+  return aiKeys?.[provider.id]?.configured ? "Key on file — enter only to replace" : `${provider.keyPlaceholder} (optional)`;
+}
+
+function aiKeyHintText(provider) {
+  const k = aiKeys?.[provider.id];
+  return k?.configured
+    ? `Key on file (${k.hint}). Paste a new key only to replace it.`
+    : `No ${provider.accountName} API key saved on this device.`;
+}
+
+/** Settings → AI categorization, the AI panel, and the rebuild dialog all follow the selected provider. */
+function syncAiSettingsUi() {
+  const provider = currentAiProvider();
+  const sel = document.getElementById("settingsAiProvider");
+  if (sel) sel.value = provider.id;
+  document.querySelectorAll("[data-ai-provider-block]").forEach((el) => {
+    el.classList.toggle("hidden", el.getAttribute("data-ai-provider-block") !== provider.id);
+  });
+  const credits = document.getElementById("settingsAiCreditsNote");
+  if (credits) credits.textContent = `API requests use your ${provider.accountName} account credits.`;
+
+  const oaiHint = document.getElementById("settingsOpenaiKeyHint");
+  if (oaiHint) oaiHint.textContent = aiKeyHintText(TS_AI.OpenAIProvider);
+  const ant = TS_AI.AnthropicProvider;
+  const antKey = document.getElementById("settingsAnthropicKey");
+  // Placeholder only: settings sync runs often and must not wipe a key the user is typing.
+  if (antKey) antKey.placeholder = aiKeyPlaceholder(ant);
+  const antHint = document.getElementById("settingsAnthropicKeyHint");
+  if (antHint) antHint.textContent = aiKeyHintText(ant);
+  const antModel = document.getElementById("settingsAnthropicModel");
+  if (antModel) {
+    if (!antModel.options.length) {
+      for (const m of ant.models) {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.label;
+        antModel.appendChild(opt);
+      }
+    }
+    antModel.value = TS_AI.resolveAiModel(ant, settings.anthropicModel);
+  }
+
+  const line = document.getElementById("aiCatProviderLine");
+  if (line) {
+    const keyState = aiKeys?.[provider.id]?.configured ? "key saved" : "no key saved";
+    line.textContent = `Provider: ${provider.label} · ${currentAiModel()} · ${keyState}. Change in Settings → AI categorization.`;
+  }
+  const keyLabel = document.getElementById("aiCatApiKeyLabel");
+  if (keyLabel) keyLabel.textContent = `${provider.accountName} API key (optional if saved in Settings)`;
+  const keyInput = document.getElementById("aiCatApiKey");
+  if (keyInput) keyInput.placeholder = provider.keyPlaceholder;
+  const grOpt = document.getElementById("grModeAiOption");
+  if (grOpt) grOpt.textContent = `${provider.label} — model suggests niches from titles (uses saved key or paste below)`;
+  const grLabel = document.getElementById("grApiKeyLabel");
+  if (grLabel) grLabel.textContent = `${provider.accountName} API key (only for ${provider.label} mode; optional if already saved)`;
+  const grKey = document.getElementById("grApiKey");
+  if (grKey) grKey.placeholder = provider.keyPlaceholder;
+  updateAiCatScopeCount();
+}
+
+function renderAiCategoryUndo() {
+  const row = document.getElementById("aiCatUndoRow");
+  const text = document.getElementById("aiCatUndoText");
+  if (!row || !text) return;
+  row.classList.toggle("hidden", !aiCategoryUndo);
+  if (!aiCategoryUndo) return;
+  const when = aiCategoryUndo.at
+    ? new Date(aiCategoryUndo.at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
+    : "";
+  text.textContent = `Last change: ${aiCategoryUndo.label || "AI categorization"}${when ? ` · ${when}` : ""}.`;
 }
 
 function syncAiCategorizeStrategyUi() {
@@ -4784,17 +4911,32 @@ function updateAiCatScopeCount() {
   const el = document.getElementById("aiCatScopeCount");
   if (!el) return;
   updateAiWatchStateScopeCount();
+  const pl = aiScopePlaylist();
+  const plLabel = document.getElementById("aiCatPlaylistScopeLabel");
+  if (plLabel) plLabel.textContent = pl ? `Current playlist: ${pl.name || "Untitled"}` : "Current playlist (open a playlist first)";
   const n = ids.length;
-  const cap = 120;
   if (!n) {
     el.textContent =
-      scope === "selected" ? "No rows checked — pick “Entire library” or check videos in the grid." : "No videos to process.";
+      scope === "selected"
+        ? "No rows checked — pick “Entire library” or check videos in the grid."
+        : scope === "playlist"
+          ? "No library videos in the current playlist — open a playlist or choose another scope."
+          : "No videos to process.";
     return;
   }
-  el.textContent =
-    n > cap
-      ? `${n} video(s) match; only the first ${cap} will be sent to the model.`
-      : `${n} video(s) will be sent to the model.`;
+  const strategy = document.querySelector('input[name="aiCatStrategy"]:checked')?.value || "discover";
+  const run = TS_AI_CAT.planAiCategorizeRun({ itemCount: n, strategy });
+  const requests = `${run.requests} request${run.requests === 1 ? "" : "s"}`;
+  el.textContent = run.truncated
+    ? `${n} video(s) match; the first ${run.videos} will be sent in ${requests}.`
+    : `${run.videos} video(s) will be sent in ${requests}.`;
+}
+
+function aiCategorizeScopeDescription(scope) {
+  if (scope === "playlist") return `the playlist “${aiScopePlaylist()?.name || "Untitled"}”`;
+  if (scope === "selected") return "the checked videos";
+  if (scope === "filtered") return "the current filtered view";
+  return "your library";
 }
 
 function setActiveWindow(next) {
@@ -6424,6 +6566,98 @@ document.getElementById("spSave")?.addEventListener("click", async () => {
   setTimeout(() => smartPlaylistModal?.classList.add("hidden"), 700);
 });
 
+async function patchAiSettings(patch) {
+  const r = await send("TUBESTACK_PATCH_SETTINGS", { patch });
+  if (!r?.ok) return r;
+  if (r.settings) settings = { ...settings, ...r.settings };
+  applyAiStateFromResponse(r);
+  if (r.integrationHealth) renderIntegrationHealth(r.integrationHealth);
+  syncAiSettingsUi();
+  return r;
+}
+
+document.getElementById("settingsAiProvider")?.addEventListener("change", async (e) => {
+  const next = e.target.value;
+  if (!TS_AI.getAiProvider(next)) return;
+  const r = await patchAiSettings({ aiProvider: next });
+  if (!r?.ok) alert("Could not save the AI provider.");
+});
+
+document.getElementById("settingsAnthropicModel")?.addEventListener("change", async (e) => {
+  const r = await patchAiSettings({ anthropicModel: e.target.value });
+  if (!r?.ok) alert("Could not save the Anthropic model.");
+});
+
+function setAnthropicStatus(text, ok = false) {
+  const st = document.getElementById("anthropicTestStatus");
+  if (!st) return;
+  st.classList.toggle("success", ok);
+  st.textContent = text;
+}
+
+document.getElementById("btnSaveAnthropicKey")?.addEventListener("click", async () => {
+  const provider = TS_AI.AnthropicProvider;
+  const raw = document.getElementById("settingsAnthropicKey")?.value.trim() || "";
+  if (raw.length < provider.minKeyLength) {
+    setAnthropicStatus("Paste a full Anthropic API key (sk-ant-…) from the Claude Console.");
+    return;
+  }
+  // Ask for api.anthropic.com access now, while this click still counts as a user gesture.
+  const granted = await requestAiHostPermission(provider);
+  const r = await patchAiSettings({ anthropicApiKey: raw });
+  if (!r?.ok) {
+    setAnthropicStatus("Could not save key.");
+    return;
+  }
+  const input = document.getElementById("settingsAnthropicKey");
+  if (input) input.value = "";
+  setAnthropicStatus(
+    granted
+      ? "Anthropic key saved on this device."
+      : "Anthropic key saved on this device. TubeStack will ask for access to api.anthropic.com when you run an AI tool.",
+    true
+  );
+});
+
+document.getElementById("btnClearAnthropicKey")?.addEventListener("click", async () => {
+  if (!confirm("Remove the stored Anthropic API key from this device? It is deleted from chrome.storage.local only.")) return;
+  const r = await patchAiSettings({ anthropicApiKey: "" });
+  if (!r?.ok) {
+    setAnthropicStatus("Could not clear key.");
+    return;
+  }
+  setAnthropicStatus("Stored Anthropic API key removed.");
+});
+
+document.getElementById("btnTestAnthropicConnection")?.addEventListener("click", async () => {
+  const provider = TS_AI.AnthropicProvider;
+  const raw = document.getElementById("settingsAnthropicKey")?.value.trim() || "";
+  const keyToUse = raw.length >= provider.minKeyLength ? raw : undefined;
+  if (!keyToUse && !aiKeys?.anthropic?.configured) {
+    setAnthropicStatus("Paste an API key in the field above, or save one first.");
+    return;
+  }
+  if (!(await requestAiHostPermission(provider))) {
+    setAnthropicStatus("TubeStack needs permission to reach api.anthropic.com. Allow the browser prompt and try again.");
+    return;
+  }
+  const model = document.getElementById("settingsAnthropicModel")?.value || provider.defaultModel;
+  setAnthropicStatus("Testing connection to Anthropic…");
+  const r = await send("TUBESTACK_TEST_AI_CONNECTION", { provider: "anthropic", apiKey: keyToUse, model });
+  if (!r?.ok) {
+    setAnthropicStatus(r?.message || r?.error || "Test failed.");
+    return;
+  }
+  const lines = [`API key accepted. Model available: ${r.modelDisplayName || r.model}.`];
+  if (r.completionOk) {
+    const used = r.lastUsage ? (r.lastUsage.input_tokens || 0) + (r.lastUsage.output_tokens || 0) : null;
+    lines.push(`Test request OK${used != null ? ` (used ${used} tokens).` : "."}`);
+  } else {
+    lines.push(`Test request failed: ${r.completionError || "unknown error"}`);
+  }
+  setAnthropicStatus(lines.join("\n"), r.allOk === true);
+});
+
 document.getElementById("btnSaveOpenaiKey")?.addEventListener("click", async () => {
   const raw = document.getElementById("settingsOpenaiKey")?.value.trim() || "";
   if (raw.length < 20) {
@@ -6437,6 +6671,8 @@ document.getElementById("btnSaveOpenaiKey")?.addEventListener("click", async () 
   }
   if (r.settings) settings = r.settings;
   hasOpenaiKey = Boolean(r.hasOpenaiKey);
+  applyAiStateFromResponse(r);
+  syncAiSettingsUi();
   const oai = document.getElementById("settingsOpenaiKey");
   if (oai) {
     oai.value = "";
@@ -6455,6 +6691,8 @@ document.getElementById("btnClearOpenaiKey")?.addEventListener("click", async ()
   }
   if (r.settings) settings = { ...settings, ...r.settings };
   hasOpenaiKey = Boolean(r.hasOpenaiKey);
+  applyAiStateFromResponse(r);
+  syncAiSettingsUi();
   const oai = document.getElementById("settingsOpenaiKey");
   if (oai) {
     oai.value = "";
@@ -6478,6 +6716,8 @@ document.getElementById("btnTestOpenaiConnection")?.addEventListener("click", as
     }
     return;
   }
+  // Request api.openai.com access while the click still counts as a user gesture.
+  await requestAiHostPermission(TS_AI.OpenAIProvider);
   if (st) {
     st.classList.remove("success");
     st.textContent = "Testing connection to OpenAI…";
@@ -6562,43 +6802,241 @@ document.getElementById("btnRunAiCategorize")?.addEventListener("click", async (
       return;
     }
   }
+  const provider = currentAiProvider();
+  const model = currentAiModel();
+  const pasted = document.getElementById("aiCatApiKey")?.value.trim() || "";
+  if (!pasted && !aiKeys?.[provider.id]?.configured) {
+    if (status) {
+      status.classList.remove("success");
+      status.textContent = `Add an ${provider.label} API key in Settings → AI categorization, or paste one below.`;
+    }
+    return;
+  }
+  if (!(await requestAiHostPermission(provider))) {
+    if (status) {
+      status.classList.remove("success");
+      status.textContent = `TubeStack needs permission to reach ${provider.host}. Allow the browser prompt and try again.`;
+    }
+    return;
+  }
+  const run = TS_AI_CAT.planAiCategorizeRun({ itemCount: itemIds.length, strategy });
+  const capNote = run.truncated ? ` Only the first ${run.videos} of ${itemIds.length} videos will be included.` : "";
   if (
     !confirm(
-      "This will send each selected video’s stored metadata (title, channel, list category, tags/notes when present — no transcripts or URLs) to OpenAI and may update category assignments. Your OpenAI key is used only on api.openai.com. Continue?"
+      `${provider.label} will categorize ${run.videos} video(s) from ${aiCategorizeScopeDescription(scope)} in ${run.requests} request(s) using ${model}. This uses your ${provider.accountName} API credits.${capNote}\n\n` +
+        `Only stored metadata (title, channel, list category, tags/notes when present — no transcripts or URLs) and your category names are sent, directly to ${provider.host}.\n\n` +
+        "Nothing in your library changes until you review the result and click Apply Changes. Continue?"
     )
   ) {
     return;
   }
   const targetCategoryCount = Math.min(28, Math.max(2, Number(document.getElementById("aiCatTargetCount")?.value) || 8));
   const granularity = document.querySelector('input[name="aiCatGranularity"]:checked')?.value || "broad";
-  const pasted = document.getElementById("aiCatOpenaiKey")?.value.trim() || "";
-  const saveOpenaiKey = document.getElementById("aiCatSaveKey")?.checked === true;
+  const saveApiKey = document.getElementById("aiCatSaveKey")?.checked === true;
+  const runBtn = document.getElementById("btnRunAiCategorize");
+  if (runBtn) runBtn.disabled = true;
   if (status) {
     status.classList.remove("success");
-    status.textContent = "Calling OpenAI…";
+    status.textContent =
+      run.requests > 2
+        ? `Calling ${provider.label} (${run.requests} requests)… this can take a few minutes. Keep this tab open.`
+        : `Calling ${provider.label}…`;
   }
-  const r = await send("TUBESTACK_AI_CATEGORIZE_LIBRARY", {
-    itemIds,
-    strategy,
-    criteriaText: document.getElementById("aiCatCriteriaText")?.value || "",
-    targetCategoryCount,
-    granularity,
-    openaiApiKey: pasted || undefined,
-    saveOpenaiKey: saveOpenaiKey && pasted.length >= 20,
-  });
+  const pl = scope === "playlist" ? aiScopePlaylist() : null;
+  let r;
+  try {
+    r = await send("TUBESTACK_AI_CATEGORIZE_PREVIEW", {
+      itemIds,
+      strategy,
+      criteriaText: document.getElementById("aiCatCriteriaText")?.value || "",
+      targetCategoryCount,
+      granularity,
+      scope: pl ? { kind: "playlist", name: pl.name || "" } : { kind: scope },
+      provider: provider.id,
+      apiKey: pasted || undefined,
+      saveApiKey: saveApiKey && pasted.length >= provider.minKeyLength,
+    });
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
   if (!r?.ok) {
-    if (status) status.textContent = r?.message || r?.error || "Request failed.";
+    if (status) status.textContent = r?.message || r?.error || "Request failed. Nothing was changed.";
+    return;
+  }
+  const keyInput = document.getElementById("aiCatApiKey");
+  if (keyInput && saveApiKey) {
+    keyInput.value = "";
+    await loadState();
+  }
+  if (status) status.textContent = "Preview ready — review the proposed changes.";
+  openAiPreview(r.plan);
+});
+
+const aiPreviewModal = document.getElementById("aiPreviewModal");
+
+function aiPreviewCell(text, className) {
+  const td = document.createElement("td");
+  if (className) td.className = className;
+  td.textContent = text;
+  return td;
+}
+
+function renderAiPreviewRows() {
+  const body = document.getElementById("aiPreviewRows");
+  if (!body || !pendingAiPlan) return;
+  const showUnchanged = document.getElementById("aiPreviewShowUnchanged")?.checked === true;
+  const newKeys = new Set(pendingAiPlan.categories.filter((c) => c.isNew).map((c) => c.key));
+  body.replaceChildren();
+  for (const row of pendingAiPlan.rows) {
+    if (row.status === "unchanged" && !showUnchanged) continue;
+    const tr = document.createElement("tr");
+    tr.className = row.status === "unchanged" ? "ai-preview-unchanged" : "";
+    const tdCheck = document.createElement("td");
+    if (row.status === "changed") {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = true;
+      cb.dataset.itemId = row.itemId;
+      cb.setAttribute("aria-label", `Apply change for ${row.title || "video"}`);
+      tdCheck.appendChild(cb);
+    }
+    tr.appendChild(tdCheck);
+    const tdVideo = document.createElement("td");
+    const t = document.createElement("div");
+    t.className = "ai-preview-title";
+    t.textContent = row.title || "Untitled video";
+    tdVideo.appendChild(t);
+    if (row.channel) {
+      const ch = document.createElement("div");
+      ch.className = "ai-preview-channel ob-muted";
+      ch.textContent = row.channel;
+      tdVideo.appendChild(ch);
+    }
+    tr.appendChild(tdVideo);
+    tr.appendChild(aiPreviewCell(row.fromLabel || "—", "ai-preview-from"));
+    const to = aiPreviewCell(row.status === "unchanged" ? `${row.toLabel} (unchanged)` : row.toLabel, "ai-preview-to");
+    if (newKeys.has(row.categoryKey)) to.classList.add("ai-preview-new");
+    tr.appendChild(to);
+    body.appendChild(tr);
+  }
+  if (!body.children.length) {
+    const tr = document.createElement("tr");
+    const td = aiPreviewCell("No category changes proposed for these videos.", "ob-muted");
+    td.colSpan = 4;
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+}
+
+function openAiPreview(plan) {
+  pendingAiPlan = plan;
+  const c = plan.counts;
+  const summary = document.getElementById("aiPreviewSummary");
+  if (summary) {
+    const scope = plan.scope?.kind === "playlist" ? ` in “${plan.scope.name}”` : "";
+    summary.textContent =
+      `${plan.providerLabel} (${plan.model}) reviewed ${c.videos} video(s)${scope}: ${c.changed} would move, ` +
+      `${c.unchanged} stay where they are. ${c.newCategories} new categor${c.newCategories === 1 ? "y" : "ies"} proposed.` +
+      (plan.truncated ? ` Only the first ${c.videos} of ${plan.requestedCount} selected videos were included.` : "");
+  }
+  const cats = document.getElementById("aiPreviewCategories");
+  if (cats) {
+    cats.replaceChildren();
+    for (const cat of plan.categories) {
+      const chip = document.createElement("span");
+      chip.className = `ai-preview-chip${cat.isNew ? " is-new" : ""}`;
+      chip.textContent = `${cat.isNew ? "New: " : ""}${cat.label} · ${cat.videoCount}`;
+      chip.title = cat.isNew
+        ? cat.videoCount
+          ? "New category — created only if you apply at least one video into it."
+          : "Proposed but no videos landed here — it will not be created."
+        : "Existing category";
+      cats.appendChild(chip);
+    }
+  }
+  const showUnchanged = document.getElementById("aiPreviewShowUnchanged");
+  if (showUnchanged) showUnchanged.checked = false;
+  const st = document.getElementById("aiPreviewStatus");
+  if (st) {
+    st.textContent = "";
+    st.classList.remove("success");
+  }
+  const applyBtn = document.getElementById("aiPreviewApply");
+  if (applyBtn) applyBtn.disabled = c.changed === 0;
+  renderAiPreviewRows();
+  aiPreviewModal?.classList.remove("hidden");
+}
+
+function closeAiPreview(message) {
+  pendingAiPlan = null;
+  aiPreviewModal?.classList.add("hidden");
+  document.getElementById("aiPreviewRows")?.replaceChildren();
+  const status = document.getElementById("aiCatStatus");
+  if (status && message) {
+    status.classList.remove("success");
+    status.textContent = message;
+  }
+}
+
+document.getElementById("aiPreviewShowUnchanged")?.addEventListener("change", () => renderAiPreviewRows());
+document.getElementById("aiPreviewCancel")?.addEventListener("click", () => {
+  closeAiPreview("Preview discarded. Nothing in your library was changed.");
+});
+aiPreviewModal?.addEventListener("click", (e) => {
+  if (e.target === aiPreviewModal) closeAiPreview("Preview discarded. Nothing in your library was changed.");
+});
+
+document.getElementById("aiPreviewApply")?.addEventListener("click", async () => {
+  if (!pendingAiPlan) return;
+  const st = document.getElementById("aiPreviewStatus");
+  const excludedItemIds = [...document.querySelectorAll("#aiPreviewRows input[type=checkbox][data-item-id]")]
+    .filter((cb) => !cb.checked)
+    .map((cb) => cb.dataset.itemId);
+  const applyBtn = document.getElementById("aiPreviewApply");
+  if (applyBtn) applyBtn.disabled = true;
+  if (st) st.textContent = "Applying…";
+  const r = await send("TUBESTACK_AI_CATEGORIZE_APPLY", { plan: pendingAiPlan, excludedItemIds });
+  if (applyBtn) applyBtn.disabled = false;
+  if (!r?.ok) {
+    if (st) st.textContent = r?.message || r?.error || "Could not apply changes. Nothing was changed.";
+    return;
+  }
+  closeAiPreview();
+  await loadState();
+  renderThemeSidebars();
+  fillThemeFilter();
+  render();
+  const status = document.getElementById("aiCatStatus");
+  if (status) {
+    status.classList.add("success");
+    const added = r.newThemesCount ? ` ${r.newThemesCount} new categor${r.newThemesCount === 1 ? "y" : "ies"} added.` : "";
+    status.textContent = `Updated ${r.updatedCount ?? 0} video(s).${added} Use Undo below to restore the previous categories.`;
+  }
+});
+
+document.getElementById("btnUndoAiCategorize")?.addEventListener("click", async () => {
+  if (!aiCategoryUndo) return;
+  if (
+    !confirm(
+      `Undo “${aiCategoryUndo.label || "AI categorization"}”? Categories and video assignments return to how they were before it ran. Category changes you made after that run are also reverted.`
+    )
+  ) {
+    return;
+  }
+  const r = await send("TUBESTACK_AI_CATEGORIZE_UNDO");
+  const status = document.getElementById("aiCatStatus");
+  if (!r?.ok) {
+    if (status) status.textContent = r?.message || r?.error || "Could not undo.";
     return;
   }
   await loadState();
+  renderThemeSidebars();
+  fillThemeFilter();
+  render();
   if (status) {
     status.classList.add("success");
-    const extra = r.truncated ? " (input list was capped at 120.)" : "";
-    const added = r.newThemesCount ? ` ${r.newThemesCount} new categories added.` : "";
-    status.textContent = `Updated ${r.updatedCount ?? 0} video(s).${added}${extra}`;
+    status.textContent = `Restored previous categories (${r.restoredCount ?? 0} video(s) reverted).`;
   }
-  const oai = document.getElementById("aiCatOpenaiKey");
-  if (oai && saveOpenaiKey) oai.value = "";
 });
 
 document.getElementById("btnRunAiWatchStates")?.addEventListener("click", async () => {
@@ -6610,21 +7048,27 @@ document.getElementById("btnRunAiWatchStates")?.addEventListener("click", async 
     if (status) status.textContent = scope === "selected" ? "Check videos in the grid first." : "No videos to process.";
     return;
   }
+  const provider = currentAiProvider();
+  if (!(await requestAiHostPermission(provider))) {
+    if (status) status.textContent = `TubeStack needs permission to reach ${provider.host}. Allow the browser prompt and try again.`;
+    return;
+  }
   if (
     !confirm(
-      "Send stored metadata for these videos to OpenAI to suggest Watch States (not tags)? Suggestions are applied only if you click Apply afterward."
+      `Send stored metadata for these videos to ${provider.label} to suggest Watch States (not tags)? This uses your ${provider.accountName} API credits. Suggestions are applied only if you click Apply afterward.`
     )
   ) {
     return;
   }
-  const pasted = document.getElementById("aiCatOpenaiKey")?.value.trim() || "";
-  const saveOpenaiKey = document.getElementById("aiCatSaveKey")?.checked === true;
-  if (status) status.textContent = "Calling OpenAI…";
+  const pasted = document.getElementById("aiCatApiKey")?.value.trim() || "";
+  const saveApiKey = document.getElementById("aiCatSaveKey")?.checked === true;
+  if (status) status.textContent = `Calling ${provider.label}…`;
   const r = await send("TUBESTACK_AI_SUGGEST_WATCH_STATES", {
     itemIds,
     playlistId: playlistViewMeta?.id || activeLocalPlaylistId || undefined,
-    openaiApiKey: pasted || undefined,
-    saveOpenaiKey: saveOpenaiKey && pasted.length >= 20,
+    provider: provider.id,
+    apiKey: pasted || undefined,
+    saveApiKey: saveApiKey && pasted.length >= provider.minKeyLength,
   });
   if (!r?.ok) {
     if (status) status.textContent = r?.message || r?.error || "Request failed.";
@@ -6688,17 +7132,22 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
   const mode = document.getElementById("grMode")?.value || "heuristic";
   const replace = document.getElementById("grReplace")?.checked !== false;
   const saveKey = document.getElementById("grSaveKey")?.checked === true;
-  const pasted = document.getElementById("grOpenaiKey")?.value.trim() || "";
+  const pasted = document.getElementById("grApiKey")?.value.trim() || "";
   if (!replace) {
     if (st) st.textContent = "Merge mode is not implemented yet — enable “Replace” for a full rebuild.";
     return;
   }
-  const openAiMode = mode === "openai";
+  const aiMode = mode === "ai";
+  const provider = currentAiProvider();
+  if (aiMode && !(await requestAiHostPermission(provider))) {
+    if (st) st.textContent = `TubeStack needs permission to reach ${provider.host}. Allow the browser prompt and try again.`;
+    return;
+  }
   if (
     !confirm(
-      openAiMode
-        ? "This replaces all category chips and re-tags your library. OpenAI mode sends batched video titles (and optional channel names from your saved library) to api.openai.com only — no transcripts, Google keys, or OAuth tokens. Continue?"
-        : "This replaces all category chips and re-tags your library from titles in your saved library. Continue?"
+      aiMode
+        ? `This replaces all category chips and re-tags your library. ${provider.label} mode sends batched video titles (and optional channel names from your saved library) directly to ${provider.host} — no transcripts, Google keys, or OAuth tokens. This uses your ${provider.accountName} API credits. You can undo this from the AI categorize panel. Continue?`
+        : "This replaces all category chips and re-tags your library from titles in your saved library. You can undo this from the AI categorize panel. Continue?"
     )
   ) {
     return;
@@ -6710,8 +7159,9 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
   const r = await send("TUBESTACK_REBUILD_GENRES_FROM_LIBRARY", {
     mode,
     replaceExisting: replace,
-    openaiApiKey: pasted || undefined,
-    saveOpenaiKey: saveKey && pasted.length >= 20,
+    provider: provider.id,
+    apiKey: pasted || undefined,
+    saveApiKey: saveKey && pasted.length >= provider.minKeyLength,
   });
   if (!r?.ok) {
     if (st) {
@@ -6725,7 +7175,7 @@ document.getElementById("grRun")?.addEventListener("click", async () => {
   themes = r.themes || themes;
   if (st) {
     st.classList.add("success");
-    st.textContent = `Done: ${r.libraryVideos || 0} library videos · ${r.userNiches || 0} niche categories (${r.mode}).`;
+    st.textContent = `Done: ${r.libraryVideos || 0} library videos · ${r.userNiches || 0} niche categories (${r.providerLabel || r.mode}).`;
   }
   renderThemeSidebars();
   fillThemeFilter();
@@ -6762,9 +7212,13 @@ async function syncDashboardFromExtensionStorage(changes = null) {
   }
   if (changes?.settings?.newValue && typeof changes.settings.newValue === "object") {
     settings = { ...settings, ...changes.settings.newValue };
+    // Masked key hints + provider choice are derived before the raw keys are dropped below.
+    aiKeys = TS_AI.describeAiKeys(changes.settings.newValue);
+    aiProviderId = TS_AI.resolveAiSettings(changes.settings.newValue).providerId;
     // Never keep raw secrets from storage events in the UI object if present.
     delete settings.youtubeDataApiKey;
-    delete settings.openaiApiKey;
+    settings = TS_AI.stripAiSecrets(settings);
+    syncAiSettingsUi();
   }
 
   const needFetch =

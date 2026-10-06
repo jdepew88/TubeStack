@@ -76,9 +76,9 @@ If you add a Google OAuth Web application Client ID, you can sign in for account
 
 Sign-in is interactive. OAuth access tokens stay in the **service worker’s memory only** — not written to `chrome.storage.local`. Requests go directly between your browser and Google; TubeStack has **no backend server** that stores credentials.
 
-#### OpenAI tools (optional)
+#### AI tools: OpenAI or Anthropic (optional)
 
-If you add an OpenAI API key, AI-assisted organization tools run **only when you trigger them**. Requests go directly to OpenAI and may include selected video metadata (titles, channels, tags) from your saved library — not a log of all sites you visit.
+Choose **OpenAI** or **Anthropic (Claude)** in Settings and add your own API key. AI-assisted organization tools run **only when you trigger them**, and results are shown for review before anything changes. Requests go directly to the provider you selected and may include selected video metadata (titles, channels, tags) from your saved library — not a log of all sites you visit.
 
 You can remove the key and clear local AI cache from Settings.
 
@@ -102,7 +102,7 @@ TubeStack has **no central backend** that collects your library. Use of Google A
 
 ### Disclaimers
 
-TubeStack is **not affiliated with**, **endorsed by**, or **sponsored by** YouTube, Google, or OpenAI. You are responsible for complying with YouTube’s Terms of Service, Google API/OAuth policies, and OpenAI’s terms when you use those optional services.
+TubeStack is **not affiliated with**, **endorsed by**, or **sponsored by** YouTube, Google, OpenAI, or Anthropic. You are responsible for complying with YouTube’s Terms of Service, Google API/OAuth policies, and OpenAI’s or Anthropic’s terms when you use those optional services.
 
 ---
 
@@ -110,11 +110,11 @@ TubeStack is **not affiliated with**, **endorsed by**, or **sponsored by** YouTu
 
 Paste or adapt for the Chrome Web Store **notes to reviewer** field (if available):
 
-> TubeStack is a local-first YouTube tab and Shorts organizer. The default flow works **without** a YouTube Data API key, **without** Google OAuth, **without** OpenAI, and **without** any TubeStack-operated backend server.
+> TubeStack is a local-first YouTube tab and Shorts organizer. The default flow works **without** a YouTube Data API key, **without** Google OAuth, **without** any AI provider (OpenAI or Anthropic), and **without** any TubeStack-operated backend server.
 >
 > Users save YouTube watch and Shorts tabs via the **toolbar popup**, **context menu**, or **optional queue sidebar** (side panel opens only when the user clicks **Open queue sidebar** in the popup; the toolbar icon always opens the save popup first).
 >
-> Optional integrations (YouTube API, Google OAuth, OpenAI) are **user-configured** and requested at runtime when the user runs those features. OAuth access tokens are kept in the service worker’s **memory only** and are **not** written to `chrome.storage.local`.
+> Optional integrations (YouTube API, Google OAuth, OpenAI, Anthropic) are **user-configured** and requested at runtime when the user runs those features. OAuth access tokens are kept in the service worker’s **memory only** and are **not** written to `chrome.storage.local`.
 >
 > TubeStack does **not** request Chrome History, the broad `tabs` permission, `windows`, or `<all_urls>`. Host access at install is limited to `youtube.com` and `m.youtube.com`. Install-time permissions include `unlimitedStorage` only to raise local `chrome.storage.local` quota for larger libraries. Before save/progress, users accept an in-product privacy notice. Watch progress is recorded locally on open YouTube tabs (`/watch` full support; Shorts best-effort). Saving Shorts tabs works.
 
@@ -230,10 +230,11 @@ Paste into each **Permission justification** field in the Chrome Web Store dashb
 | --- | --- |
 | `https://www.googleapis.com/*` | Runtime grant when user runs optional YouTube Data API or Google OAuth features they configured |
 | `https://api.openai.com/*` | Runtime grant when user adds OpenAI API key and runs optional AI features |
+| `https://api.anthropic.com/*` | Runtime grant when user selects Anthropic (Claude), adds an Anthropic API key, and runs optional AI features |
 
 **Optional hosts (one field):**
 
-> Optional runtime permissions for user-configured Google APIs and OpenAI. Not requested silently for unrelated sites.
+> Optional runtime permissions for user-configured Google APIs and the user’s chosen AI provider (OpenAI or Anthropic). Not requested silently for unrelated sites.
 
 ---
 
@@ -256,7 +257,7 @@ TubeStack declares two content-script entries in `manifest.json`:
 
 - **No remotely hosted extension logic** — all scripts bundled in the package (`script-src 'self'` on extension pages)
 - **No `eval` / `new Function`** for extension behavior
-- **Optional network calls** go to Google or OpenAI only when the user enables those features (API responses are data, not executed code)
+- **Optional network calls** go to Google, OpenAI, or Anthropic only when the user enables those features (API responses are data, not executed code)
 
 ---
 
@@ -264,8 +265,8 @@ TubeStack declares two content-script entries in `manifest.json`:
 
 | Topic | Answer |
 | --- | --- |
-| What is collected | TubeStack does **not** send your full library to a TubeStack-operated server. Data you generate is stored **locally** unless **you** trigger optional Google or OpenAI features |
-| What may leave the device | **Google** — when you use optional API/OAuth features. **OpenAI** — when you run optional AI tools (selected metadata, your API key) |
+| What is collected | TubeStack does **not** send your full library to a TubeStack-operated server. Data you generate is stored **locally** unless **you** trigger optional Google or AI provider (OpenAI / Anthropic) features |
+| What may leave the device | **Google** — when you use optional API/OAuth features. **OpenAI** or **Anthropic** (whichever you selected) — when you run optional AI tools (selected metadata, your API key) |
 | Selling / ads | TubeStack does **not** sell personal data |
 | Deletion | Users can delete stored data from Settings or uninstall. See [`privacy/privacy.html`](../privacy/privacy.html) |
 
@@ -275,7 +276,7 @@ TubeStack declares two content-script entries in `manifest.json`:
 - [x] No Chrome History permission
 - [x] No broad `tabs`, `windows`, or `<all_urls>` permissions
 - [x] No TubeStack backend server for the library
-- [x] Third-party network use only for optional user-configured Google/OpenAI features
+- [x] Third-party network use only for optional user-configured Google/OpenAI/Anthropic features
 - [x] User can delete local data from Settings or uninstall
 
 ---

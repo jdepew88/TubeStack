@@ -33,9 +33,9 @@ Inspired by **OneTab**, built for **YouTube power users**. Instead of leaving do
 - **Restore** individual videos or whole saved sessions; **focus sessions** and queue tools for intentional watching.
 - **Organize** with **Watch States** (workflow status), user-defined **tags**, themes/categories, video and stack notes, timestamp notes, decision logs, priority tiers, and local playlist snapshots.
 - **Optional YouTube Data API + OAuth** (your keys): imports, metadata, subscription helpers, create/sync playlists on your Google account.
-- **Optional OpenAI** (your API key): AI-assisted categorization and optional **Watch State** suggestions from titles/metadata in your saved library (only when you run it; suggestions are not applied until you confirm).
+- **Optional AI provider — OpenAI or Anthropic (Claude)** (your own API key): AI-assisted categorization and optional **Watch State** suggestions from titles/metadata in your saved library (only when you run it; nothing changes until you review the preview and confirm).
 
-TubeStack is **not affiliated with YouTube, Google, or OpenAI.**
+TubeStack is **not affiliated with YouTube, Google, OpenAI, or Anthropic.**
 
 ### Organization: Tags vs Watch States
 
@@ -129,9 +129,13 @@ Album: Physics Concepts
 Category: Education
 ```
 
-### AI-assisted categorization (Optional OpenAI integration)
+### AI-assisted categorization (Optional: OpenAI or Anthropic)
 
-TubeStack can optionally use the OpenAI API to intelligently organize videos.
+TubeStack can optionally use the **OpenAI API** or the **Anthropic API (Claude)** to organize videos. Pick the provider in **Settings → AI categorization**; both support the same modes and options.
+
+- **Scope:** the current playlist, the entire library (sent in batches with one shared category list so results stay consistent), the current filtered view, or checked rows.
+- **Preview first:** the AI's proposal is validated and shown as a review table (current → proposed category, new categories). Nothing changes until you click **Apply Changes**; **Cancel** discards it. The last applied run (or category rebuild) can be **undone**.
+- **Cost awareness:** before sending, TubeStack shows the provider, model, number of videos, and number of requests. These calls use your own provider API credits.
 
 AI features include:
 
@@ -154,25 +158,25 @@ AI automatically creates and assigns categories.
 
 AI sorts videos into categories you already created.
 
+##### Follow my criteria
+
+Describe how you want videos grouped; AI names the categories and assigns videos.
+
 ##### Choose category depth
 
-Generate approximately:
-
-- 10 broad categories
-- 20 balanced categories
-- 30 highly specific categories
+Pick how many categories to generate (2–28) and whether labels should be **Broad** (e.g. Tech, Gaming) or **Specific** (e.g. Android, PC builds).
 
 ---
 
 #### How videos are categorized
 
-TubeStack attempts to categorize videos using:
+TubeStack sends only metadata it already stored locally (it does not re-scrape YouTube for this):
 
-- YouTube metadata
 - video titles
 - creator/channel names
-- descriptions
+- a short description snippet (when saved)
 - tags (when available)
+- current category, list category, Watch State, and the video's own note
 
 Not all YouTube videos contain useful tags, so AI can supplement missing metadata and improve organization quality.
 
@@ -210,19 +214,16 @@ TubeStack stores API keys locally on your device using Chrome extension storage.
 
 ---
 
-### OpenAI API integration (Optional)
+### AI provider integration (Optional: OpenAI or Anthropic)
 
-TubeStack can optionally connect to OpenAI for AI-assisted organization features.
+TubeStack can optionally connect to **OpenAI** or **Anthropic (Claude)** for AI-assisted organization features:
 
-OpenAI features include:
-
-- AI categorization
+- AI categorization (generate / reorganize categories, assign videos)
 - playlist organization
-- smart grouping
-- category suggestions
-- future recommendation tools
+- category rebuild niche suggestions
+- Watch State suggestions
 
-Your OpenAI API key is stored locally on your device and only used when AI features are run.
+Your API keys are stored locally on your device and only used when you run AI features. Only the selected provider is contacted.
 
 ---
 
@@ -263,8 +264,8 @@ TubeStack does **not** request Chrome History permission and does **not** scan u
 
 - Progress is observed on **YouTube `/watch` pages** via `content/youtube-progress.js` (heartbeats to the service worker); on Shorts, progress is best-effort. Progress may also be **captured when you save tabs** from the open player or URL timestamp.
 - **Does not request** the Chrome **History**, **`tabs`**, or **`windows`** permissions (YouTube tab access is limited by YouTube host permissions).
-- **YouTube API keys**, **OAuth client/session data**, and **OpenAI API keys** you provide are stored **locally on your device**.
-- **Google** and **OpenAI** are contacted **only when you enable and use** those optional features; requests go **directly** from the extension to those services (not through a TubeStack backend).
+- **YouTube API keys**, **OAuth client/session data**, and **OpenAI / Anthropic API keys** you provide are stored **locally on your device**.
+- **Google**, **OpenAI**, and **Anthropic** are contacted **only when you enable and use** those optional features (for AI, only the provider you selected); requests go **directly** from the extension to those services (not through a TubeStack backend).
 - TubeStack **does not sell** your data and complies with Chrome Web Store **Limited Use** requirements (see the privacy policy). You can **delete stored data** from Settings in the extension or by removing the extension.
 
 **[Full privacy policy →](docs/PRIVACY.md)** · **[Permissions & CWS justifications →](docs/PERMISSIONS.md)**
@@ -273,12 +274,12 @@ TubeStack does **not** request Chrome History permission and does **not** scan u
 
 ## TubeStack setup guide
 
-One-time Google Cloud configuration for the YouTube Data API v3 key and OAuth playlist tools, plus optional OpenAI setup for AI categorization.
+One-time Google Cloud configuration for the YouTube Data API v3 key and OAuth playlist tools, plus optional OpenAI or Anthropic setup for AI categorization.
 
 **In the extension:**
 
 - **Connect YouTube** ([dashboard/connect-youtube.html](dashboard/connect-youtube.html)) — plain-language, step-by-step sign-in for playlist import/export (OAuth Client ID + test sign-in). No TubeStack server.
-- **Setup Integrations** — advanced checklist for YouTube Data API key, OAuth, and OpenAI.
+- **Setup Integrations** — advanced checklist for YouTube Data API key, OAuth, and AI provider keys (OpenAI / Anthropic).
 - Manual fields remain in **Settings**. Full reference: [dashboard/setup-guide.html](dashboard/setup-guide.html).
 
 ---
@@ -466,13 +467,24 @@ inside the OpenAI Platform account.
 
 ---
 
+### Anthropic (Claude) setup (Optional)
+
+TubeStack can use the **Anthropic API** instead of OpenAI. This is an **Anthropic API key**, not a Claude.ai subscription and not Claude Code.
+
+1. Sign in to the Claude Console at `https://platform.claude.com/`, add API credits, and create an API key.
+2. In TubeStack: **Settings → AI categorization → Provider: Anthropic (Claude)**, paste the key, pick a model (Claude Opus 5.5 is the default; Sonnet 5.5 and Haiku 4.5 are lower-cost options), and click **Test connection**.
+
+Claude.ai subscriptions and Anthropic API billing are separate. TubeStack cannot see your Anthropic credit balance; if the account is out of credits, AI tools report that clearly and nothing is changed.
+
+---
+
 ## Security
 
 **If you develop or fork this repo:** do not commit real API keys, OAuth client secrets, or other credentials to GitHub, and do not paste them into public issues or screenshots.
 
-**If you use TubeStack as an extension:** anything you enter in Settings—YouTube Data API key, OAuth Web Client ID, OpenAI API key—is stored only in **Chrome extension storage on your own device**. TubeStack **does not** upload those values to a TubeStack server or operate a backend that collects your secrets.
+**If you use TubeStack as an extension:** anything you enter in Settings—YouTube Data API key, OAuth Web Client ID, OpenAI or Anthropic API key—is stored only in **Chrome extension storage on your own device**. TubeStack **does not** upload those values to a TubeStack server or operate a backend that collects your secrets.
 
-You create and control access in **your** cloud accounts (for example **Google Cloud Console** for the YouTube Data API and OAuth client, and **OpenAI** for API keys). Those services decide what your project is allowed to do; the extension keeps your credentials **locally** and, when you run a feature that needs them, sends requests **directly from your browser** to Google or OpenAI—not through TubeStack.
+You create and control access in **your** cloud accounts (for example **Google Cloud Console** for the YouTube Data API and OAuth client, and **OpenAI** or the **Claude Console** for AI API keys). Those services decide what your project is allowed to do; the extension keeps your credentials **locally** and, when you run a feature that needs them, sends requests **directly from your browser** to Google, OpenAI, or Anthropic—not through TubeStack.
 
 For more detail, see **[PRIVACY.md](docs/PRIVACY.md)**.
 

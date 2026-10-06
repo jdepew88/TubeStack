@@ -717,6 +717,22 @@ async function deleteOneFromLibrary(it) {
   render();
 }
 
+function makeCardDeleteButton(it) {
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "card-video-del";
+  del.title = "Remove from library";
+  del.setAttribute("aria-label", "Remove from library");
+  del.textContent = "×";
+  del.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void deleteOneFromLibrary(it);
+  });
+  del.addEventListener("mousedown", (e) => e.stopPropagation());
+  return del;
+}
+
 function buildRowActionsDropdown(it, { align = "right" } = {}) {
   ensureRowPopoverGlobalClose();
   const wrap = document.createElement("div");
@@ -984,6 +1000,7 @@ function renderListCard(it) {
   const aside = document.createElement("div");
   aside.className = "list-row-aside";
   aside.appendChild(buildPriorityControl(it, { inline: true }));
+  aside.appendChild(makeCardDeleteButton(it));
   aside.appendChild(buildRowActionsDropdown(it));
   const notesBtn = buildPlaylistNotesButton(it);
   if (notesBtn) aside.appendChild(notesBtn);
@@ -3466,6 +3483,7 @@ function render() {
       pill.title = "Inferred niche (title keywords from your library)";
       titleRow.appendChild(pill);
     }
+    titleRow.appendChild(makeCardDeleteButton(it));
 
     const meta = document.createElement("div");
     meta.className = "meta";

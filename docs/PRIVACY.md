@@ -1,6 +1,6 @@
 # TubeStack Privacy Policy
 
-**Last updated:** May 2026
+**Last updated:** October 2026
 
 **Chrome Web Store listing:** Publish the HTML copy at [`privacy/privacy.html`](../privacy/privacy.html) to a public HTTPS URL and paste that URL in the developer dashboard. The extension links to the bundled copy from the popup and Settings.
 
@@ -121,6 +121,18 @@ For a permission-by-permission breakdown, see **[PERMISSIONS.md](PERMISSIONS.md)
 - Does **not** request **`windows`** or **`<all_urls>`**.
 - Does **not** scan unrelated browsing history.
 - Does **not** sell user data.
+
+---
+
+## Backups (export and import)
+
+**Settings → Data & Backup** can export your TubeStack library to a JSON file and restore one later (for example, to move to another TubeStack install).
+
+- A backup is created **only when you click Export TubeStack Backup**. TubeStack builds the file in your browser and hands it to Chrome’s normal download; it is **never uploaded** anywhere, and TubeStack has no backup server or sync.
+- The file contains your library and organization data: saved videos (IDs, URLs, titles, channels, thumbnail URLs), local playlists, categories and favorite tiers, notes and timestamp notes, watch states, locally tracked watch progress and daily watch totals, the Subbed Channels list, non-secret settings, and layout preferences.
+- It **does not contain** your YouTube Data API key, OpenAI API key, OAuth Client ID, Google account email, or any Google sign-in token. Those must be set up again on the new install.
+- Treat the file like any personal document: anyone who has it can read your saved-video list and notes.
+- **Import** shows a preview first and changes nothing until you confirm. Confirming **replaces** the library on that install; its own API keys, OAuth Client ID and sign-in are kept. If the install already has a library, a safety backup of it is downloaded first.
 
 ---
 

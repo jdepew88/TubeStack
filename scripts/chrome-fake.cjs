@@ -100,6 +100,7 @@ function createBrowser(opts = {}) {
       id: "tubestack-test",
       lastError: undefined,
       getURL: (p) => `chrome-extension://tubestack-test/${p}`,
+      getManifest: () => JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8")),
       onMessage: events.onMessage,
       onInstalled: events.onInstalled,
     },

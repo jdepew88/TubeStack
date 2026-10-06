@@ -53,6 +53,10 @@ Use this before uploading a build to the Chrome Web Store or tagging a release. 
 - [ ] **YouTube URL helpers**
   - `node scripts/test-youtube-url.cjs` passes (watch + Shorts URL parsing)
 
+- [ ] **Backup / restore**
+  - `node scripts/test-backup.cjs` passes (export, validation, replace-restore, rollback, round trip)
+  - `node scripts/e2e-browser.cjs` passes (real Chromium with temp profiles; needs `npx playwright install chromium`)
+
 - [ ] **Permissions reviewed**
   - `manifest.json` matches [PERMISSIONS.md](PERMISSIONS.md)
   - Approved and forbidden permission lists above are satisfied

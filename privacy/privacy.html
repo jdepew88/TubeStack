@@ -132,7 +132,7 @@
 
     <main>
       <h1>TubeStack Privacy Policy</h1>
-      <p class="meta"><strong>Last updated:</strong> May 2026</p>
+      <p class="meta"><strong>Last updated:</strong> October 2026</p>
 
       <p>
         This policy describes how the <strong>TubeStack</strong> Chrome Extension handles information when you use it.
@@ -215,6 +215,25 @@
         Content scripts run on YouTube watch and Shorts pages (metadata on save; local progress on open tabs — full on
         <code>/watch</code>, best-effort on <code>/shorts</code>) and on YouTube subscription or channel feed pages when
         you import channel names. No content scripts run on non-YouTube sites.
+      </p>
+
+      <h2>Backups (export and import)</h2>
+      <p>
+        <strong>Settings → Data &amp; Backup</strong> can export your TubeStack library to a JSON file and restore one
+        later, for example to move to another TubeStack install. A backup is created only when you click
+        <strong>Export TubeStack Backup</strong>; it is built in your browser, saved through Chrome’s normal download,
+        and never uploaded anywhere. TubeStack has no backup server and no sync.
+      </p>
+      <p>
+        The file contains your library and organization data — saved videos, local playlists, categories and favorites,
+        notes, watch states and locally tracked progress, the Subbed Channels list, and non-secret settings. It does
+        <strong>not</strong> contain API keys, the OAuth Client ID, your Google account email, or Google sign-in tokens.
+        Anyone who has the file can read your saved-video list and notes, so store it like any personal document.
+      </p>
+      <p>
+        Import shows a preview and changes nothing until you confirm. Confirming replaces the library on that install
+        while keeping its own API keys, OAuth Client ID and sign-in; if a library already exists there, a safety backup of
+        it is downloaded first.
       </p>
 
       <h2>Deleting data</h2>

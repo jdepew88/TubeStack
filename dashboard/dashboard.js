@@ -1141,6 +1141,7 @@ function applyObStep4Layout() {
   const leadF = document.getElementById("obStep4LeadFull");
   const leadM = document.getElementById("obStep4LeadMinimal");
   const fullX = document.getElementById("obStep4FullExtras");
+  document.getElementById("obStep4OptionalLinks")?.classList.toggle("hidden", staple);
   if (!leadF || !leadM || !fullX) return;
   if (staple) {
     leadF.classList.add("hidden");
@@ -3068,20 +3069,95 @@ function genreTierClass(tier) {
   return `${base} genre-tile-off`;
 }
 
+const OB_TIER_STATE_LABEL = { off: "", active: "Favorite", favorite: "Super favorite" };
+/** Theme whose tile just changed — gets a one-shot pop animation on the next render. */
+let obGenreLastChanged = null;
+
+/** "toggle" = single click (off ↔ green favorite); "super" = double-click / ★ (gold super favorite on/off). */
+async function setObGenreTier(t, action) {
+  const status = document.getElementById("obGenreStatus");
+  const type = action === "super" ? "TUBESTACK_TOGGLE_THEME_FAVORITE" : "TUBESTACK_CYCLE_THEME";
+  const r = await send(type, { themeId: t.id });
+  if (!r?.ok) {
+    if (status) status.textContent = r?.error || "Could not update category.";
+    return;
+  }
+  themes = r.themes || themes;
+  const tier = themes.find((x) => x.id === t.id)?.tier || "off";
+  obGenreLastChanged = t.id;
+  if (status) status.textContent = `${t.label}: ${OB_TIER_STATE_LABEL[tier] || "not selected"}`;
+  renderThemeSidebars();
+  fillThemeFilter();
+  render();
+  renderObGenreTiles();
+}
+
 function renderObGenreTiles() {
   if (!obGenreGrid) return;
+  const focused = obGenreGrid.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null;
   obGenreGrid.innerHTML = "";
   for (const t of themes) {
+    const tier = t.tier || "off";
+    const wrap = document.createElement("div");
+    wrap.className = `genre-tile-wrap genre-tile-wrap--${tier}`;
+
     const b = document.createElement("button");
     b.type = "button";
-    b.className = genreTierClass(t.tier || "off");
-    b.textContent = t.label;
-    b.title = `${t.label}: tap for off ↔ green (gold on dashboard: double-click chip)`;
-    b.addEventListener("click", () => {
-      cycleThemeRemote(t).then(() => renderObGenreTiles());
+    b.className = genreTierClass(tier);
+    if (obGenreLastChanged === t.id) b.classList.add("genre-tile--pop");
+    b.dataset.focusKey = `${t.id}:tile`;
+    b.setAttribute("aria-pressed", tier === "off" ? "false" : "true");
+    b.title = `${t.label} — click: favorite on/off · double-click or Shift+Enter: super favorite`;
+    const label = document.createElement("span");
+    label.className = "genre-tile-label";
+    label.textContent = t.label;
+    const state = document.createElement("span");
+    state.className = "genre-tile-state";
+    state.textContent = OB_TIER_STATE_LABEL[tier] || "";
+    b.append(label, state);
+    let clickTimer = null;
+    b.addEventListener("click", (e) => {
+      // detail 0 = keyboard activation: act immediately, there is no double-click to wait for.
+      if (e.detail === 0) {
+        void setObGenreTier(t, "toggle");
+      } else if (e.detail === 1) {
+        clickTimer = setTimeout(() => {
+          clickTimer = null;
+          void setObGenreTier(t, "toggle");
+        }, 280);
+      } else if (e.detail === 2) {
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+        }
+        void setObGenreTier(t, "super");
+      }
     });
-    obGenreGrid.appendChild(b);
+    b.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.shiftKey) {
+        e.preventDefault();
+        void setObGenreTier(t, "super");
+      }
+    });
+
+    const star = document.createElement("button");
+    star.type = "button";
+    star.className = "genre-star";
+    star.textContent = "★";
+    star.dataset.focusKey = `${t.id}:star`;
+    star.setAttribute("aria-pressed", tier === "favorite" ? "true" : "false");
+    star.setAttribute("aria-label", `Super favorite: ${t.label}`);
+    star.title = tier === "favorite" ? "Remove super favorite" : "Make super favorite";
+    star.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void setObGenreTier(t, "super");
+    });
+
+    wrap.append(b, star);
+    obGenreGrid.appendChild(wrap);
   }
+  obGenreLastChanged = null;
+  if (focused) obGenreGrid.querySelector(`[data-focus-key="${CSS.escape(focused)}"]`)?.focus();
 }
 
 function populateOobeFields() {
@@ -3089,7 +3165,6 @@ function populateOobeFields() {
   const apiEl = document.getElementById("obApiKey");
   const handleEl = document.getElementById("obHandle");
   const hint = document.getElementById("obKeyHint");
-  const loc = document.getElementById("obLocalOnlyCheck");
   const ooc = document.getElementById("obOAuthClientId");
   const ots = document.getElementById("obOAuthTestStatus");
   if (emailEl) emailEl.value = settings.youtubeAccountEmail || "";
@@ -3101,7 +3176,6 @@ function populateOobeFields() {
   if (hint) {
     hint.textContent = "Stored only in this browser’s extension storage.";
   }
-  if (loc) loc.checked = false;
   if (ooc) ooc.value = settings.youtubeOAuthClientId || "";
   if (ots) ots.textContent = "";
   resetObApiTestUi();
@@ -5199,6 +5273,316 @@ document.getElementById("btnClearOpenaiClassifyCache")?.addEventListener("click"
   }
 });
 
+/* ---------- Settings → Data & Backup ---------- */
+
+const TS_BACKUP = globalThis.TUBESTACK_BACKUP;
+const BACKUP_MAX_FILE_BYTES = 64 * 1024 * 1024;
+const BACKUP_STAT_ROWS = [
+  ["videos", "Videos"],
+  ["playlists", "Playlists"],
+  ["categories", "Categories"],
+  ["favoriteCategories", "Favorite categories (green)"],
+  ["superFavoriteCategories", "Super-favorite categories (gold)"],
+  ["videosWithNotes", "Videos with notes"],
+  ["timestampNotes", "Timestamp notes"],
+  ["videosWithProgress", "Videos with watch progress"],
+  ["finishedVideos", "Finished videos"],
+  ["subscriptionChannels", "Subbed channels"],
+];
+/** File chosen for import: { raw, preview, fileName, needsSafetyBackup }. Nothing is written until Replace. */
+let pendingBackupImport = null;
+let backupRestoreDone = false;
+
+/** `ts_*` layout preferences live in this extension origin's localStorage (shared by dashboard, library, home). */
+function readUiPreferencesForBackup() {
+  const out = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(TS_BACKUP.UI_PREF_PREFIX)) out[k] = localStorage.getItem(k);
+    }
+  } catch {
+    /* storage unavailable — export the library without layout prefs */
+  }
+  return out;
+}
+
+function applyUiPreferencesFromBackup(prefs) {
+  try {
+    for (const [k, v] of Object.entries(TS_BACKUP.sanitizeUiPreferences(prefs))) localStorage.setItem(k, v);
+  } catch {
+    /* non-fatal: layout prefs only */
+  }
+}
+
+function formatBackupBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderBackupStats(dl, summary) {
+  if (!dl) return;
+  dl.innerHTML = "";
+  for (const [key, label] of BACKUP_STAT_ROWS) {
+    const row = document.createElement("div");
+    row.className = "backup-stat";
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = Number(summary?.[key] || 0).toLocaleString();
+    row.append(dt, dd);
+    dl.appendChild(row);
+  }
+}
+
+/** Hand a backup object to the browser as a .json download. Returns the byte size. */
+function downloadBackupFile(backup, fileName) {
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return blob.size;
+}
+
+async function requestBackupExport() {
+  return send("TUBESTACK_BACKUP_EXPORT", { uiPreferences: readUiPreferencesForBackup() });
+}
+
+document.getElementById("btnExportBackup")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const st = document.getElementById("backupStatus");
+  const summaryEl = document.getElementById("backupExportSummary");
+  btn.disabled = true;
+  if (st) {
+    st.classList.remove("success");
+    st.textContent = "Preparing backup…";
+  }
+  try {
+    const r = await requestBackupExport();
+    if (!r?.ok || !r.backup) {
+      if (st) st.textContent = `Could not create the backup${r?.error ? `: ${r.error}` : "."} Nothing was changed.`;
+      return;
+    }
+    const fileName = TS_BACKUP.backupFileName(new Date(r.backup.exportedAt));
+    const size = downloadBackupFile(r.backup, fileName);
+    renderBackupStats(summaryEl, r.summary);
+    summaryEl?.classList.remove("hidden");
+    if (!st) return;
+    if (r.selfCheck && r.selfCheck.ok === false) {
+      st.textContent = `Backup file created (${fileName}), but TubeStack’s import check flagged it: ${
+        r.selfCheck.errors?.[0] || "unknown problem"
+      } Keep the file — nothing in your library was changed.`;
+      return;
+    }
+    st.classList.add("success");
+    st.textContent = `Backup file created: ${fileName} (${formatBackupBytes(size)}). Find it in your browser’s downloads.`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function startBackupImport() {
+  const input = document.getElementById("backupFileInput");
+  if (!input) return;
+  input.value = "";
+  input.click();
+}
+
+document.getElementById("btnImportBackup")?.addEventListener("click", startBackupImport);
+document.getElementById("obRestoreBackup")?.addEventListener("click", startBackupImport);
+
+document.getElementById("backupFileInput")?.addEventListener("change", async (e) => {
+  const file = e.currentTarget.files?.[0];
+  if (!file) return;
+  if (file.size > BACKUP_MAX_FILE_BYTES) {
+    openBackupImportModal({ ok: false, errors: ["This file is too large to be a TubeStack backup."] }, file.name, null);
+    return;
+  }
+  let text = "";
+  try {
+    text = await file.text();
+  } catch {
+    openBackupImportModal({ ok: false, errors: ["The selected file could not be read."] }, file.name, null);
+    return;
+  }
+  const preview = TS_BACKUP.parseBackupText(text);
+  openBackupImportModal(preview, file.name, preview.ok ? JSON.parse(text.replace(/^﻿/, "")) : null);
+});
+
+function setBackupModalStatus(text, ok = false) {
+  const st = document.getElementById("biStatus");
+  if (!st) return;
+  st.classList.toggle("success", ok);
+  st.textContent = text;
+}
+
+function openBackupImportModal(preview, fileName, raw) {
+  const modal = document.getElementById("backupImportModal");
+  if (!modal) return;
+  backupRestoreDone = false;
+  const title = document.getElementById("biTitle");
+  const meta = document.getElementById("biMeta");
+  const stats = document.getElementById("biStats");
+  const callout = modal.querySelector(".backup-replace-callout");
+  const warnWrap = document.getElementById("biWarningsWrap");
+  const warnList = document.getElementById("biWarnings");
+  const applyBtn = document.getElementById("biApply");
+  const cancelBtn = document.getElementById("biCancel");
+  const confirmWrap = document.getElementById("biConfirmWrap");
+  const confirmBox = document.getElementById("biConfirm");
+
+  document.getElementById("biFileLine").textContent = `File: ${fileName}`;
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.disabled = false;
+  applyBtn.disabled = false;
+  if (confirmBox) confirmBox.checked = false;
+  setBackupModalStatus("");
+  warnList.innerHTML = "";
+
+  if (!preview.ok) {
+    pendingBackupImport = null;
+    title.textContent = "This file can’t be restored";
+    meta.innerHTML = "";
+    stats.innerHTML = "";
+    callout.classList.add("hidden");
+    warnWrap.classList.add("hidden");
+    applyBtn.classList.add("hidden");
+    cancelBtn.textContent = "Close";
+    setBackupModalStatus(
+      `${(preview.errors || []).slice(0, 4).join(" ")} Your current library was not changed.`
+    );
+    modal.classList.remove("hidden");
+    return;
+  }
+
+  const needsSafetyBackup = allItems.length > 0 || localPlaylists.length > 0 || subscriptionChannels.length > 0;
+  pendingBackupImport = { raw, preview, fileName, needsSafetyBackup };
+  title.textContent = "Restore TubeStack backup";
+  callout.classList.remove("hidden");
+  applyBtn.classList.remove("hidden");
+
+  const exported = preview.meta?.exportedAt ? new Date(preview.meta.exportedAt) : null;
+  meta.innerHTML = "";
+  for (const [label, value] of [
+    ["Backup date", exported && !Number.isNaN(exported.getTime()) ? exported.toLocaleString() : "Unknown"],
+    ["Made with", preview.meta?.appVersion ? `TubeStack ${preview.meta.appVersion}` : "TubeStack (version unknown)"],
+    ["Backup format", `v${preview.meta?.version ?? "?"}`],
+  ]) {
+    const row = document.createElement("div");
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    row.append(dt, dd);
+    meta.appendChild(row);
+  }
+  renderBackupStats(stats, preview.summary);
+
+  warnWrap.classList.toggle("hidden", !preview.warnings.length);
+  for (const w of preview.warnings) {
+    const li = document.createElement("li");
+    li.textContent = w;
+    warnList.appendChild(li);
+  }
+
+  const replaceText = document.getElementById("biReplaceText");
+  if (needsSafetyBackup) {
+    replaceText.textContent = `This install’s current library — ${allItems.length.toLocaleString()} video(s), ${localPlaylists.length.toLocaleString()} playlist(s), its categories, notes, progress and preferences — will be replaced by the backup. This is a full replace, not a merge.`;
+  } else {
+    replaceText.textContent =
+      "This install has no saved videos or playlists yet. The backup’s library, categories, notes, progress and preferences will be loaded here.";
+  }
+  document.getElementById("biSafetyLine")?.classList.toggle("hidden", !needsSafetyBackup);
+  confirmWrap?.classList.toggle("hidden", !needsSafetyBackup);
+  applyBtn.disabled = needsSafetyBackup;
+  modal.classList.remove("hidden");
+  (needsSafetyBackup ? confirmBox : applyBtn)?.focus();
+}
+
+function closeBackupImportModal() {
+  document.getElementById("backupImportModal")?.classList.add("hidden");
+  pendingBackupImport = null;
+  // Layout preferences (view mode, tile size, sorts) are read at page start, so reload once after a restore.
+  if (backupRestoreDone) location.reload();
+}
+
+document.getElementById("biConfirm")?.addEventListener("change", (e) => {
+  const applyBtn = document.getElementById("biApply");
+  if (applyBtn && pendingBackupImport) applyBtn.disabled = !e.currentTarget.checked;
+});
+
+document.getElementById("biCancel")?.addEventListener("click", closeBackupImportModal);
+
+document.getElementById("biApply")?.addEventListener("click", async () => {
+  const job = pendingBackupImport;
+  if (!job) return;
+  const applyBtn = document.getElementById("biApply");
+  const cancelBtn = document.getElementById("biCancel");
+  applyBtn.disabled = true;
+  cancelBtn.disabled = true;
+  const finishWithError = (text) => {
+    setBackupModalStatus(text);
+    cancelBtn.disabled = false;
+    applyBtn.disabled = false;
+  };
+
+  if (job.needsSafetyBackup) {
+    setBackupModalStatus("Saving a safety backup of your current library…");
+    const safety = await requestBackupExport();
+    if (!safety?.ok || !safety.backup) {
+      finishWithError("Could not create the safety backup, so nothing was changed.");
+      return;
+    }
+    downloadBackupFile(
+      safety.backup,
+      TS_BACKUP.backupFileName(new Date(safety.backup.exportedAt)).replace("tubestack-backup", "tubestack-pre-restore-backup")
+    );
+  }
+
+  setBackupModalStatus("Restoring…");
+  const r = await send("TUBESTACK_BACKUP_RESTORE", { backup: job.raw });
+  if (!r?.ok) {
+    if (r?.error === "restore_failed") {
+      finishWithError(
+        r.rolledBack
+          ? `Restore failed (${r.message || "storage error"}). Your previous library was put back unchanged.`
+          : `Restore failed (${r.message || "storage error"}) and the rollback could not be confirmed. Import the safety backup file to recover your previous library.`
+      );
+    } else {
+      finishWithError(`This backup was rejected: ${(r?.errors || [r?.error || "unknown error"]).join(" ")} Nothing was changed.`);
+    }
+    return;
+  }
+
+  applyUiPreferencesFromBackup(job.preview.backup?.data?.uiPreferences);
+  backupRestoreDone = true;
+  selected.clear();
+  await loadState();
+  render();
+  const s = r.summary || {};
+  setBackupModalStatus(
+    `Restored ${Number(s.videos || 0).toLocaleString()} video(s), ${Number(s.playlists || 0).toLocaleString()} playlist(s) and ${Number(
+      s.categories || 0
+    ).toLocaleString()} categories. Open TubeStack pages update automatically.`,
+    true
+  );
+  applyBtn.classList.add("hidden");
+  cancelBtn.textContent = "Done";
+  cancelBtn.disabled = false;
+  cancelBtn.focus();
+  const st = document.getElementById("backupStatus");
+  if (st) {
+    st.classList.add("success");
+    st.textContent = `Library restored from ${job.fileName}.`;
+  }
+});
+
 document.getElementById("libShowYoutubeImported")?.addEventListener("change", async () => {
   const el = document.getElementById("libShowYoutubeImported");
   const v = Boolean(el?.checked);
@@ -5586,24 +5970,28 @@ document.getElementById("obBtnTestApi")?.addEventListener("click", async () => {
   updateObApiTestButtonEnabled();
 });
 
-document.getElementById("obNextFromIntro")?.addEventListener("click", async () => {
-  const localOnly = Boolean(document.getElementById("obLocalOnlyCheck")?.checked);
-  if (localOnly) {
-    const pr = await send("TUBESTACK_PATCH_SETTINGS", { patch: { personalizationMode: "staple" } });
-    if (!pr?.ok) {
-      alert("Could not save preference.");
-      return;
-    }
-    if (pr.settings) settings = { ...settings, ...pr.settings };
-    oobeMinimalPath = true;
-    resetObApiTestUi();
-    showObStep(5);
-    renderObGenreTiles();
-    return;
-  }
+document.getElementById("obSetupYoutube")?.addEventListener("click", () => {
   oobeMinimalPath = false;
   showObStep(2);
   resetObApiTestUi();
+});
+
+/** Skip all Google steps. Never blocks: if saving the preference fails, the wizard still continues. */
+document.getElementById("obSkipYoutube")?.addEventListener("click", async () => {
+  oobeMinimalPath = true;
+  resetObApiTestUi();
+  showObStep(5);
+  renderObGenreTiles();
+  const pr = await send("TUBESTACK_PATCH_SETTINGS", { patch: { personalizationMode: "staple" } });
+  if (pr?.ok && pr.settings) settings = { ...settings, ...pr.settings };
+});
+
+document.getElementById("obShowFullGuide")?.addEventListener("click", () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL("dashboard/setup-guide.html"), active: true });
+});
+
+document.getElementById("obSkipApiKey")?.addEventListener("click", () => {
+  showObStep(3);
 });
 
 document.getElementById("obBtnCredContinue").addEventListener("click", async () => {
@@ -5614,7 +6002,7 @@ document.getElementById("obBtnCredContinue").addEventListener("click", async () 
     return;
   }
   if (apiKey.length < 20 && !hasYoutubeApiKey) {
-    alert("Paste your YouTube Data API key (at least 20 characters), or use local-only setup on the previous step.");
+    alert("Paste your YouTube Data API key (at least 20 characters), or use “Skip API key”.");
     return;
   }
   const payload = { email };

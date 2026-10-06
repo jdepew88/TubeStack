@@ -1,136 +1,299 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="zinc">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TubeStack — Setup guide (Google Cloud &amp; OpenAI)</title>
+    <title>TubeStack — YouTube setup guide</title>
     <link rel="icon" type="image/png" href="../icons/logo.png" />
+    <link rel="stylesheet" href="../lib/ui-themes.css" />
     <link rel="stylesheet" href="setup-guide.css" />
   </head>
   <body>
     <div class="sg-wrap">
       <header class="sg-top">
-        <div>
-          <h1>TubeStack setup guide</h1>
-          <p class="sg-lead">
-            One-time Google Cloud configuration for the <strong>YouTube Data API v3</strong> key and
-            <strong>OAuth</strong> (playlist tools), plus a short note on <strong>OpenAI</strong> for optional AI
-            features in the dashboard.
-          </p>
+        <div class="sg-brand">
+          <img src="../icons/logo.png" alt="" width="40" height="40" />
+          <div>
+            <p class="sg-kicker">TubeStack setup guide</p>
+            <h1>Connect YouTube <span class="sg-badge">Optional</span></h1>
+          </div>
         </div>
-        <a class="sg-back" href="dashboard.html">← Back to dashboard</a>
+        <a class="sg-back" href="dashboard.html">← Back to TubeStack</a>
       </header>
 
-      <section class="sg-section" aria-labelledby="sg-google-heading">
-        <h2 id="sg-google-heading">Google Cloud — one project</h2>
-        <p>
-          TubeStack uses a <strong>single Google Cloud project</strong> for both the public <strong>YouTube Data API
-          v3</strong> key (metadata, channel scans) and an <strong>OAuth 2.0 Web client</strong> (sign-in for creating
-          playlists on YouTube and importing your playlists). You can complete everything in the
-          <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a>.
-        </p>
+      <p class="sg-lead">
+        TubeStack works without any of this. Follow this guide only if you want YouTube-powered extras. It takes about
+        10 minutes, once, in your own free Google Cloud project — TubeStack has no server, so it talks to Google with
+        credentials that you create and that stay in this browser.
+      </p>
 
-        <h3>1. Create or pick a project</h3>
-        <ol>
-          <li>Open <strong>Google Cloud Console</strong> and select <strong>Create project</strong> (or an existing project you use only for TubeStack).</li>
-          <li>Give it a clear name (for example “TubeStack”) and create it, then select that project in the top bar.</li>
-        </ol>
+      <nav class="sg-toc" aria-label="On this page">
+        <a href="#sg-unlocks">What it unlocks</a>
+        <a href="#sg-values">Your values</a>
+        <a href="#sg-steps">Step-by-step</a>
+        <a href="#sg-paste">Where to paste</a>
+        <a href="#sg-trouble">Troubleshooting</a>
+        <a href="#sg-privacy">Privacy</a>
+        <a href="#sg-openai">OpenAI (optional)</a>
+      </nav>
 
-        <h3>2. Enable YouTube Data API v3</h3>
-        <ol>
-          <li>Go to <strong>APIs &amp; Services</strong> → <strong>Library</strong>.</li>
-          <li>Search for <strong>YouTube Data API v3</strong> and open it.</li>
-          <li>Click <strong>Enable</strong>.</li>
-        </ol>
-
-        <h3>3. Create an API key (Data API)</h3>
-        <ol>
-          <li>Go to <strong>APIs &amp; Services</strong> → <strong>Credentials</strong>.</li>
-          <li><strong>Create credentials</strong> → <strong>API key</strong>.</li>
-          <li>
-            Optional but recommended: under <strong>Application restrictions</strong> choose what fits how you use Chrome;
-            under <strong>API restrictions</strong>, restrict the key to <strong>YouTube Data API v3</strong> only.
-          </li>
-          <li>Copy the key (starts with <code class="sg-inline">AIza</code>) and paste it into TubeStack <strong>Setup Integrations</strong> or <strong>Settings</strong> → YouTube Data API key, then save.</li>
-        </ol>
-
-        <h3>4. OAuth consent screen (required before OAuth client)</h3>
-        <ol>
-          <li>Go to <strong>APIs &amp; Services</strong> → <strong>OAuth consent screen</strong>.</li>
-          <li>Choose <strong>External</strong> (appropriate for personal use and testing).</li>
-          <li>Fill in the required app name, user support email, and developer contact information.</li>
-          <li>
-            On <strong>Scopes</strong>, add the scope TubeStack requests:
-            <code class="sg-inline">https://www.googleapis.com/auth/youtube</code>
-            (manage your YouTube account — needed for playlist creation and importing your playlists).
-          </li>
-        </ol>
-
-        <div class="sg-callout" role="note">
-          <strong>Testing mode — add yourself, do not publish.</strong> While the app stays in
-          <strong>Testing</strong>, only accounts listed under <strong>Test users</strong> can sign in. Open
-          <strong>Audience</strong> (or the test-users step on the consent screen), click <strong>Add users</strong>,
-          and add the <strong>full Google email address</strong> you use in Chrome (the same account that should authorize
-          TubeStack). You can add a small set of personal or family accounts the same way.
-          <strong>Do not click Publish app</strong> unless you intend to go through Google’s production verification
-          process for a public app. For personal TubeStack use, keeping the app in <strong>Testing</strong> with your
-          email in <strong>Test users</strong> is normal and expected.
+      <section class="sg-section" id="sg-unlocks" aria-labelledby="sg-unlocks-h">
+        <h2 id="sg-unlocks-h">What each piece unlocks</h2>
+        <div class="sg-cards">
+          <div class="sg-card">
+            <span class="sg-card-kicker">YouTube Data API key</span>
+            <ul>
+              <li>Channel scan (an @handle or URL) to tune starter categories</li>
+              <li>Fetch public tags and categories for saved videos</li>
+            </ul>
+            <p class="sg-card-foot">Needs steps 1–3.</p>
+          </div>
+          <div class="sg-card">
+            <span class="sg-card-kicker">Google sign-in (OAuth Client ID)</span>
+            <ul>
+              <li>Import playlists you choose from your YouTube account</li>
+              <li>Save a TubeStack queue as a playlist on your channel</li>
+              <li>Sync your subscription list into Subbed Channels</li>
+            </ul>
+            <p class="sg-card-foot">Needs steps 1, 2, 4 and 5.</p>
+          </div>
         </div>
+        <p class="sg-muted">You can set up either one, both, or neither. Everything else in TubeStack works locally.</p>
+      </section>
 
-        <h3>5. OAuth 2.0 Client ID (Web application)</h3>
-        <ol>
-          <li>Still under <strong>Credentials</strong>, click <strong>Create credentials</strong> → <strong>OAuth client ID</strong>.</li>
-          <li>Application type: <strong>Web application</strong>.</li>
-          <li>
-            Under <strong>Authorized redirect URIs</strong>, add <strong>exactly</strong> the redirect URI shown in
-            TubeStack <strong>Settings</strong> → <strong>YouTube OAuth</strong> (it is a Chrome extension URL — copy
-            from there so it matches your install).
-          </li>
-          <li>
-            Create the client, then copy the <strong>Client ID</strong> (ends with
-            <code class="sg-inline">.apps.googleusercontent.com</code>) into TubeStack Settings →
-            <strong>YouTube OAuth</strong>, and save.
-          </li>
-          <li>Use <strong>Test Google sign-in</strong> in Settings to confirm the flow completes.</li>
-        </ol>
-
+      <section class="sg-section" id="sg-values" aria-labelledby="sg-values-h">
+        <h2 id="sg-values-h">Your values for Google Cloud</h2>
+        <p>Copy these exactly when Google asks for them. They are specific to <strong>this</strong> TubeStack install.</p>
+        <div class="sg-values">
+          <div class="sg-value">
+            <span class="sg-value-label">API to enable</span>
+            <code class="sg-code">YouTube Data API v3</code>
+          </div>
+          <div class="sg-value">
+            <span class="sg-value-label">Authorized redirect URI (OAuth client)</span>
+            <div class="sg-copy-row">
+              <code class="sg-code" id="sgRedirectUri">Open this page from TubeStack to see it</code>
+              <button type="button" class="sg-copy" data-copy-target="sgRedirectUri">Copy</button>
+            </div>
+          </div>
+          <div class="sg-value">
+            <span class="sg-value-label">OAuth scope TubeStack requests</span>
+            <div class="sg-copy-row">
+              <code class="sg-code" id="sgScope">https://www.googleapis.com/auth/youtube</code>
+              <button type="button" class="sg-copy" data-copy-target="sgScope">Copy</button>
+            </div>
+          </div>
+          <div class="sg-value">
+            <span class="sg-value-label">Extension ID</span>
+            <div class="sg-copy-row">
+              <code class="sg-code" id="sgExtensionId">—</code>
+              <button type="button" class="sg-copy" data-copy-target="sgExtensionId">Copy</button>
+            </div>
+          </div>
+        </div>
         <p class="sg-muted">
-          If Google shows “access blocked” or “app not verified,” double-check that your Google account’s email is
-          listed under <strong>Test users</strong> and that the OAuth client is <strong>Web</strong> with the correct
-          redirect URI.
+          The redirect URI contains the extension ID. A different TubeStack install (another Chrome profile, or a second
+          unpacked copy) has a different ID, so add its redirect URI to the same OAuth client too.
         </p>
       </section>
 
-      <section class="sg-section" aria-labelledby="sg-openai-heading">
-        <h2 id="sg-openai-heading">OpenAI API key (optional)</h2>
-        <p>
-          Some dashboard tools (for example AI-assisted category work) can call OpenAI over the network using an API key
-          you store in TubeStack. That key is kept on this device and is only sent to OpenAI when you run those features.
+      <section class="sg-section" id="sg-steps" aria-labelledby="sg-steps-h">
+        <h2 id="sg-steps-h">Step-by-step</h2>
+        <ol class="sg-steps">
+          <li class="sg-step">
+            <span class="sg-step-num" aria-hidden="true">1</span>
+            <div class="sg-step-body">
+              <h3>Create or pick a Google Cloud project</h3>
+              <ol>
+                <li>
+                  Open
+                  <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a>
+                  and choose <strong>Create project</strong> (or one you use only for TubeStack).
+                </li>
+                <li>Name it something clear, like “TubeStack”, then select it in the top bar.</li>
+              </ol>
+            </div>
+          </li>
+          <li class="sg-step">
+            <span class="sg-step-num" aria-hidden="true">2</span>
+            <div class="sg-step-body">
+              <h3>Enable YouTube Data API v3</h3>
+              <ol>
+                <li>Go to <strong>APIs &amp; Services → Library</strong>.</li>
+                <li>Search for <strong>YouTube Data API v3</strong>, open it, and click <strong>Enable</strong>.</li>
+              </ol>
+            </div>
+          </li>
+          <li class="sg-step">
+            <span class="sg-step-num" aria-hidden="true">3</span>
+            <div class="sg-step-body">
+              <h3>Create an API key <span class="sg-tag">for channel scan &amp; tags</span></h3>
+              <ol>
+                <li>Go to <strong>APIs &amp; Services → Credentials</strong> → <strong>Create credentials → API key</strong>.</li>
+                <li>
+                  Recommended: under <strong>API restrictions</strong>, restrict the key to
+                  <strong>YouTube Data API v3</strong> only.
+                </li>
+                <li>Copy the key — it starts with <code class="sg-inline">AIza</code>.</li>
+              </ol>
+            </div>
+          </li>
+          <li class="sg-step">
+            <span class="sg-step-num" aria-hidden="true">4</span>
+            <div class="sg-step-body">
+              <h3>Set up the OAuth consent screen <span class="sg-tag">for Google sign-in</span></h3>
+              <ol>
+                <li>Go to <strong>APIs &amp; Services → OAuth consent screen</strong> and choose <strong>External</strong>.</li>
+                <li>Fill in the app name, user support email, and developer contact email.</li>
+                <li>Under <strong>Scopes</strong>, add <code class="sg-inline">https://www.googleapis.com/auth/youtube</code>.</li>
+              </ol>
+              <div class="sg-callout sg-callout--warn" role="note">
+                <strong>Stay in Testing — add yourself, don’t publish.</strong>
+                <p>
+                  While the app is in <strong>Testing</strong>, only accounts listed as <strong>Test users</strong> can sign
+                  in. Open <strong>Audience</strong> (or the test-users step), click <strong>Add users</strong>, and add the
+                  full Google email you use in Chrome. Don’t click <strong>Publish app</strong> unless you intend to go
+                  through Google’s verification for a public app — for personal use, Testing is normal.
+                </p>
+              </div>
+            </div>
+          </li>
+          <li class="sg-step">
+            <span class="sg-step-num" aria-hidden="true">5</span>
+            <div class="sg-step-body">
+              <h3>Create an OAuth Client ID <span class="sg-tag">for Google sign-in</span></h3>
+              <ol>
+                <li>In <strong>Credentials</strong>, choose <strong>Create credentials → OAuth client ID</strong>.</li>
+                <li>Application type: <strong>Web application</strong>.</li>
+                <li>
+                  Under <strong>Authorized redirect URIs</strong>, add the redirect URI from
+                  <a href="#sg-values">Your values</a> exactly.
+                </li>
+                <li>Create it and copy the <strong>Client ID</strong> (ends with <code class="sg-inline">.apps.googleusercontent.com</code>).</li>
+              </ol>
+              <p class="sg-muted">TubeStack only needs the Client ID. You never paste a client secret into TubeStack.</p>
+            </div>
+          </li>
+          <li class="sg-step">
+            <span class="sg-step-num" aria-hidden="true">6</span>
+            <div class="sg-step-body">
+              <h3>Paste into TubeStack and test</h3>
+              <p>See <a href="#sg-paste">where to paste</a> below, then run the built-in tests.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="sg-section" id="sg-paste" aria-labelledby="sg-paste-h">
+        <h2 id="sg-paste-h">Where to paste in TubeStack</h2>
+        <div class="sg-cards">
+          <div class="sg-card">
+            <span class="sg-card-kicker">During setup</span>
+            <p>The setup wizard asks for the API key, then the OAuth Client ID, each with a <strong>Test</strong> button.</p>
+          </div>
+          <div class="sg-card">
+            <span class="sg-card-kicker">Any time later</span>
+            <p>
+              <strong>Dashboard → Settings → Optional integrations → Google (YouTube)</strong>: paste the key, click
+              <strong>Save API key</strong> then <strong>Test API key</strong>; paste the Client ID, click
+              <strong>Save Client ID</strong> then <strong>Test Google sign-in</strong>.
+            </p>
+          </div>
+          <div class="sg-card">
+            <span class="sg-card-kicker">Sign-in only</span>
+            <p>
+              <a href="connect-youtube.html?from=setup-guide">Connect YouTube</a> walks through just the OAuth Client ID
+              and a test sign-in.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="sg-section" id="sg-trouble" aria-labelledby="sg-trouble-h">
+        <h2 id="sg-trouble-h">Troubleshooting</h2>
+        <details class="sg-faq">
+          <summary>Google says “Access blocked” or “This app isn’t verified”</summary>
+          <p>
+            Your Google account isn’t listed under <strong>Test users</strong> on the consent screen (step 4), or the app
+            was published. Add the exact email you sign in with and keep the app in Testing.
+          </p>
+        </details>
+        <details class="sg-faq">
+          <summary>Error 400: <code class="sg-inline">redirect_uri_mismatch</code></summary>
+          <p>
+            The OAuth client doesn’t list this install’s redirect URI. Copy it from <a href="#sg-values">Your values</a>
+            into <strong>Authorized redirect URIs</strong> and save. Make sure the client type is
+            <strong>Web application</strong>. Changes can take a few minutes to apply.
+          </p>
+        </details>
+        <details class="sg-faq">
+          <summary>“Test API key” fails</summary>
+          <p>
+            Check that <strong>YouTube Data API v3</strong> is enabled in the same project as the key (step 2), that the
+            key was copied completely, and that any API restriction includes YouTube Data API v3.
+          </p>
+        </details>
+        <details class="sg-faq">
+          <summary>Requests start failing after heavy use</summary>
+          <p>
+            Google gives each project a free daily YouTube API quota. If it runs out, requests fail until it resets the
+            next day (Pacific time). Usage is visible under <strong>APIs &amp; Services → YouTube Data API v3 → Quotas</strong>.
+          </p>
+        </details>
+        <details class="sg-faq">
+          <summary>I moved my library to a new TubeStack install</summary>
+          <p>
+            TubeStack backups deliberately leave out API keys and the OAuth Client ID. Paste them again on the new install,
+            and add the new install’s redirect URI to your OAuth client (the extension ID changes).
+          </p>
+        </details>
+      </section>
+
+      <section class="sg-section" id="sg-privacy" aria-labelledby="sg-privacy-h">
+        <h2 id="sg-privacy-h">What is sent, and where</h2>
+        <ul class="sg-facts">
+          <li>
+            <strong>API key</strong> — stored in this browser’s extension storage. Sent only to
+            <code class="sg-inline">www.googleapis.com</code> with the request when you run a channel scan, a key test, or a
+            tag/category lookup (video IDs or the channel handle you entered).
+          </li>
+          <li>
+            <strong>Google sign-in</strong> — happens in Google’s own window, only when you click an action that needs it.
+            TubeStack never sees your password and receives a short-lived access token that it keeps in memory only (not in
+            storage) for up to about 45 minutes. No refresh token or client secret is used.
+          </li>
+          <li>
+            <strong>No TubeStack server</strong> — requests go directly from your browser to Google. Chrome asks you to allow
+            access to <code class="sg-inline">googleapis.com</code> the first time a feature needs it.
+          </li>
+        </ul>
+        <p class="sg-muted">
+          Full details: <a href="../privacy/privacy.html" target="_blank" rel="noopener noreferrer">Privacy policy</a>.
         </p>
-        <ol>
+      </section>
+
+      <section class="sg-section" id="sg-openai" aria-labelledby="sg-openai-h">
+        <h2 id="sg-openai-h">OpenAI API key <span class="sg-badge">Optional</span></h2>
+        <p>
+          Some dashboard tools (for example AI-assisted categorization) can call OpenAI using an API key you store in
+          TubeStack. The key stays on this device and is sent only to OpenAI when you run those features.
+        </p>
+        <ol class="sg-plain-steps">
           <li>
             Sign in at
-            <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer">platform.openai.com</a>
-            (this is the <strong>OpenAI API platform</strong>, not the same product as the consumer ChatGPT website).
+            <a href="https://platform.openai.com/" target="_blank" rel="noopener noreferrer">platform.openai.com</a> (the
+            API platform — not the same product as ChatGPT).
           </li>
-          <li>Open <strong>API keys</strong> and create a new secret key. Copy it once and paste it into TubeStack
-            <strong>Settings</strong> → <strong>OpenAI API key</strong>, then save.</li>
-          <li>
-            OpenAI bills API usage from <strong>organization billing</strong>: add a payment method and
-            <strong>buy prepaid credits</strong> (or otherwise enable billing as shown on that site) so requests can
-            succeed. Pricing and credit packs change over time — use OpenAI’s billing page for current options.
-          </li>
+          <li>Open <strong>API keys</strong>, create a secret key, and paste it into <strong>Settings → OpenAI API key</strong>.</li>
+          <li>API usage is billed through the platform account’s billing or prepaid credits.</li>
         </ol>
-        <p>
-          <strong>ChatGPT Plus</strong> (or other ChatGPT subscriptions) is <strong>separate</strong> from API billing.
-          Paying for ChatGPT does not automatically fund API calls; API usage is charged through the platform account and
-          credits/billing you configure for <strong>API</strong> access.
-        </p>
-        <p class="sg-muted">
-          Use <strong>Test API connection</strong> in Settings after saving the key to confirm the extension can reach
-          OpenAI.
-        </p>
+        <div class="sg-callout" role="note">
+          <strong>ChatGPT Plus is separate.</strong>
+          <p>A ChatGPT subscription doesn’t fund API calls. Use <strong>Test API connection</strong> in Settings to confirm the key works.</p>
+        </div>
       </section>
     </div>
+    <script src="../lib/ui-themes.js"></script>
+    <script src="setup-guide.js"></script>
   </body>
 </html>

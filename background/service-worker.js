@@ -8,7 +8,9 @@ importScripts("granular-genres.js");
 importScripts("genre-taxonomy.js");
 importScripts("../lib/watch-states.js");
 importScripts("../lib/youtube-url.js");
+importScripts("../lib/backup.js");
 const TS_WATCH = globalThis.TUBESTACK_WATCH;
+const TS_BACKUP = globalThis.TUBESTACK_BACKUP;
 const YT_URL = globalThis.TUBESTACK_YT_URL;
 const GRANULAR_GENRE_PRESETS = globalThis.GRANULAR_GENRE_PRESETS || [];
 delete globalThis.GRANULAR_GENRE_PRESETS;
@@ -1571,6 +1573,91 @@ async function eraseLocalLibraryData() {
   next.currentPlaylistName = defaultYtTabgroupPlaylistName();
   await chrome.storage.local.set({ settings: next });
   return { ok: true };
+}
+
+function manifestVersion() {
+  try {
+    return chrome.runtime.getManifest?.()?.version || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Settings → Data & Backup: snapshot the durable library into a versioned backup object.
+ * Reads raw storage (not the normalizing loaders, which may write back) under the library lock, so the
+ * export is a consistent point-in-time copy and never mutates anything. Credentials are stripped by
+ * lib/backup.js; the result is self-checked with the same validator an import will use.
+ */
+async function exportTubeStackBackup({ uiPreferences } = {}) {
+  return withStorageLock(LIBRARY_LOCK, async () => {
+    const storage = await chrome.storage.local.get(TS_BACKUP.DATA_KEYS);
+    const backup = TS_BACKUP.buildBackup({
+      storage,
+      appVersion: manifestVersion(),
+      exportedAt: new Date().toISOString(),
+      uiPreferences,
+    });
+    const check = TS_BACKUP.validateBackup(JSON.parse(JSON.stringify(backup)));
+    return {
+      ok: true,
+      backup,
+      summary: backup.counts,
+      selfCheck: { ok: check.ok, errors: check.errors, warnings: check.warnings },
+    };
+  });
+}
+
+/**
+ * Settings → Data & Backup: replace the current library with a backup.
+ *
+ * The page validated the file for its preview, but this re-validates from scratch — nothing unchecked is
+ * ever written. All keys go out in a single storage.local.set (one write batch), then are read back to
+ * confirm they landed. On any failure the in-memory pre-restore snapshot is written back. Credentials on this
+ * install (API keys, OAuth Client ID, account email) are preserved, never replaced or cleared.
+ */
+async function restoreTubeStackBackup(rawBackup) {
+  const parsed = TS_BACKUP.validateBackup(rawBackup);
+  if (!parsed.ok) {
+    return { ok: false, error: "invalid_backup", code: parsed.code, errors: parsed.errors.slice(0, 10) };
+  }
+  return withStorageLock(LIBRARY_LOCK, async () => {
+    const current = await chrome.storage.local.get("settings");
+    const write = TS_BACKUP.buildRestoreWrite(parsed.backup.data, current.settings);
+    const keys = Object.keys(write);
+    const before = await chrome.storage.local.get(keys);
+    try {
+      await chrome.storage.local.set({ ...write });
+      const mismatched = TS_BACKUP.verifyRestoreLanded(write, await chrome.storage.local.get(keys));
+      if (mismatched.length) throw new Error(`Restore verification failed for: ${mismatched.join(", ")}`);
+    } catch (err) {
+      let rolledBack = false;
+      try {
+        const restore = {};
+        const absent = [];
+        for (const k of keys) {
+          if (Object.prototype.hasOwnProperty.call(before, k)) restore[k] = before[k];
+          else absent.push(k);
+        }
+        await chrome.storage.local.set(restore);
+        if (absent.length) await chrome.storage.local.remove(absent);
+        rolledBack = true;
+      } catch (rollbackErr) {
+        console.error("[TubeStack] backup restore rollback failed:", tubestackSafeErrorMessage(rollbackErr));
+      }
+      storageCache.items = null;
+      storageCache.localPlaylists = null;
+      return {
+        ok: false,
+        error: "restore_failed",
+        rolledBack,
+        message: tubestackSafeErrorMessage(err),
+      };
+    }
+    storageCache.items = null;
+    storageCache.localPlaylists = null;
+    return { ok: true, summary: parsed.summary, warnings: parsed.warnings };
+  });
 }
 
 /**
@@ -4837,6 +4924,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_ERASE_LOCAL_LIBRARY_DATA": {
         sendResponse(await eraseLocalLibraryData());
+        break;
+      }
+      case "TUBESTACK_BACKUP_EXPORT": {
+        sendResponse(await exportTubeStackBackup({ uiPreferences: msg.uiPreferences }));
+        break;
+      }
+      case "TUBESTACK_BACKUP_RESTORE": {
+        sendResponse(await restoreTubeStackBackup(msg.backup));
         break;
       }
       case "TUBESTACK_CLEAR_SUBSCRIPTION_CHANNELS": {

@@ -106,12 +106,46 @@ function send(type, payload = {}) {
 }
 
 function deriveAlbum(item) {
+  if (item && typeof item._libAlbum === "string") return item._libAlbum;
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const explicit = tags.find((t) => /^album\s*:/i.test(String(t)));
-  if (explicit) return String(explicit).replace(/^album\s*:/i, "").trim() || "Unassigned";
-  if (item.libraryAlbum) return String(item.libraryAlbum).trim();
-  if (tags.length) return String(tags[0]).trim();
-  return "Unassigned";
+  let album = "Unassigned";
+  if (explicit) album = String(explicit).replace(/^album\s*:/i, "").trim() || "Unassigned";
+  else if (item.libraryAlbum) album = String(item.libraryAlbum).trim() || "Unassigned";
+  else if (tags.length) album = String(tags[0]).trim() || "Unassigned";
+  if (item) item._libAlbum = album;
+  return album;
+}
+
+function invalidateLibItemCaches(item) {
+  if (!item) return;
+  delete item._libAlbum;
+  delete item._libSearchHay;
+}
+
+let cachedDisplayList = null;
+let cachedDisplayKey = "";
+
+function invalidateLibDisplayCache() {
+  cachedDisplayList = null;
+  cachedDisplayKey = "";
+}
+
+function libDisplayCacheKey() {
+  return [
+    libLibraryScope,
+    libActivePlaylistId || "",
+    selectedArtist,
+    selectedAlbum,
+    selectedCategory,
+    libListFilter,
+    libPriorityFilter,
+    libWatchStateFilter,
+    libSearchQuery,
+    libQuickSort,
+    allItems.length,
+    localPlaylists.length,
+  ].join("\0");
 }
 
 function getDuration(it) {
@@ -166,6 +200,7 @@ function fillLibWatchStateFilterOptions() {
 
 function matchesLibrarySearch(item, q) {
   if (!q) return true;
+  if (item._libSearchHay) return item._libSearchHay.includes(q);
   const tags = Array.isArray(item.tags) ? item.tags.join(" ") : "";
   const tsNotes = (item.timestampNotes || []).map((x) => `${x.label || ""} ${x.note || ""}`).join(" ");
   const hay = [
@@ -183,6 +218,7 @@ function matchesLibrarySearch(item, q) {
   ]
     .map((x) => normalizeText(x))
     .join(" ");
+  item._libSearchHay = hay;
   return hay.includes(q);
 }
 
@@ -260,8 +296,17 @@ async function applyLibraryItemUpdate(it, patch) {
   if (r.item) {
     const idx = allItems.findIndex((x) => x.id === it.id);
     if (idx >= 0) allItems[idx] = r.item;
+    invalidateLibItemCaches(r.item);
+  } else {
+    invalidateLibItemCaches(it);
   }
-  renderAll();
+  invalidateLibDisplayCache();
+  // Category/album changes affect browse columns; other patches only need the video list.
+  if (patch && ("category" in patch || "libraryAlbum" in patch || "tags" in patch)) {
+    renderAll();
+  } else {
+    renderVideos();
+  }
 }
 
 async function deleteLibraryItem(it) {
@@ -297,6 +342,9 @@ function facetTitleLine() {
 }
 
 function computeDisplayedVideoList() {
+  const key = libDisplayCacheKey();
+  if (cachedDisplayList && cachedDisplayKey === key) return cachedDisplayList;
+
   let list = getLibraryViewItems();
   if (selectedArtist) list = list.filter((it) => (it.channel || "Unknown creator") === selectedArtist);
   if (selectedAlbum) list = list.filter((it) => deriveAlbum(it) === selectedAlbum);
@@ -332,6 +380,8 @@ function computeDisplayedVideoList() {
   } else {
     list.sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0));
   }
+  cachedDisplayList = list;
+  cachedDisplayKey = key;
   return list;
 }
 
@@ -561,22 +611,77 @@ function applySessionSelectValue(value) {
   renderAll();
 }
 
+function markColumnSelection(hostId, selectedValue) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  host.querySelectorAll(".lib-item").forEach((btn) => {
+    const isAll = btn.dataset.all === "1";
+    btn.classList.toggle("active", isAll ? !selectedValue : btn.dataset.name === selectedValue);
+  });
+}
+
+function applyFacetSelection(kind, value) {
+  if (kind === "artist") selectedArtist = value;
+  else if (kind === "album") selectedAlbum = value;
+  else if (kind === "category") selectedCategory = value;
+  resetLibraryRenderLimit();
+  invalidateLibDisplayCache();
+  markColumnSelection("artistList", selectedArtist);
+  markColumnSelection("albumList", selectedAlbum);
+  markColumnSelection("categoryList", selectedCategory);
+  renderVideos();
+}
+
+function wireLibraryOpenLink(el, href) {
+  if (!el) return;
+  if (!href || href === "#") {
+    el.addEventListener("click", (e) => e.preventDefault());
+    el.setAttribute("aria-disabled", "true");
+    return;
+  }
+  el.href = href;
+  el.target = "_blank";
+  el.rel = "noopener noreferrer";
+  el.addEventListener("click", (e) => {
+    if (e.defaultPrevented) return;
+    if (e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    try {
+      chrome.tabs.create({ url: href, active: true });
+    } catch {
+      window.open(href, "_blank", "noopener,noreferrer");
+    }
+  });
+}
+
 function renderColumn(hostId, rows, selectedValue, onPick) {
   const host = document.getElementById(hostId);
   if (!host) return;
-  host.innerHTML = "";
+  const frag = document.createDocumentFragment();
   const allBtn = document.createElement("button");
+  allBtn.type = "button";
   allBtn.className = "lib-item" + (!selectedValue ? " active" : "");
+  allBtn.dataset.all = "1";
   allBtn.textContent = "All";
   allBtn.addEventListener("click", () => onPick(""));
-  host.appendChild(allBtn);
+  frag.appendChild(allBtn);
   for (const row of rows) {
     const b = document.createElement("button");
+    b.type = "button";
     b.className = "lib-item" + (selectedValue === row.name ? " active" : "");
-    b.innerHTML = `${row.name} <span class="lib-count">(${row.count})</span>`;
+    b.dataset.name = row.name;
+    const label = document.createElement("span");
+    label.textContent = `${row.name} `;
+    const count = document.createElement("span");
+    count.className = "lib-count";
+    count.textContent = `(${row.count})`;
+    b.appendChild(label);
+    b.appendChild(count);
     b.addEventListener("click", () => onPick(row.name));
-    host.appendChild(b);
+    frag.appendChild(b);
   }
+  host.replaceChildren(frag);
 }
 
 function renderVideos() {
@@ -593,12 +698,12 @@ function renderVideos() {
     libVideoActionsId = "";
   }
 
-  host.innerHTML = "";
   host.classList.toggle("lib-view-list", libViewMode === "list");
   host.classList.toggle("lib-view-grid", libViewMode === "grid");
   const albumChoices = distinctAlbumValuesForPicker();
 
   const visible = list.slice(0, libRenderLimit);
+  const frag = document.createDocumentFragment();
 
   for (const it of visible) {
     const row = document.createElement("div");
@@ -615,7 +720,7 @@ function renderVideos() {
     cb.addEventListener("change", () => {
       if (cb.checked) libCheckedIds.add(it.id);
       else libCheckedIds.delete(it.id);
-      syncLibBulkUi(computeDisplayedVideoList());
+      syncLibBulkUi(list);
     });
     pick.appendChild(cb);
 
@@ -625,18 +730,13 @@ function renderVideos() {
     const thumbHref = watchUrlForItem(it) || "#";
     const thumbLink = document.createElement("a");
     thumbLink.className = "video-thumb-link";
-    thumbLink.href = thumbHref;
-    if (thumbHref !== "#") {
-      thumbLink.target = "_blank";
-      thumbLink.rel = "noopener noreferrer";
-    } else {
-      thumbLink.addEventListener("click", (e) => e.preventDefault());
-      thumbLink.setAttribute("aria-disabled", "true");
-    }
     thumbLink.setAttribute("aria-label", `Open video: ${it.title || "Untitled"}`);
+    wireLibraryOpenLink(thumbLink, thumbHref);
     const img = document.createElement("img");
     img.alt = "";
     img.loading = "lazy";
+    img.decoding = "async";
+    img.draggable = false;
     img.src = it.thumbnail || (it.videoId ? `https://i.ytimg.com/vi/${it.videoId}/mqdefault.jpg` : "");
     thumbLink.appendChild(img);
 
@@ -645,15 +745,8 @@ function renderVideos() {
 
     const titleA = document.createElement("a");
     titleA.className = "video-title";
-    titleA.href = thumbHref;
-    if (thumbHref !== "#") {
-      titleA.target = "_blank";
-      titleA.rel = "noopener noreferrer";
-    } else {
-      titleA.addEventListener("click", (e) => e.preventDefault());
-      titleA.setAttribute("aria-disabled", "true");
-    }
     titleA.textContent = it.title || "Untitled";
+    wireLibraryOpenLink(titleA, thumbHref);
 
     const meta = document.createElement("div");
     meta.className = "video-meta";
@@ -785,7 +878,7 @@ function renderVideos() {
 
     row.appendChild(pick);
     row.appendChild(main);
-    host.appendChild(row);
+    frag.appendChild(row);
   }
 
   if (list.length > libRenderLimit) {
@@ -801,9 +894,10 @@ function renderVideos() {
       libRenderLimit += LIB_PAGE_SIZE;
       renderVideos();
     });
-    host.appendChild(more);
+    frag.appendChild(more);
   }
 
+  host.replaceChildren(frag);
   syncLibBulkUi(list);
 }
 
@@ -814,6 +908,7 @@ function sortRowsAlpha(rows, order = "asc") {
 
 function renderAll() {
   resetLibraryRenderLimit();
+  invalidateLibDisplayCache();
   const artistMap = new Map();
   const albumMap = new Map();
   const categoryMap = new Map();
@@ -827,16 +922,13 @@ function renderAll() {
   }
   const toRows = (map) => [...map.entries()].map(([name, count]) => ({ name, count }));
   renderColumn("artistList", sortRowsAlpha(toRows(artistMap), artistSortOrder), selectedArtist, (v) => {
-    selectedArtist = v;
-    renderAll();
+    applyFacetSelection("artist", v);
   });
   renderColumn("albumList", sortRowsAlpha(toRows(albumMap), albumSortOrder), selectedAlbum, (v) => {
-    selectedAlbum = v;
-    renderAll();
+    applyFacetSelection("album", v);
   });
   renderColumn("categoryList", sortRowsAlpha(toRows(categoryMap), categorySortOrder), selectedCategory, (v) => {
-    selectedCategory = v;
-    renderAll();
+    applyFacetSelection("category", v);
   });
   renderVideos();
 }
@@ -1046,6 +1138,8 @@ async function boot() {
   const libList = document.getElementById("libListFilter");
   libSearch?.addEventListener("input", () => {
     libSearchQuery = normalizeText(libSearch.value);
+    resetLibraryRenderLimit();
+    invalidateLibDisplayCache();
     renderVideos();
   });
   libView?.addEventListener("change", () => {
@@ -1054,14 +1148,20 @@ async function boot() {
   });
   libSort?.addEventListener("change", () => {
     libQuickSort = libSort.value || "saved_desc";
+    resetLibraryRenderLimit();
+    invalidateLibDisplayCache();
     renderVideos();
   });
   libList?.addEventListener("change", () => {
     libListFilter = libList.value || "";
+    resetLibraryRenderLimit();
+    invalidateLibDisplayCache();
     renderVideos();
   });
   document.getElementById("libWatchStateFilter")?.addEventListener("change", (e) => {
     libWatchStateFilter = e.target.value || "";
+    resetLibraryRenderLimit();
+    invalidateLibDisplayCache();
     renderVideos();
   });
   document.getElementById("libBulkWatchStateBtn")?.addEventListener("click", async () => {
@@ -1105,22 +1205,27 @@ async function boot() {
   renderAll();
 }
 
+let libStorageSyncTimer;
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || (!changes.items && !changes.localPlaylists && !changes.settings)) return;
-  void (async () => {
-    const r = await loadLibraryBootState();
-    if (!r?.ok) return;
-    allItems = Array.isArray(r.items) ? r.items : [];
-    localPlaylists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
-    libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
-    resetLibraryRenderLimit();
-    renderListFilterOptions();
-    fillLibWatchStateFilterOptions();
-    renderLibraryPriorityBar();
-    syncLibScopeButtons();
-    renderSessionSelect();
-    renderAll();
-  })();
+  clearTimeout(libStorageSyncTimer);
+  libStorageSyncTimer = setTimeout(() => {
+    void (async () => {
+      const r = await loadLibraryBootState();
+      if (!r?.ok) return;
+      allItems = Array.isArray(r.items) ? r.items : [];
+      localPlaylists = Array.isArray(r.localPlaylists) ? r.localPlaylists : [];
+      libSettings = r?.settings && typeof r.settings === "object" ? r.settings : {};
+      invalidateLibDisplayCache();
+      resetLibraryRenderLimit();
+      renderListFilterOptions();
+      fillLibWatchStateFilterOptions();
+      renderLibraryPriorityBar();
+      syncLibScopeButtons();
+      renderSessionSelect();
+      renderAll();
+    })();
+  }, 160);
 });
 
 void boot();

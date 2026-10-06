@@ -9,8 +9,11 @@ const btnDash = document.getElementById("btnDash");
 const btnHome = document.getElementById("btnHome");
 const btnLibrary = document.getElementById("btnLibrary");
 const btnSidebar = document.getElementById("btnSidebar");
+const privacyConsentBanner = document.getElementById("privacyConsentBanner");
+const btnPrivacyConsent = document.getElementById("btnPrivacyConsent");
 
 const saveButtons = [btnSaveLeft, btnSaveRight, btnSaveAll, btnSaveExcept].filter(Boolean);
+let privacyConsentAccepted = false;
 
 /** Message timeout. Saving many tabs fetches metadata per tab, so this has to be generous. */
 const SEND_TIMEOUT_MS = 90000;
@@ -117,8 +120,27 @@ async function refreshLibraryLine() {
     n === 0 ? "Local library: empty" : `Local library: ${n} saved video${n === 1 ? "" : "s"}`;
 }
 
+function setSaveButtonsEnabled(enabled) {
+  if (!enabled) {
+    for (const b of saveButtons) b.disabled = true;
+    return;
+  }
+}
+
+async function refreshPrivacyConsentUi() {
+  const data = await chrome.storage.local.get("settings");
+  privacyConsentAccepted = data.settings?.privacyConsentAccepted === true;
+  if (privacyConsentBanner) privacyConsentBanner.hidden = privacyConsentAccepted;
+  if (!privacyConsentAccepted) {
+    setSaveButtonsEnabled(false);
+    countLine.textContent = "Accept the privacy notice above to save tabs.";
+  }
+}
+
 async function refreshCount() {
   await refreshLibraryLine();
+  await refreshPrivacyConsentUi();
+  if (!privacyConsentAccepted) return;
   const r = await send("TUBESTACK_GET_SAVE_TAB_COUNTS");
   if (!r?.ok) {
     countLine.textContent =
@@ -154,6 +176,11 @@ function attachSaveHandler(btn, mode) {
   let busy = false;
   btn.addEventListener("click", async () => {
     if (busy) return;
+    if (!privacyConsentAccepted) {
+      status.textContent = "Accept the privacy notice above first.";
+      await refreshPrivacyConsentUi();
+      return;
+    }
     busy = true;
     status.textContent = "Saving…";
     for (const b of saveButtons) b.disabled = true;
@@ -163,9 +190,15 @@ function attachSaveHandler(btn, mode) {
       operationId: newOperationId(),
       target: { kind: "new" },
     });
+    busy = false;
+
+    if (r?.error === "privacy_consent_required") {
+      status.textContent = r.message || "Accept the privacy notice above first.";
+      await refreshPrivacyConsentUi();
+      return;
+    }
 
     status.textContent = describeSaveResult(r, r?.mode || mode);
-    busy = false;
 
     if (r?.playlistId && (r.ok || r.partial)) {
       await openExtensionInNewTabAndClose(dashboardPlaylistPath(r.playlistId));
@@ -189,6 +222,19 @@ async function reportInterruptedSaves() {
     ? `Recovered an interrupted save: ${closed} closed, ${kept} left open (not confirmed saved).`
     : `Recovered an interrupted save: ${closed} tab${closed === 1 ? "" : "s"} finished safely.`;
 }
+btnPrivacyConsent?.addEventListener("click", async () => {
+  btnPrivacyConsent.disabled = true;
+  const r = await send("TUBESTACK_ACCEPT_PRIVACY_CONSENT");
+  if (!r?.ok) {
+    btnPrivacyConsent.disabled = false;
+    status.textContent = r?.message || r?.error || "Could not save consent.";
+    return;
+  }
+  privacyConsentAccepted = true;
+  if (privacyConsentBanner) privacyConsentBanner.hidden = true;
+  status.textContent = "Thanks — you can save tabs now.";
+  await refreshCount();
+});
 
 attachSaveHandler(btnSaveLeft, "left");
 attachSaveHandler(btnSaveRight, "right");

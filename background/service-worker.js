@@ -24,6 +24,7 @@ const MAX_PLAYLIST_THEMES = 5;
 const storageCache = {
   items: null,
   localPlaylists: null,
+  videoProgress: null,
 };
 
 /**
@@ -149,6 +150,11 @@ async function getSaveOp(operationId) {
   const rows = await readSaveOps();
   return rows.find((r) => r.id === id) || null;
 }
+/** Debounced persistence for frequent progress ticks. */
+let videoProgressDirty = false;
+let videoProgressFlushTimer = null;
+let videoProgressWriting = false;
+const VIDEO_PROGRESS_FLUSH_MS = 12000;
 
 const SEED_THEMES = [
   { label: "Gaming", keywords: ["gaming", "gameplay", "gamer", "speedrun", "esports", "walkthrough", "lets play"] },
@@ -1166,7 +1172,7 @@ function openAiHttpErrorMessage(status, json) {
 const OPENAI_LIBRARY_CLASSIFY_CACHE_KEY = "openAiLibraryClassifyV1";
 const OPENAI_LIBRARY_CLASSIFY_CACHE_KEY_LEGACY = "openAiHistoryClassifyV1";
 const OPENAI_LIBRARY_CLASSIFY_TTL_MS = 7 * 86400000;
-const OPENAI_LIBRARY_CLASSIFY_MAX_KEYS = 2500;
+const OPENAI_LIBRARY_CLASSIFY_MAX_KEYS = 1200;
 
 const SETTINGS_KEY_MIGRATIONS = [
   ["youtubeHistorySummary", "localViewingSummary"],
@@ -1227,7 +1233,32 @@ function migrateSettingsFieldNames(settings) {
     delete next[oldKey];
     changed = true;
   }
+  // Grandfather existing installs that already finished setup (pre-consent flag).
+  if (next.onboardingComplete === true && next.privacyConsentAccepted !== true) {
+    next.privacyConsentAccepted = true;
+    if (!next.privacyConsentAt) next.privacyConsentAt = new Date().toISOString();
+    changed = true;
+  }
   return { next, changed };
+}
+
+async function hasPrivacyConsent() {
+  const s = await loadSettings();
+  return s.privacyConsentAccepted === true;
+}
+
+async function requirePrivacyConsent() {
+  if (await hasPrivacyConsent()) return null;
+  return {
+    ok: false,
+    error: "privacy_consent_required",
+    message:
+      "Accept the privacy notice in the TubeStack popup or setup wizard before saving tabs or tracking local watch progress.",
+  };
+}
+
+function isTrustedExtensionSender(sender) {
+  return Boolean(sender && sender.id === chrome.runtime.id);
 }
 
 /** Minimal library fields sent to OpenAI (no URLs, transcripts, or Google secrets). */
@@ -1490,22 +1521,53 @@ function mergeVideoProgressRecord(prev, patch) {
   return out;
 }
 
-async function loadVideoProgress() {
+async function loadVideoProgress(options = {}) {
+  const force = options.force === true;
+  if (!force && storageCache.videoProgress !== null) {
+    return storageCache.videoProgress;
+  }
   const { videoProgress = {} } = await chrome.storage.local.get("videoProgress");
   const raw = videoProgress && typeof videoProgress === "object" ? videoProgress : {};
   const map = {};
-  let changed = false;
   for (const [vid, rec] of Object.entries(raw)) {
-    const norm = normalizeVideoProgressRecord(rec);
-    map[vid] = norm;
-    if (JSON.stringify(norm) !== JSON.stringify(rec)) changed = true;
+    map[vid] = normalizeVideoProgressRecord(rec);
   }
-  if (changed) await saveVideoProgress(map);
+  storageCache.videoProgress = map;
   return map;
 }
 
-async function saveVideoProgress(map) {
-  await chrome.storage.local.set({ videoProgress: map });
+function scheduleVideoProgressFlush() {
+  if (videoProgressFlushTimer != null) return;
+  videoProgressFlushTimer = setTimeout(() => {
+    videoProgressFlushTimer = null;
+    void flushVideoProgress();
+  }, VIDEO_PROGRESS_FLUSH_MS);
+}
+
+async function flushVideoProgress() {
+  if (!videoProgressDirty || !storageCache.videoProgress) return;
+  videoProgressDirty = false;
+  const map = storageCache.videoProgress;
+  videoProgressWriting = true;
+  try {
+    await chrome.storage.local.set({ videoProgress: map });
+  } finally {
+    videoProgressWriting = false;
+  }
+}
+
+async function saveVideoProgress(map, options = {}) {
+  storageCache.videoProgress = map;
+  videoProgressDirty = true;
+  if (options.immediate) {
+    if (videoProgressFlushTimer != null) {
+      clearTimeout(videoProgressFlushTimer);
+      videoProgressFlushTimer = null;
+    }
+    await flushVideoProgress();
+    return;
+  }
+  scheduleVideoProgressFlush();
 }
 
 async function loadWatchByDay() {
@@ -1549,7 +1611,20 @@ async function saveSubscriptionChannels(rows) {
  * Settings → Data & privacy: wipe saved videos, progress, local playlists, and import/scan summaries
  * stored alongside the library. Does not remove API keys, OAuth Client ID, themes, or the subscription directory.
  */
+/** Drop progress ticks still waiting for the debounced flush, so they cannot overwrite a replaced map. */
+function discardPendingVideoProgress() {
+  if (videoProgressFlushTimer != null) {
+    clearTimeout(videoProgressFlushTimer);
+    videoProgressFlushTimer = null;
+  }
+  videoProgressDirty = false;
+}
+
 async function eraseLocalLibraryData() {
+  discardPendingVideoProgress();
+  storageCache.items = [];
+  storageCache.localPlaylists = [];
+  storageCache.videoProgress = {};
   await saveItems([]);
   await chrome.storage.local.set({
     videoProgress: {},
@@ -1591,6 +1666,8 @@ function manifestVersion() {
  */
 async function exportTubeStackBackup({ uiPreferences } = {}) {
   return withStorageLock(LIBRARY_LOCK, async () => {
+    // Persist progress ticks still in the debounce window, so the export includes them.
+    await flushVideoProgress();
     const storage = await chrome.storage.local.get(TS_BACKUP.DATA_KEYS);
     const backup = TS_BACKUP.buildBackup({
       storage,
@@ -1626,6 +1703,8 @@ async function restoreTubeStackBackup(rawBackup) {
     const write = TS_BACKUP.buildRestoreWrite(parsed.backup.data, current.settings);
     const keys = Object.keys(write);
     const before = await chrome.storage.local.get(keys);
+    // Pending ticks belong to the library being replaced; a late flush would overwrite the restore.
+    discardPendingVideoProgress();
     try {
       await chrome.storage.local.set({ ...write });
       const mismatched = TS_BACKUP.verifyRestoreLanded(write, await chrome.storage.local.get(keys));
@@ -1647,6 +1726,7 @@ async function restoreTubeStackBackup(rawBackup) {
       }
       storageCache.items = null;
       storageCache.localPlaylists = null;
+      storageCache.videoProgress = null;
       return {
         ok: false,
         error: "restore_failed",
@@ -1656,6 +1736,7 @@ async function restoreTubeStackBackup(rawBackup) {
     }
     storageCache.items = null;
     storageCache.localPlaylists = null;
+    storageCache.videoProgress = null;
     return { ok: true, summary: parsed.summary, warnings: parsed.warnings };
   });
 }
@@ -1923,17 +2004,26 @@ async function tubestackYoutubePlaylistPreview(msg) {
   return { ok: true, videos, truncated, count: videos.length };
 }
 
-async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas) {
+async function importYoutubePlaylistsWithFetcher(fetchYoutubeJson, playlistMetas, options = {}) {
   const themes = await loadThemes();
   const PER_PLAYLIST_CAP = 220;
   const DETAIL_BATCH = 50;
+  const replaceYoutubeCatalog = options.replaceYoutubeCatalog !== false;
+  const playlistSource = options.playlistSource === "pasted_url" ? "pasted_url" : "youtube_import";
+  const libraryImportSource =
+    playlistSource === "pasted_url" ? "youtube_playlist_url" : "youtube_playlist";
+  const importedIds = new Set(playlistMetas.map((x) => String(x.id || "").trim()).filter(Boolean));
 
   const existingItemsAll = await loadItems();
   const existingVideoIds = new Set(
     existingItemsAll.map((x) => String(x.videoId || "").trim()).filter((v) => /^[\w-]{11}$/.test(v))
   );
   const existingLists = await loadLocalPlaylists();
-  const listsSansImports = existingLists.filter((x) => x.playlistSource !== "youtube_import");
+  const listsSansImports = replaceYoutubeCatalog
+    ? existingLists.filter((x) => x.playlistSource !== "youtube_import")
+    : existingLists.filter(
+        (x) => !(x.playlistSource === playlistSource && importedIds.has(String(x.youtubePlaylistId || "").trim()))
+      );
 
   const newLibraryItems = [];
   const newPlaylists = [];
@@ -1944,13 +2034,12 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
     const videoIdsOrdered = [];
     let pt = "";
     do {
-      const pjson = await ytOAuthJson(
-        accessToken,
-        "GET",
-        `playlistItems?part=snippet,contentDetails&playlistId=${encodeURIComponent(plMeta.id)}&maxResults=50${
-          pt ? `&pageToken=${encodeURIComponent(pt)}` : ""
-        }`
-      );
+      const pjson = await fetchYoutubeJson("playlistItems", {
+        part: "snippet,contentDetails",
+        playlistId: plMeta.id,
+        maxResults: 50,
+        pageToken: pt,
+      });
       for (const row of pjson.items || []) {
         const vid = row.snippet?.resourceId?.videoId || row.contentDetails?.videoId;
         if (vid && /^[\w-]{11}$/.test(vid)) videoIdsOrdered.push(vid);
@@ -1966,11 +2055,10 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
     const detailById = new Map();
     for (let i = 0; i < videoIdsOrdered.length; i += DETAIL_BATCH) {
       const slice = videoIdsOrdered.slice(i, i + DETAIL_BATCH);
-      const vjson = await ytOAuthJson(
-        accessToken,
-        "GET",
-        `videos?part=snippet,contentDetails&id=${slice.map(encodeURIComponent).join(",")}`
-      );
+      const vjson = await fetchYoutubeJson("videos", {
+        part: "snippet,contentDetails",
+        id: slice.join(","),
+      });
       for (const v of vjson.items || []) {
         if (v.id) detailById.set(v.id, v);
       }
@@ -2016,7 +2104,7 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
             themeId: null,
             libraryAlbum: albumLabel,
             playlistName: albumLabel,
-            libraryImportSource: "youtube_playlist",
+            libraryImportSource,
             youtubePlaylistId: plMeta.id,
           };
           item.granularGenre = inferGranularGenreForText(item.title, item.channel);
@@ -2029,7 +2117,11 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
         const cd = v.contentDetails || {};
         const durationSec = durationSecFromIso8601Duration(cd.duration);
         const thumb =
-          sn.thumbnails?.high?.url || sn.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`;
+          sn.thumbnails?.medium?.url || sn.thumbnails?.high?.url || `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`;
+        const descSnippet = String(sn.description || "").trim().slice(0, 320);
+        const tags = Array.isArray(sn.tags)
+          ? sn.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 8)
+          : [];
         snap = {
           videoId: vid,
           url: `https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`,
@@ -2037,6 +2129,9 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
           channel: sn.channelTitle || "",
           thumbnail: thumb,
           durationSec,
+          tags: tags.slice(0, 6),
+          youtubeCategoryId: sn.categoryId ? String(sn.categoryId) : null,
+          publishedAt: sn.publishedAt || null,
           libraryAlbum: albumLabel,
         };
         if (!existingVideoIds.has(vid)) {
@@ -2049,10 +2144,13 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
             channel: snap.channel,
             thumbnail: snap.thumbnail,
             durationSec,
+            description: descSnippet,
+            youtubeCategoryId: snap.youtubeCategoryId,
+            publishedAt: snap.publishedAt,
             timestampSec: null,
             savedAt: new Date().toISOString(),
             category: "watch_later",
-            tags: [],
+            tags: [...tags],
             suggestedTags: [],
             priority: "prio_med",
             notes: "",
@@ -2062,7 +2160,7 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
             themeId: null,
             libraryAlbum: albumLabel,
             playlistName: albumLabel,
-            libraryImportSource: "youtube_playlist",
+            libraryImportSource,
             youtubePlaylistId: plMeta.id,
           };
           item.granularGenre = inferGranularGenreForText(item.title, item.channel);
@@ -2082,8 +2180,10 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
       items: snapshots,
       kind: "static",
       groupBy: null,
-      smartSummary: `Imported from YouTube · ${snapshots.length} videos`,
-      playlistSource: "youtube_import",
+      smartSummary: `${
+        playlistSource === "pasted_url" ? "Added from pasted YouTube URL" : "Imported from YouTube"
+      } · ${snapshots.length} videos`,
+      playlistSource,
       youtubePlaylistId: plMeta.id,
     });
   }
@@ -2096,7 +2196,9 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
     };
   }
 
-  const existingItems = existingItemsAll.filter((x) => x.libraryImportSource !== "youtube_playlist");
+  const existingItems = replaceYoutubeCatalog
+    ? existingItemsAll.filter((x) => x.libraryImportSource !== "youtube_playlist")
+    : existingItemsAll;
   const mergedItems = [...newLibraryItems, ...existingItems];
   await saveItems(mergedItems);
   const mergedLists = trimPlaylistsCap([...newPlaylists, ...listsSansImports], MAX_LOCAL_PLAYLISTS);
@@ -2105,10 +2207,22 @@ async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas)
   return {
     ok: true,
     importedPlaylistCount: newPlaylists.length,
+    playlistIds: newPlaylists.map((playlist) => playlist.id),
     newLibraryVideoCount: newLibraryItems.length,
     totalPlaylistVideos,
     message: `Imported ${newPlaylists.length} playlist(s); added ${newLibraryItems.length} new video(s) to the library (${totalPlaylistVideos} total rows across playlists).`,
   };
+}
+
+async function importYoutubePlaylistsWithAccessToken(accessToken, playlistMetas, options = {}) {
+  const fetchYoutubeJson = (path, params) => {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(params || {})) {
+      if (value != null && value !== "") qs.set(key, String(value));
+    }
+    return ytOAuthJson(accessToken, "GET", `${path}?${qs.toString()}`);
+  };
+  return importYoutubePlaylistsWithFetcher(fetchYoutubeJson, playlistMetas, options);
 }
 
 async function tubestackImportYoutubePlaylistsSelected(msg) {
@@ -2141,6 +2255,115 @@ async function tubestackImportYoutubePlaylistsSelected(msg) {
   }
 }
 
+async function tubestackImportYoutubePlaylistUrl(msg) {
+  const rawInput = String(msg?.url || msg?.playlistId || "").trim();
+  const playlistId = YT_URL.extractYouTubePlaylistId(rawInput) || "";
+  if (!playlistId) {
+    const looksLikeMix = /[?&]list=RD|^RD/i.test(rawInput);
+    return {
+      ok: false,
+      error: looksLikeMix ? "unsupported_mix_playlist" : "invalid_playlist_url",
+      message: looksLikeMix
+        ? "YouTube mix/radio playlists can’t be imported. Paste a normal playlist URL (list=PL…)."
+        : "Paste a valid YouTube playlist URL containing a list= playlist ID.",
+    };
+  }
+
+  const settings = await loadSettings();
+  const apiKey = String(settings.youtubeDataApiKey || "").trim();
+  const clientId = String(settings.youtubeOAuthClientId || "").trim();
+  if (!apiKey && !clientId) {
+    return {
+      ok: false,
+      error: "youtube_connection_required",
+      message:
+        "Add a YouTube Data API key for public playlists, or connect Google OAuth for playlists available to your account.",
+    };
+  }
+
+  if (!(await ensureOptionalHostOrigins(OPTIONAL_ORIGINS_GOOGLE_APIS))) {
+    return {
+      ok: false,
+      error: "host_permission_denied",
+      message: "Allow TubeStack to contact Google’s YouTube API, then try again.",
+    };
+  }
+
+  let fetchYoutubeJson;
+  let clearAuthAfter = false;
+  const useOAuthFetcher = async () => {
+    const auth = await getYoutubeImportAccessTokenCached(clientId);
+    if (!auth.ok) return auth;
+    clearAuthAfter = true;
+    fetchYoutubeJson = (path, params) => {
+      const qs = new URLSearchParams();
+      for (const [key, value] of Object.entries(params || {})) {
+        if (value != null && value !== "") qs.set(key, String(value));
+      }
+      return ytOAuthJson(auth.accessToken, "GET", `${path}?${qs.toString()}`);
+    };
+    return { ok: true };
+  };
+  if (apiKey) {
+    fetchYoutubeJson = (path, params) => ytDataApi(apiKey, path, params);
+  } else {
+    const authReady = await useOAuthFetcher();
+    if (!authReady.ok) return authReady;
+  }
+
+  try {
+    const metadataParams = {
+      part: "snippet,contentDetails",
+      id: playlistId,
+      maxResults: 1,
+    };
+    let metaJson;
+    try {
+      metaJson = await fetchYoutubeJson("playlists", metadataParams);
+    } catch (e) {
+      if (!apiKey || !clientId) throw e;
+      const authReady = await useOAuthFetcher();
+      if (!authReady.ok) throw e;
+      metaJson = await fetchYoutubeJson("playlists", metadataParams);
+    }
+    let meta = metaJson?.items?.[0];
+    if (!meta && apiKey && clientId && !clearAuthAfter) {
+      const authReady = await useOAuthFetcher();
+      if (authReady.ok) {
+        metaJson = await fetchYoutubeJson("playlists", metadataParams);
+        meta = metaJson?.items?.[0];
+      }
+    }
+    if (!meta) {
+      return {
+        ok: false,
+        error: "playlist_not_found",
+        message: "That playlist was not found, is unavailable, or your connected Google account cannot access it.",
+      };
+    }
+    const title = String(meta.snippet?.title || msg?.name || "YouTube playlist").trim().slice(0, 200);
+    const result = await importYoutubePlaylistsWithFetcher(
+      fetchYoutubeJson,
+      [{ id: playlistId, title }],
+      {
+        replaceYoutubeCatalog: false,
+        playlistSource: "pasted_url",
+      }
+    );
+    if (result?.ok) {
+      result.youtubePlaylistId = playlistId;
+      result.localPlaylistId = result.playlistIds?.[0] || null;
+      result.playlistTitle = title;
+      result.message = `Added “${title}” as a local playlist (${result.totalPlaylistVideos} videos; ${result.newLibraryVideoCount} new to your library).`;
+    }
+    return result;
+  } catch (e) {
+    return { ok: false, error: "playlist_import_failed", message: String(e?.message || e) };
+  } finally {
+    if (clearAuthAfter) clearYoutubeImportAuthCache();
+  }
+}
+
 async function saveLocalPlaylistEntry({ name, items, kind, groupBy, smartSummary, playlistSource, youtubePlaylistId }) {
   const lists = await loadLocalPlaylists();
   const trimmed = String(name || "").trim();
@@ -2149,7 +2372,11 @@ async function saveLocalPlaylistEntry({ name, items, kind, groupBy, smartSummary
     return { ok: false, error: "no_items" };
   }
   const src =
-    playlistSource === "youtube_import" ? "youtube_import" : playlistSource === "session" ? "session" : "session";
+    playlistSource === "youtube_import"
+      ? "youtube_import"
+      : playlistSource === "pasted_url"
+        ? "pasted_url"
+        : "session";
   const dedupedItems = dedupePlaylistItems(items);
   if (!dedupedItems.length) {
     return { ok: false, error: "no_items" };
@@ -2167,7 +2394,7 @@ async function saveLocalPlaylistEntry({ name, items, kind, groupBy, smartSummary
     decisions: [],
     playlistSource: src,
   };
-  if (src === "youtube_import" && youtubePlaylistId) {
+  if ((src === "youtube_import" || src === "pasted_url") && youtubePlaylistId) {
     entry.youtubePlaylistId = String(youtubePlaylistId).slice(0, 80);
   }
   const next = trimPlaylistsCap([entry, ...lists], MAX_LOCAL_PLAYLISTS);
@@ -2653,6 +2880,7 @@ async function buildPlaylist({ themeIds, budgetMinutes, sortMode }) {
 async function handleProgressTick(msg) {
   const { videoId, playheadSec, durationSec, deltaWatchSec } = msg;
   if (!videoId) return;
+  if (!(await hasPrivacyConsent())) return;
   const addWatch = Math.max(0, Math.min(Number(deltaWatchSec) || 0, 120));
   const map = await loadVideoProgress();
   map[videoId] = mergeVideoProgressRecord(map[videoId], {
@@ -2662,6 +2890,7 @@ async function handleProgressTick(msg) {
     progressSource: "observed_youtube_page",
     updatedAt: new Date().toISOString(),
   });
+  // Debounced write — ticks are frequent while watching.
   await saveVideoProgress(map);
 
   void maybeCompleteSidebarFromProgress(videoId, playheadSec || 0, durationSec ?? null);
@@ -3677,6 +3906,8 @@ async function buildYouTubeTabSaveCandidates(mode, options = {}) {
   if (!SAVE_YT_TAB_MODES.has(mode)) {
     return { ok: false, error: "invalid_mode", candidates: [] };
   }
+  const denied = await requirePrivacyConsent();
+  if (denied) return { ...denied, candidates: [] };
   const { tabs, error, currentTabId } = await getYouTubeWatchTabsForMode(mode);
   if (error) return { ok: false, error, candidates: [] };
 
@@ -3739,7 +3970,7 @@ async function applyVideoProgressPatches(progressPatches) {
   for (const { videoId, patch } of progressPatches) {
     map[videoId] = mergeVideoProgressRecord(map[videoId], { ...patch, deltaWatchSec: 0 });
   }
-  await saveVideoProgress(map);
+  await saveVideoProgress(map, { immediate: true });
 }
 
 /**
@@ -4120,7 +4351,14 @@ async function saveYouTubeTabsAndAttach(request = {}) {
   const built = await buildYouTubeTabSaveCandidates(mode, request);
   if (!built.ok) {
     await dropSaveOp(record.id);
-    return { ok: false, error: built.error, closedTabIds: [], keptOpenTabIds: [], failures: [] };
+    return {
+      ok: false,
+      error: built.error,
+      message: built.message,
+      closedTabIds: [],
+      keptOpenTabIds: [],
+      failures: [],
+    };
   }
   if (!built.candidates.length) {
     // Nothing eligible: create no playlist, close nothing, leave no record behind.
@@ -4754,7 +4992,35 @@ async function getLibraryBootState() {
   };
 }
 
+/** Playlist home — playlists + settings only (no full library payload). */
+async function getHomeState() {
+  const [localPlaylists, rawSettings] = await Promise.all([loadLocalPlaylists(), loadSettings()]);
+  return {
+    ok: true,
+    localPlaylists,
+    settings: sanitizeSettingsForClient(rawSettings),
+    integrationHealth: integrationHealthFromSettings(rawSettings),
+  };
+}
+
+/** Side panel — items + playlists + current playlist settings. */
+async function getSidebarState() {
+  const [items, localPlaylists, rawSettings] = await Promise.all([
+    loadItems(),
+    loadLocalPlaylists(),
+    loadSettings(),
+  ]);
+  return {
+    ok: true,
+    items,
+    localPlaylists,
+    settings: sanitizeSettingsForClient(rawSettings),
+  };
+}
+
 async function getFullState() {
+  // Flush any pending progress ticks so the dashboard sees up-to-date playheads.
+  await flushVideoProgress();
   const items = await loadItems();
   const [themes, rawSettings, videoProgress, watchByDay, localPlaylists, subscriptionChannels] =
     await Promise.all([
@@ -4793,9 +5059,13 @@ async function getFullState() {
   };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
+      if (!isTrustedExtensionSender(sender)) {
+        sendResponse({ ok: false, error: "untrusted_sender" });
+        return;
+      }
       switch (msg?.type) {
       case "TUBESTACK_SAVE_AND_ATTACH_TABS": {
         sendResponse(
@@ -4825,6 +5095,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         );
         break;
       }
+      case "TUBESTACK_ACCEPT_PRIVACY_CONSENT": {
+        await saveSettings({
+          privacyConsentAccepted: true,
+          privacyConsentAt: new Date().toISOString(),
+        });
+        sendResponse({ ok: true });
+        break;
+      }
       case "TUBESTACK_SAVE_LEFT": {
         sendResponse(await saveYouTubeTabsByMode("left"));
         break;
@@ -4848,6 +5126,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "TUBESTACK_GET_LIBRARY_BOOT": {
         sendResponse(await getLibraryBootState());
+        break;
+      }
+      case "TUBESTACK_GET_HOME_STATE": {
+        sendResponse(await getHomeState());
+        break;
+      }
+      case "TUBESTACK_GET_SIDEBAR_STATE": {
+        sendResponse(await getSidebarState());
         break;
       }
       case "TUBESTACK_GET_STATE": {
@@ -4914,7 +5200,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_IMPORT_YOUTUBE_PLAYLISTS_SELECTED": {
+        {
+          const denied = await requirePrivacyConsent();
+          if (denied) {
+            sendResponse(denied);
+            break;
+          }
+        }
         sendResponse(await tubestackImportYoutubePlaylistsSelected(msg));
+        break;
+      }
+      case "TUBESTACK_IMPORT_YOUTUBE_PLAYLIST_URL": {
+        {
+          const denied = await requirePrivacyConsent();
+          if (denied) {
+            sendResponse(denied);
+            break;
+          }
+        }
+        sendResponse(await tubestackImportYoutubePlaylistUrl(msg));
         break;
       }
       case "TUBESTACK_YOUTUBE_IMPORT_SESSION_CLEAR": {
@@ -5089,6 +5393,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_MERGE_CHANNELS": {
+        {
+          const denied = await requirePrivacyConsent();
+          if (denied) {
+            sendResponse(denied);
+            break;
+          }
+        }
         sendResponse(await mergeScrapedChannels(msg.labels || []));
         break;
       }
@@ -5097,6 +5408,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_SCRAPE_TAB": {
+        {
+          const denied = await requirePrivacyConsent();
+          if (denied) {
+            sendResponse(denied);
+            break;
+          }
+        }
         sendResponse(await scrapeYouTubeTab(msg.tabId));
         break;
       }
@@ -5168,7 +5486,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "TUBESTACK_COMPLETE_ONBOARDING": {
-        await saveSettings({ onboardingComplete: true });
+        await saveSettings({
+          onboardingComplete: true,
+          privacyConsentAccepted: true,
+          privacyConsentAt: new Date().toISOString(),
+        });
         rebuildTubeStackContextMenus();
         sendResponse({ ok: true });
         break;
@@ -5330,6 +5652,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (!tabId) return;
     void (async () => {
       try {
+        if (!(await hasPrivacyConsent())) {
+          chrome.tabs.create({
+            url: chrome.runtime.getURL("dashboard/dashboard.html"),
+            active: true,
+          });
+          return;
+        }
         const scrape = await scrapeYouTubeChannelsPage(tabId);
         if (!scrape?.ok) return;
         await mergeSubscriptionChannelLabels(scrape.channels || []);
@@ -5348,9 +5677,18 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   };
   const mode = modeById[id];
   if (!mode) return;
-  void saveYouTubeTabsAsNewPlaylistAndOpen(mode).catch((e) => {
-    console.error("[TubeStack] context menu save error:", tubestackSafeErrorMessage(e));
-  });
+  void saveYouTubeTabsAsNewPlaylistAndOpen(mode)
+    .then((r) => {
+      if (r?.error === "privacy_consent_required") {
+        chrome.tabs.create({
+          url: chrome.runtime.getURL("dashboard/dashboard.html"),
+          active: true,
+        });
+      }
+    })
+    .catch((e) => {
+      console.error("[TubeStack] context menu save error:", tubestackSafeErrorMessage(e));
+    });
 });
 
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -5380,15 +5718,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   void ensureToolbarPopupBehavior();
   rebuildTubeStackContextMenus();
-  void repairWeakStoredVideoMetadata().catch((err) => {
-    console.error("[TubeStack] metadata repair error:", tubestackSafeErrorMessage(err));
-  });
+  // Metadata repair runs once per SW wake from the module body (capped) — avoid a second pass here.
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   if (changes.items) storageCache.items = null;
   if (changes.localPlaylists) storageCache.localPlaylists = null;
+  // Only invalidate if another context wrote storage (our debounced flush uses the cache).
+  if (changes.videoProgress && !videoProgressWriting) storageCache.videoProgress = null;
   if (!changes.settings) return;
   const oldVal = changes.settings.oldValue;
   const newVal = changes.settings.newValue;

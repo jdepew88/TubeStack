@@ -72,7 +72,7 @@ function tabMetaFor(n, { startTabId = 101 } = {}) {
   return meta;
 }
 
-const baseStorage = { items: [], localPlaylists: [], themes: [], settings: {} };
+const baseStorage = { items: [], localPlaylists: [], themes: [], settings: { privacyConsentAccepted: true } };
 
 function saveAll(ext, extra = {}) {
   return ext.send({
@@ -92,6 +92,27 @@ function libraryVideoIds(browser) {
 function openTabIds(browser) {
   return browser.tabs.map((t) => t.id).sort((a, b) => a - b);
 }
+
+// ---------------------------------------------------------------- 0. privacy consent
+
+test("without privacy consent nothing is saved and no tab is closed", async () => {
+  const removed = [];
+  const browser = createBrowser({
+    storage: { ...baseStorage, settings: {} },
+    tabs: ytWindow(2),
+    tabMeta: tabMetaFor(2),
+    onRemove: (tabId) => removed.push(tabId),
+  });
+  const ext = startWorker(browser);
+
+  const r = await saveAll(ext);
+
+  eq(r.ok, false, "save refused");
+  eq(r.error, "privacy_consent_required", "says why");
+  eq(removed, [], "no tab closed");
+  eq(browser.store.items || [], [], "library untouched");
+  eq(browser.store.localPlaylists || [], [], "no playlist created");
+});
 
 // ---------------------------------------------------------------- 1. happy path
 

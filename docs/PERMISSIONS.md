@@ -21,7 +21,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 | No History / tabs / windows / all_urls | TubeStack does not request these permissions or read unrelated browsing history |
 | Host access at install | Limited to `youtube.com` and `m.youtube.com` |
 | Optional hosts | Google APIs and OpenAI — granted at runtime when the user runs those features |
-| Data storage | Library data stored locally in `chrome.storage.local` on the user’s device |
+| Data storage | Library data stored locally in `chrome.storage.local` on the user’s device (`unlimitedStorage` raises quota) |
 
 ### Approved install-time permissions
 
@@ -30,6 +30,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 - `scripting`
 - `sidePanel`
 - `storage`
+- `unlimitedStorage`
 
 ### Forbidden permissions
 
@@ -45,7 +46,7 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 ### Permissions
 
 ```json
-"permissions": ["contextMenus", "identity", "scripting", "sidePanel", "storage"]
+"permissions": ["contextMenus", "identity", "scripting", "sidePanel", "storage", "unlimitedStorage"]
 ```
 
 ### Host permissions
@@ -172,6 +173,24 @@ TubeStack is a **single-purpose** extension: save and organize **YouTube watch a
 **Chrome Web Store justification (long):**
 
 > TubeStack is local-first. Saved videos, playlists, organization fields, extension settings, and locally tracked YouTube watch progress are persisted with chrome.storage.local on the user’s device. Optional API keys the user enters are also stored locally. TubeStack does not upload the library to a TubeStack backend.
+
+### `unlimitedStorage`
+
+| Field | Detail |
+| --- | --- |
+| Why declared | Raises the `chrome.storage.local` quota above the default ~10 MB limit |
+| Where used | Implicitly with all `chrome.storage.local` reads/writes for library items, playlists, progress, and settings |
+| User trigger | Growing local libraries (saved videos, playlist snapshots, progress maps) |
+| Scope | Local device storage only — does not grant network access or extra host permissions |
+| If unused | Small libraries may fit under the default quota; large libraries need this permission |
+
+**Chrome Web Store justification (short):**
+
+> Allows larger local YouTube libraries and progress data to stay in Chrome extension storage on the user’s device.
+
+**Chrome Web Store justification (long):**
+
+> TubeStack stores the user’s library, playlists, and watch progress in chrome.storage.local. The unlimitedStorage permission raises the local quota so users can keep a larger on-device library without a TubeStack backend. It does not enable access to other websites or Chrome History.
 
 ---
 

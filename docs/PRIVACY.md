@@ -20,9 +20,17 @@ The hosted HTML version at [`privacy/privacy.html`](../privacy/privacy.html) is 
 
 ---
 
+## Chrome Web Store Limited Use disclosure
+
+TubeStack’s use of information received from Google APIs and of user data handled in the extension complies with the [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq), including the **Limited Use** requirements. TubeStack uses permissions and data only to provide or improve its single purpose—saving, organizing, and reopening YouTube watch and Shorts tabs in a local library. TubeStack does **not** sell user data, does **not** use user data for personalized or interest-based advertising, and does **not** transfer user data to third parties except when **you** explicitly use optional Google or OpenAI features (requests go directly to those services), or when required by law or for security.
+
+## In-product consent
+
+Before TubeStack saves YouTube tabs or records local watch progress, you must accept a short privacy notice in the extension popup or setup wizard. That notice summarizes local storage of library data and progress on this device. You can open the full policy anytime from the popup or Settings.
+
 ## Local-first design
 
-TubeStack is **local-first**. Most of what you see in TubeStack—including saved tabs, playlists, categories, tags, notes, and locally tracked watch progress—is stored **locally in your browser** using Chrome extension storage (`chrome.storage.local`), not on a TubeStack-owned server.
+TubeStack is **local-first**. Most of what you see in TubeStack—including saved tabs, playlists, categories, tags, notes, and locally tracked watch progress—is stored **locally in your browser** using Chrome extension storage (`chrome.storage.local`), not on a TubeStack-owned server. The **`unlimitedStorage`** permission raises the local storage quota so larger libraries can remain on-device.
 
 TubeStack has **no central backend** that collects or stores your library, API keys, or OAuth tokens for TubeStack’s own purposes.
 
@@ -100,7 +108,7 @@ TubeStack does **not** reconstruct what you watched before install or on sites o
 
 ## Permissions and page access
 
-TubeStack declares **`contextMenus`**, **`identity`**, **`scripting`**, **`sidePanel`**, and **`storage`**, plus **YouTube host permissions** at install time. **Google APIs** and **OpenAI** are **optional host permissions** requested at runtime when you use those features.
+TubeStack declares **`contextMenus`**, **`identity`**, **`scripting`**, **`sidePanel`**, **`storage`**, and **`unlimitedStorage`**, plus **YouTube host permissions** at install time. **Google APIs** and **OpenAI** are **optional host permissions** requested at runtime when you use those features.
 
 TubeStack does **not** request Chrome History, the broad **`tabs`** permission, **`windows`**, or **`<all_urls>`**.
 

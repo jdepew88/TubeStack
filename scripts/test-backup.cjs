@@ -59,7 +59,11 @@ function asFileText(backup) {
 }
 
 /** A fresh install as onInstalled leaves it: empty library, seeded categories, no onboarding. */
-async function freshInstall(storage = {}) {
+// Both restore entry points (Settings, and the Welcome step once its notice is ticked) record privacy
+// consent before a restore can run, so a realistic fresh install has it.
+const CONSENTED = { privacyConsentAccepted: true, privacyConsentAt: "2026-10-06T09:00:00.000Z" };
+
+async function freshInstall(storage = { settings: { ...CONSENTED } }) {
   const ext = bootExtension({ storage });
   await Promise.all(ext.browser.events.onInstalled._emit({ reason: "install" }));
   return ext;
@@ -69,7 +73,7 @@ function sanitizedSettings(settings) {
   const out = {};
   for (const [k, v] of Object.entries(settings)) {
     if (k in SECRETS) continue;
-    if (/LastTest|focusSession/.test(k)) continue;
+    if (/LastTest|focusSession|^privacyConsent/.test(k)) continue;
     out[k] = v;
   }
   return out;
@@ -336,7 +340,7 @@ test("a backup restores into an empty install", async () => {
   const r = await dest.send({ type: "TUBESTACK_BACKUP_RESTORE", backup: JSON.parse(asFileText(backup)) });
   eq(r.ok, true, `restore ok (${r.message || r.error})`);
   for (const k of DURABLE) eq(dest.browser.store[k], seed[k], `${k} restored exactly`);
-  eq(dest.browser.store.settings, sanitizedSettings(seed.settings), "settings restored minus secrets");
+  eq(sanitizedSettings(dest.browser.store.settings), sanitizedSettings(seed.settings), "settings restored minus secrets");
   eq(r.summary.videos, 14, "summary returned");
 });
 
@@ -475,7 +479,13 @@ test("round trip: populated → export → file → empty install → import →
   eq(r.ok, true, "restored");
 
   for (const k of DURABLE) eq(dest.browser.store[k], seed[k], `${k} identical after round trip`);
-  eq(dest.browser.store.settings, sanitizedSettings(seed.settings), "settings identical except secrets");
+  eq(
+    sanitizedSettings(dest.browser.store.settings),
+    sanitizedSettings(seed.settings),
+    "settings identical except secrets and per-install keys"
+  );
+  eq(dest.browser.store.settings.privacyConsentAt, CONSENTED.privacyConsentAt, "destination keeps its own consent record");
+  assert(!("privacyConsentAccepted" in first.backup.data.settings), "privacy consent is not carried in the file");
 
   // Export again from the destination: same data, so a second hop is lossless too.
   const second = await exportFrom(dest);

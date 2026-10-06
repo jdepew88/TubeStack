@@ -193,6 +193,8 @@ function populatedStorage() {
 
   const settings = {
     onboardingComplete: true,
+    privacyConsentAccepted: true,
+    privacyConsentAt: "2026-04-02T10:00:00.000Z",
     uiThemePreset: "ocean",
     sidebarHidden: false,
     libraryShowYoutubeImported: false,

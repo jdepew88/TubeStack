@@ -341,6 +341,15 @@ scenario("a fresh install restores the backup from the onboarding Welcome step",
       await chrome.storage.local.set({ settings: { ...cur, openaiApiKey: "sk-DEST-KEEP" } });
     })()`);
 
+    // Restore sits behind the same privacy notice as "Get started".
+    eq(await page.eval(`document.getElementById("obRestoreBackup").disabled`), true, "restore waits for the privacy notice");
+    await page.mouseClick("#obPrivacyConsent");
+    eq(await page.eval(`document.getElementById("obRestoreBackup").disabled`), false, "restore enabled once the notice is ticked");
+    await page.send("Page.setInterceptFileChooserDialog", { enabled: true });
+    await page.mouseClick("#obRestoreBackup");
+    await page.waitFor(`(async () => (await chrome.storage.local.get("settings")).settings?.privacyConsentAccepted === true)()`, { label: "consent recorded" });
+    await page.send("Page.setInterceptFileChooserDialog", { enabled: false });
+
     await page.setFile("#backupFileInput", shared.backupPath);
     await page.waitFor(`!document.getElementById("backupImportModal").classList.contains("hidden")`, { label: "preview modal" });
     await page.shot("02-import-preview-empty-install");
@@ -446,6 +455,7 @@ scenario("onboarding: YouTube setup is optional, skippable, and the full guide o
     const page = await openDashboard(b);
     await page.waitFor(`!document.getElementById("onboarding").classList.contains("hidden")`);
     await page.shot("05-welcome");
+    await page.mouseClick("#obPrivacyConsent");
     await page.mouseClick("#obNext0");
     await page.waitFor(`!document.getElementById("obStep1").classList.contains("hidden")`);
     const step1 = await page.eval(`document.getElementById("obStep1").innerText`);

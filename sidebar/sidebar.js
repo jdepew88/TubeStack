@@ -214,14 +214,11 @@ async function applyRowReorder(dragId, targetId) {
 }
 
 async function loadState() {
-  const [state, itemsRes] = await Promise.all([
-    send("TUBESTACK_GET_STATE"),
-    send("TUBESTACK_GET_ITEMS"),
-  ]);
+  const state = await send("TUBESTACK_GET_SIDEBAR_STATE");
   playlists = Array.isArray(state?.localPlaylists) ? state.localPlaylists : [];
   settingsCurrentPlaylistId = String(state?.settings?.currentPlaylistId || "").trim() || null;
 
-  const items = Array.isArray(itemsRes?.items) ? itemsRes.items : [];
+  const items = Array.isArray(state?.items) ? state.items : [];
   libraryByVideoId = new Map();
   for (const it of items) {
     const vid = String(it.videoId || "").trim();
@@ -571,6 +568,9 @@ function describeSidebarSaveResult(r, { includeHeld, createNew }) {
     return r.message || "No YouTube tabs found in this window.";
   }
   if (r?.error === "save_in_progress") return "A save is already running — give it a moment.";
+  if (r?.error === "privacy_consent_required") {
+    return r.message || "Accept the privacy notice in the TubeStack popup or setup wizard first.";
+  }
 
   const closed = r?.closedTabIds?.length || 0;
   const kept = r?.keptOpenTabIds?.length || 0;

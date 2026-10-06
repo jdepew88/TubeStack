@@ -38,6 +38,9 @@ Your library, playlists, and settings stay in **Chrome extension storage** on yo
 
 - **Save** open YouTube watch and Shorts tabs from the toolbar popup or right-click menu
 - **Organize** saved videos in the dashboard and library
+- **Paste a YouTube playlist URL** to create a matching local playlist
+- **Export** a local playlist as JSON (title, creator, URL, length, Watch State, tags, progress, and more)
+- **Search** within the current playlist and optionally save the search results as a new local playlist
 - **Reopen** individual videos or playlists later
 - **Close tabs** after saving to free browser memory (optional)
 
@@ -81,7 +84,7 @@ You can remove the key and clear local AI cache from Settings.
 
 ### Privacy summary
 
-TubeStack is **local-first**. Your library, playlists, progress, and settings live in extension storage on your device.
+TubeStack is **local-first**. Your library, playlists, progress, and settings live in extension storage on your device (`unlimitedStorage` only raises the local quota). Before saving tabs or recording local watch progress, TubeStack asks you to accept a short in-product privacy notice (popup or setup wizard).
 
 TubeStack does **not**:
 
@@ -91,7 +94,7 @@ TubeStack does **not**:
 - Scan unrelated browsing history
 - Sell your data
 
-TubeStack has **no central backend** that collects your library.
+TubeStack has **no central backend** that collects your library. Use of Google APIs (when you enable them) complies with the Chrome Web Store **Limited Use** requirements — see the privacy policy.
 
 **Privacy policy URL (store dashboard):** `https://jdepew88.github.io/TubeStack/privacy/privacy.html`
 
@@ -113,7 +116,7 @@ Paste or adapt for the Chrome Web Store **notes to reviewer** field (if availabl
 >
 > Optional integrations (YouTube API, Google OAuth, OpenAI) are **user-configured** and requested at runtime when the user runs those features. OAuth access tokens are kept in the service worker’s **memory only** and are **not** written to `chrome.storage.local`.
 >
-> TubeStack does **not** request Chrome History, the broad `tabs` permission, `windows`, or `<all_urls>`. Host access at install is limited to `youtube.com` and `m.youtube.com`. Watch progress is recorded locally on open YouTube tabs (`/watch` full support; Shorts best-effort). Saving Shorts tabs works.
+> TubeStack does **not** request Chrome History, the broad `tabs` permission, `windows`, or `<all_urls>`. Host access at install is limited to `youtube.com` and `m.youtube.com`. Install-time permissions include `unlimitedStorage` only to raise local `chrome.storage.local` quota for larger libraries. Before save/progress, users accept an in-product privacy notice. Watch progress is recorded locally on open YouTube tabs (`/watch` full support; Shorts best-effort). Saving Shorts tabs works.
 
 ---
 
@@ -140,6 +143,7 @@ Paste into each **Permission justification** field in the Chrome Web Store dashb
 - `scripting`
 - `sidePanel`
 - `storage`
+- `unlimitedStorage`
 
 ### `contextMenus`
 
@@ -190,6 +194,16 @@ Paste into each **Permission justification** field in the Chrome Web Store dashb
 **Short:**
 
 > Local library, playlists, settings, and progress on the user’s device.
+
+### `unlimitedStorage`
+
+**Standard:**
+
+> Raises the **chrome.storage.local** quota so larger local libraries, playlist snapshots, and watch-progress maps can stay on the user’s device. Does not grant network access or access to other websites.
+
+**Short:**
+
+> Larger on-device library storage quota only.
 
 ### Permissions TubeStack does not request
 
@@ -276,6 +290,8 @@ TubeStack declares two content-script entries in `manifest.json`:
 - [ ] OAuth consent screen matches scopes and branding you describe (if testing OAuth)
 - [ ] `manifest.json` version bumped for the build you upload
 - [ ] `.\scripts\verify-privacy-permissions.ps1` passes on the release tree
-- [ ] Permission justifications match **[PERMISSIONS.md](PERMISSIONS.md)** and the shipped build (including `sidePanel`)
+- [ ] Permission justifications match **[PERMISSIONS.md](PERMISSIONS.md)** and the shipped build (including `sidePanel` and `unlimitedStorage`)
 - [ ] Optional host permissions described as runtime / user-initiated
 - [ ] Content script behavior (watch/Shorts progress, channel scrape) disclosed in privacy policy
+- [ ] In-product privacy consent (popup + setup wizard) verified on a fresh install
+- [ ] Privacy policy Limited Use section and `unlimitedStorage` disclosure match the shipped build

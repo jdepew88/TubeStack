@@ -29,6 +29,11 @@
     }
   }
 
+  function startTicker() {
+    if (tickTimer != null) return;
+    tickTimer = setInterval(tick, 2000);
+  }
+
   function sendProgressTick(payload) {
     try {
       if (!chrome.runtime?.id) {
@@ -55,6 +60,8 @@
   }
 
   function tick() {
+    if (document.visibilityState !== "visible") return;
+
     const v = getVideo();
     const videoId = getVideoId();
     if (!v || !videoId) return;
@@ -64,7 +71,7 @@
     const durationKnown = v.duration && !Number.isNaN(v.duration) && v.duration > 0;
     const now = performance.now();
     const t = v.currentTime || 0;
-    const playing = !v.paused && !v.ended && document.visibilityState === "visible";
+    const playing = !v.paused && !v.ended;
 
     if (playing && lastTime > 0) {
       const dt = (now - lastSent) / 1000;
@@ -88,7 +95,7 @@
         playheadSec,
         durationSec,
         deltaWatchSec: deltaWatch,
-        visible: document.visibilityState === "visible",
+        visible: true,
       });
     }
   }
@@ -106,9 +113,12 @@
     });
   }
 
-  tickTimer = setInterval(tick, 2000);
   document.addEventListener("visibilitychange", () => {
     lastSent = performance.now();
     accDelta = 0;
+    if (document.visibilityState === "visible") startTicker();
+    else stopTicker();
   });
+
+  if (document.visibilityState === "visible") startTicker();
 })();

@@ -164,6 +164,29 @@ body {
   flex-shrink: 0;
 }
 
+.oobe-privacy-box {
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--border, #3a3a48) 85%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface, #18181b) 92%, #84cc16 8%);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4dc;
+}
+
+.oobe-privacy-box p {
+  margin: 0 0 8px;
+}
+
+.oobe-privacy-box p:last-child {
+  margin-bottom: 0;
+}
+
+.oobe-privacy-box a {
+  color: var(--green, #84cc16);
+}
+
 .oobe-dot {
   width: 8px;
   height: 8px;
@@ -1415,6 +1438,29 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
   margin: 0;
 }
 
+.dash-load-more-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 8px;
+}
+
+.dash-load-more-wrap.hidden {
+  display: none;
+}
+
+.playlist-search-status {
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 1.25em;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.playlist-search-status strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .current-controls-actions {
   display: flex;
   align-items: center;
@@ -2163,6 +2209,12 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+}
+
+.card.card--grid-tile a.grid-tile-title:hover {
+  text-decoration: underline;
 }
 
 .card.card--grid-tile .grid-tile-text {
@@ -2191,6 +2243,9 @@ body:has(.layout.layout--sidebar-hidden) .focus-banner {
   height: 100%;
   object-fit: cover;
   display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
 }
 
 .sidebar-floating-toggle {
@@ -2286,6 +2341,9 @@ a.thumb-link:focus-visible {
   height: 100%;
   object-fit: cover;
   display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
 }
 
 .dur-badge {
@@ -3402,6 +3460,33 @@ body:has(.layout--sidebar-hidden) #windowSettings.active {
 
 .playlist-manager-section .playlist-manager-lead {
   max-width: 52rem;
+}
+
+.playlist-paste-import {
+  max-width: 52rem;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.playlist-paste-import-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.playlist-paste-import .stat-line {
+  min-height: 1.25em;
+  margin: 8px 0 0;
+}
+
+@media (max-width: 620px) {
+  .playlist-paste-import-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .local-pl-list {
